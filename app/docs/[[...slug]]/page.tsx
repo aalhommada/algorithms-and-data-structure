@@ -50,8 +50,28 @@ export async function generateMetadata(props: {
 
   const pageData = page.data as unknown as PageData;
 
+  // Without per-page Open Graph tags every shared link would preview with the
+  // generic site-wide text from the root layout. `page.url` is root-relative;
+  // `metadataBase` there resolves it to an absolute URL.
   return {
     title: pageData.title,
     description: pageData.description,
+    alternates: { canonical: page.url },
+    // Next replaces `openGraph` wholesale rather than deep-merging it, so
+    // siteName and locale have to be repeated here or they vanish on every
+    // page that sets its own Open Graph tags.
+    openGraph: {
+      type: 'article',
+      url: page.url,
+      title: pageData.title,
+      description: pageData.description,
+      siteName: 'DSA Guide',
+      locale: 'en_US',
+    },
+    twitter: {
+      card: 'summary',
+      title: pageData.title,
+      description: pageData.description,
+    },
   };
 }
