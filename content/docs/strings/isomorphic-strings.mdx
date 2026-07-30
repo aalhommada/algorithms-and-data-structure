@@ -1,0 +1,228 @@
+---
+title: Isomorphic Strings
+description: Verify a one-to-one character mapping between two strings, checking both directions
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Two Hash Maps"
+  tags={["String", "Hash Table"]}
+  leetcode="https://leetcode.com/problems/isomorphic-strings/"
+  problemNumber={205}
+/>
+
+## Problem Statement
+
+Two strings `s` and `t` are **isomorphic** if the characters of `s` can be replaced to get `t`, where:
+
+- Every occurrence of a character maps to the **same** character
+- **No two** characters map to the same character
+- A character may map to itself
+
+```text
+Input:  s = "egg", t = "add"
+Output: true
+Why:    e → a,  g → d
+
+Input:  s = "foo", t = "bar"
+Output: false
+Why:    o would need to map to both 'a' and 'r'
+
+Input:  s = "badc", t = "baba"
+Output: false
+Why:    d → b and b → b — two characters mapping to the same one
+```
+
+## Intuition
+
+The obvious half is easy: walk both strings together and record `s[i] → t[i]`. If a character is already mapped to something else, the strings are not isomorphic. That catches `"foo"` / `"bar"`.
+
+It does **not** catch `"badc"` / `"baba"`.
+
+<Callout type="warn" title="Why one map is not enough">
+With only `s → t`, the string pair `"badc"` / `"baba"` builds `{b: b, a: a, d: b, c: a}` with no conflict — every character of `s` maps consistently.
+
+But `b` and `d` both map to `b`, which rule 2 forbids. The mapping must be **one-to-one** (a bijection), not merely a function.
+</Callout>
+
+<Callout type="info" title="The key insight">
+Maintain **two** maps: `s → t` and `t → s`. Every position must be consistent with both.
+
+The reverse map is what enforces "no two characters map to the same character" — it detects a `t` character that already has a different owner.
+</Callout>
+
+### Real-world analogy
+
+A substitution cipher. Each plaintext letter must always encrypt to the same ciphertext letter, *and* each ciphertext letter must decrypt back to exactly one plaintext letter. Without the second rule, decryption would be ambiguous.
+
+### Watch it run
+
+<HashMapViz
+  title='s = "badc", t = "baba" — caught only by the reverse map'
+  label="forward s → t"
+  intervalMs={1500}
+  frames={[
+    {
+      scan: { values: ["b", "a", "d", "c"], cursor: 0 },
+      entries: [{ key: "b", value: "b", state: "active" }],
+      vars: { reverse: "{b: b}" },
+      note: "Position 0: b ↔ b. Both maps are consistent.",
+    },
+    {
+      scan: { values: ["b", "a", "d", "c"], cursor: 1 },
+      entries: [
+        { key: "b", value: "b" },
+        { key: "a", value: "a", state: "active" },
+      ],
+      vars: { reverse: "{b: b, a: a}" },
+      note: "Position 1: a ↔ a. Still fine.",
+    },
+    {
+      scan: { values: ["b", "a", "d", "c"], cursor: 2 },
+      entries: [
+        { key: "b", value: "b", state: "compare" },
+        { key: "a", value: "a" },
+        { key: "d", value: "b", state: "discard" },
+      ],
+      vars: { reverse: "{b: b, a: a}", conflict: "reverse[b] is already 'b', not 'd'" },
+      note: "Position 2: s has 'd', t has 'b'. The forward map is happy — 'd' is new. But the reverse map already says b → b, so 'd' cannot also claim it. Return false.",
+    },
+  ]}
+  caption="The forward map alone would have accepted this pair."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Reject unequal lengths immediately
+</Step>
+
+<Step>
+### Keep two maps: `forward` (s → t) and `backward` (t → s)
+</Step>
+
+<Step>
+### At each position, check both
+
+If `forward` already maps `s[i]` to something other than `t[i]` → `false`.
+
+If `backward` already maps `t[i]` to something other than `s[i]` → `false`.
+</Step>
+
+<Step>
+### Otherwise record both directions and continue
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def is_isomorphic(s: str, t: str) -> bool:
+    """True if s and t are related by a one-to-one character mapping."""
+    if len(s) != len(t):
+        return False
+
+    forward: dict[str, str] = {}   # s char -> t char
+    backward: dict[str, str] = {}  # t char -> s char
+
+    for a, b in zip(s, t):
+        if a in forward and forward[a] != b:
+            return False           # a already maps somewhere else
+        if b in backward and backward[b] != a:
+            return False           # b is already claimed by another character
+
+        forward[a] = b
+        backward[b] = a
+
+    return True
+```
+
+A compact alternative using first-occurrence indices:
+
+```python
+def is_isomorphic_index(s: str, t: str) -> bool:
+    # Two strings are isomorphic iff their patterns of first occurrences match.
+    return [s.index(c) for c in s] == [t.index(c) for c in t]
+```
+
+Elegant, but `str.index` scans from the start each time, making it `O(n²)`.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function isIsomorphic(s: string, t: string): boolean {
+  if (s.length !== t.length) return false;
+
+  const forward = new Map<string, string>(); // s char -> t char
+  const backward = new Map<string, string>(); // t char -> s char
+
+  for (let i = 0; i < s.length; i++) {
+    const a = s[i];
+    const b = t[i];
+
+    const mapped = forward.get(a);
+    if (mapped !== undefined && mapped !== b) return false; // a maps elsewhere
+
+    const origin = backward.get(b);
+    if (origin !== undefined && origin !== a) return false; // b is claimed
+
+    forward.set(a, b);
+    backward.set(b, a);
+  }
+
+  return true;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="The single-map shortcut that actually works">
+Some solutions use one map plus a **set of used target characters**. That is equivalent — the set is a stripped-down reverse map that records only *whether* a target is taken, not by whom. Both enforce the bijection; two maps just make the symmetry explicit.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(k)" />
+
+- **Time** — one pass with `O(1)` map operations per character.
+- **Space** — `O(k)` where `k` is the alphabet size, bounded by the number of distinct characters. For ASCII that is at most 256, effectively constant.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Different lengths">
+Caught by the first check. Isomorphic strings must correspond position by position.
+</Accordion>
+
+<Accordion title="Both strings empty">
+Both loops are skipped and `true` is returned — vacuously isomorphic.
+</Accordion>
+
+<Accordion title="A character mapping to itself, e.g. 'ab' and 'ab'">
+Allowed by the rules. `forward = {a: a, b: b}` with no conflicts. Returns `true`.
+</Accordion>
+
+<Accordion title="Two characters wanting the same target, e.g. 'ab' and 'aa'">
+`a → a` is recorded, then `b → a` is rejected by the reverse map, which already has `a → a`. Returns `false`.
+</Accordion>
+
+<Accordion title="How is this different from Word Pattern (LeetCode 290)?">
+Word Pattern maps single characters to whole words instead of characters. The algorithm is identical — two maps, both directions — which is a good sign you have understood the underlying idea rather than memorised a solution.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Valid Anagram](/docs/strings/valid-anagram) — matching multisets rather than structure
+- [Group Anagrams](/docs/arrays/group-anagrams) — canonical forms for string comparison
+- [Two Sum](/docs/arrays/two-sum) — hash maps recording relationships as you scan

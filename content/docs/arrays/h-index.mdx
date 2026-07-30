@@ -1,0 +1,247 @@
+---
+title: H-Index
+description: Compute a researcher's h-index by sorting descending, or in linear time with counting
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Sorting / Counting Sort"
+  tags={["Array", "Sorting", "Counting Sort"]}
+  leetcode="https://leetcode.com/problems/h-index/"
+  problemNumber={274}
+/>
+
+## Problem Statement
+
+Given an array `citations` where `citations[i]` is the number of citations received by the researcher's `i`-th paper, return their **h-index**.
+
+The h-index is the maximum value `h` such that the researcher has published at least `h` papers that have each been cited at least `h` times.
+
+```text
+Input:  citations = [3, 0, 6, 1, 5]
+Output: 3
+Why:    3 papers (6, 5, 3) each have ≥ 3 citations.
+        There are not 4 papers with ≥ 4 citations, so h = 3.
+
+Input:  citations = [1, 3, 1]
+Output: 1
+```
+
+## Intuition
+
+The definition has two conditions locked together — *at least `h` papers* **and** *each with at least `h` citations* — which makes it hard to check in the original, unordered array.
+
+<Callout type="info" title="The key insight">
+**Sort descending.** After sorting, "the top `h` papers" is simply the first `h` entries, and the weakest of them is `citations[h-1]`. So the whole condition collapses to a single comparison per position:
+
+`citations[i] >= i + 1`
+
+Read it as: *"the paper at 0-based index `i` is the `(i+1)`-th best, and it has at least `i + 1` citations — so `h = i + 1` is achievable."*
+</Callout>
+
+Because the array is sorted descending, once this test fails it fails for every larger `i` — citations only go down while the required count goes up. The answer is the last `i + 1` for which the test passed.
+
+### Watch it run
+
+<ArrayViz
+  title="citations = [3, 0, 6, 1, 5] → sorted descending [6, 5, 3, 1, 0]"
+  intervalMs={1500}
+  frames={[
+    {
+      values: [3, 0, 6, 1, 5],
+      note: "Original order. The h-index is invisible here — you cannot tell which papers are 'the top h'.",
+    },
+    {
+      values: [6, 5, 3, 1, 0],
+      states: ["idle", "idle", "idle", "idle", "idle"],
+      note: "Sorted descending. Now the first i+1 entries are exactly the i+1 best papers.",
+    },
+    {
+      values: [6, 5, 3, 1, 0],
+      states: ["match", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i=0" }],
+      vars: { need: 1, has: 6, h: 1 },
+      note: "i = 0: 1 paper needs ≥ 1 citation. 6 ≥ 1 ✓ → h can be 1.",
+    },
+    {
+      values: [6, 5, 3, 1, 0],
+      states: ["match", "match", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "i=1" }],
+      vars: { need: 2, has: 5, h: 2 },
+      note: "i = 1: 2 papers need ≥ 2 citations each. The weaker one has 5 ≥ 2 ✓ → h can be 2.",
+    },
+    {
+      values: [6, 5, 3, 1, 0],
+      states: ["match", "match", "match", "idle", "idle"],
+      pointers: [{ index: 2, label: "i=2" }],
+      vars: { need: 3, has: 3, h: 3 },
+      note: "i = 2: 3 papers need ≥ 3 each. The weakest has exactly 3 ✓ → h can be 3.",
+    },
+    {
+      values: [6, 5, 3, 1, 0],
+      states: ["match", "match", "match", "discard", "discard"],
+      pointers: [{ index: 3, label: "i=3" }],
+      vars: { need: 4, has: 1, h: 3 },
+      note: "i = 3: 4 papers would need ≥ 4 each, but this one has only 1 ✗. Everything after is worse — stop. h = 3.",
+    },
+  ]}
+  caption="Sorting turns a two-part condition into one comparison per index."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Sort the citations in descending order
+</Step>
+
+<Step>
+### Scan left to right
+
+At index `i`, check `citations[i] >= i + 1`.
+</Step>
+
+<Step>
+### Stop at the first failure
+
+The count of positions that passed is the h-index. Returning `i` at the first failure gives exactly that count.
+</Step>
+
+<Step>
+### If every position passes
+
+Then `h = n` — every paper has at least `n` citations.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def h_index(citations: list[int]) -> int:
+    """Maximum h such that h papers each have at least h citations."""
+    citations.sort(reverse=True)
+
+    for i, count in enumerate(citations):
+        if count < i + 1:
+            return i  # i papers qualified before this one failed
+
+    return len(citations)  # every paper qualified
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function hIndex(citations: number[]): number {
+  citations.sort((a, b) => b - a); // descending — comparator is required
+
+  for (let i = 0; i < citations.length; i++) {
+    if (citations[i] < i + 1) {
+      return i; // i papers qualified before this one failed
+    }
+  }
+
+  return citations.length; // every paper qualified
+}
+```
+
+</Tab>
+</CodeTabs>
+
+### The linear-time version
+
+Sorting costs `O(n log n)`, but there is a bound worth exploiting.
+
+<Callout type="info" title="The h-index can never exceed the number of papers">
+You cannot have 10 papers with ≥ 10 citations if you only published 5. So `h ≤ n`, and any citation count above `n` may as well be treated as exactly `n` — the extra citations cannot raise `h`.
+
+That bounds the interesting range to `0 … n`, which means counting sort applies.
+</Callout>
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def h_index_counting(citations: list[int]) -> int:
+    """O(n) time using counting sort over the bounded range 0..n."""
+    n = len(citations)
+    buckets = [0] * (n + 1)
+
+    for count in citations:
+        buckets[min(count, n)] += 1  # anything above n is capped at n
+
+    papers = 0
+    for h in range(n, -1, -1):
+        papers += buckets[h]      # papers with at least h citations
+        if papers >= h:
+            return h
+
+    return 0
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function hIndexCounting(citations: number[]): number {
+  const n = citations.length;
+  const buckets = new Array<number>(n + 1).fill(0);
+
+  for (const count of citations) {
+    buckets[Math.min(count, n)] += 1; // anything above n is capped at n
+  }
+
+  let papers = 0;
+  for (let h = n; h >= 0; h--) {
+    papers += buckets[h]; // papers with at least h citations
+    if (papers >= h) return h;
+  }
+
+  return 0;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+Walking `h` downward accumulates *papers with at least `h` citations*. The first `h` where that running total reaches `h` is the answer, since larger values of `h` were already rejected.
+
+## Complexity Analysis
+
+<Complexity time="O(n log n)" space="O(1)" />
+
+- **Sorting version** — `O(n log n)` time dominated by the sort, `O(1)` extra space (it sorts in place).
+- **Counting version** — `O(n)` time and `O(n)` space for the buckets. The classic trade.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="All zeros, e.g. [0, 0, 0]">
+The very first check fails (`0 < 1`), so `0` is returned. A researcher with no citations has an h-index of `0`.
+</Accordion>
+
+<Accordion title="All papers heavily cited, e.g. [100, 100, 100]">
+Every check passes, the loop finishes, and `n = 3` is returned. The h-index is capped by the paper count, not the citation count.
+</Accordion>
+
+<Accordion title="A single paper, e.g. [5] or [0]">
+`[5]` → the check `5 >= 1` passes → `h = 1`. `[0]` → `0 < 1` fails → `h = 0`.
+</Accordion>
+
+<Accordion title="Does sorting mutate the caller's array?">
+Yes, in both languages. If the original order matters, sort a copy: `sorted(citations, reverse=True)` in Python, `[...citations].sort(...)` in TypeScript. That makes the space `O(n)`.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Sort the People](/docs/arrays/sort-the-people) — sorting to reveal an otherwise hidden order
+- [Top K Frequent Elements](/docs/arrays/top-k-frequent-elements) — the same "bounded values become array indices" trick
+- [Binary Search](/docs/searching/binary-search) — H-Index II solves the pre-sorted variant in `O(log n)`

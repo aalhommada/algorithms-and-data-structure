@@ -1,0 +1,266 @@
+---
+title: Insert Delete GetRandom O(1)
+description: Combine an array and a hash map so insert, remove and random selection are all constant time
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Array + Hash Map"
+  tags={["Array", "Hash Table", "Math", "Design", "Randomized"]}
+  leetcode="https://leetcode.com/problems/insert-delete-getrandom-o1/"
+  problemNumber={380}
+/>
+
+## Problem Statement
+
+Design a data structure supporting three operations in **average `O(1)` time**:
+
+- `insert(val)` — add `val` if not present; return whether it was added
+- `remove(val)` — remove `val` if present; return whether it was removed
+- `getRandom()` — return a random element, each with **equal probability**
+
+```text
+insert(1)    → true   set: {1}
+remove(2)    → false  (not present)
+insert(2)    → true   set: {1, 2}
+getRandom()  → 1 or 2, each with probability 1/2
+remove(1)    → true   set: {2}
+getRandom()  → 2
+```
+
+## Intuition
+
+Neither obvious structure can do all three.
+
+<Callout type="warn" title="Why one structure is not enough">
+**A hash set** gives `O(1)` insert and remove — but no random access. Picking a uniformly random element requires iterating to a random position, which is `O(n)`.
+
+**An array** gives `O(1)` random access via `array[randint(0, n-1)]` and `O(1)` append — but removing a value means finding it (`O(n)`) and then shifting everything after it (`O(n)`).
+</Callout>
+
+<Callout type="info" title="The key insight — use both, and fix removal with a swap">
+Keep an **array** of the values (for random access) and a **hash map** from value to its index in that array (to locate it instantly).
+
+The remaining problem is that deleting from the middle of an array is `O(n)`. The fix:
+
+**Swap the doomed element with the last element, then pop the last.**
+
+Removing from the *end* of an array is `O(1)`, and order does not matter because `getRandom` treats all positions equally.
+</Callout>
+
+### The swap-with-last trick
+
+```text
+array: [10, 20, 30, 40]        map: {10:0, 20:1, 30:2, 40:3}
+remove(20)  →  index 1
+
+Step 1: move the last element into the hole
+array: [10, 40, 30, 40]        map: {10:0, 40:1, 30:2}   ← 40's index updated
+
+Step 2: pop the now-duplicated tail
+array: [10, 40, 30]            map: {10:0, 40:1, 30:2}
+```
+
+Two writes and a pop. Nothing shifts.
+
+<Callout type="warn" title="The step everyone forgets">
+After moving the last element into the hole, its entry in the map still points at the old index. **Update it before popping** or every later operation on that value corrupts the structure.
+</Callout>
+
+### Watch it run
+
+<HashMapViz
+  title="remove(20) from [10, 20, 30, 40]"
+  label="value → index"
+  intervalMs={1700}
+  frames={[
+    {
+      scan: { values: [10, 20, 30, 40], cursor: 1 },
+      entries: [
+        { key: 10, value: 0 },
+        { key: 20, value: 1, state: "compare" },
+        { key: 30, value: 2 },
+        { key: 40, value: 3 },
+      ],
+      note: "The map says 20 lives at index 1. Found in O(1) — no scanning.",
+    },
+    {
+      scan: { values: [10, 40, 30, 40], cursor: 1 },
+      entries: [
+        { key: 10, value: 0 },
+        { key: 40, value: 1, state: "active" },
+        { key: 30, value: 2 },
+      ],
+      note: "Copy the last element (40) into index 1, drop 20 from the map, and update 40's index to 1.",
+    },
+    {
+      scan: { values: [10, 40, 30], cursor: -1 },
+      entries: [
+        { key: 10, value: 0 },
+        { key: 40, value: 1, state: "match" },
+        { key: 30, value: 2 },
+      ],
+      note: "Pop the duplicated tail. The array is compact, the map is consistent, and nothing shifted.",
+    },
+  ]}
+  caption="Order is irrelevant, so removal can be reduced to a swap plus a pop."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Maintain two structures
+
+`values` — a list of the elements. `index_of` — a map from value to its position in `values`.
+</Step>
+
+<Step>
+### `insert(val)`
+
+If `val` is already a key, return `false`. Otherwise append it and record `index_of[val] = len(values) - 1`.
+</Step>
+
+<Step>
+### `remove(val)`
+
+If absent, return `false`. Otherwise: look up its index, copy the last value into that slot, update that value's index in the map, pop the array, and delete `val` from the map.
+</Step>
+
+<Step>
+### `getRandom()`
+
+Return `values[random index]`. Because the array is always compact, every element has probability exactly `1/n`.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+import random
+
+
+class RandomizedSet:
+    """Insert, remove and uniform random selection, all in average O(1)."""
+
+    def __init__(self) -> None:
+        self._values: list[int] = []          # compact array for random access
+        self._index_of: dict[int, int] = {}   # value -> its index in _values
+
+    def insert(self, val: int) -> bool:
+        if val in self._index_of:
+            return False
+
+        self._index_of[val] = len(self._values)
+        self._values.append(val)
+        return True
+
+    def remove(self, val: int) -> bool:
+        if val not in self._index_of:
+            return False
+
+        # Move the last element into the hole left by val.
+        hole = self._index_of[val]
+        last = self._values[-1]
+
+        self._values[hole] = last
+        self._index_of[last] = hole   # critical: keep the map in sync
+
+        self._values.pop()
+        del self._index_of[val]
+        return True
+
+    def getRandom(self) -> int:
+        return random.choice(self._values)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class RandomizedSet {
+  private values: number[] = []; // compact array for random access
+  private indexOf = new Map<number, number>(); // value -> its index in values
+
+  insert(val: number): boolean {
+    if (this.indexOf.has(val)) return false;
+
+    this.indexOf.set(val, this.values.length);
+    this.values.push(val);
+    return true;
+  }
+
+  remove(val: number): boolean {
+    const hole = this.indexOf.get(val);
+    if (hole === undefined) return false;
+
+    // Move the last element into the hole left by val.
+    const last = this.values[this.values.length - 1];
+
+    this.values[hole] = last;
+    this.indexOf.set(last, hole); // critical: keep the map in sync
+
+    this.values.pop();
+    this.indexOf.delete(val);
+    return true;
+  }
+
+  getRandom(): number {
+    const i = Math.floor(Math.random() * this.values.length);
+    return this.values[i];
+  }
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why removing the last element still works">
+When `val` *is* the last element, `hole` equals the final index and `last` equals `val` itself. The code writes `val` back over itself, sets `index_of[val] = hole` (no change), then pops the array and deletes the map entry.
+
+The redundant write is harmless, and the operation is still correct — which is why no special case is needed. Order matters though: deleting from the map **before** the swap would remove the entry that the swap then re-adds, leaving a stale key.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(1)" space="O(n)" />
+
+- **Time** — every operation is a fixed number of hash lookups and array accesses. "Average" `O(1)` because hash collisions are theoretically possible; in practice it is constant.
+- **Space** — `O(n)` for the array plus `O(n)` for the map. Doubling memory to make all three operations constant is exactly the trade the problem is about.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Removing the last element in the array">
+Handled naturally by the code — see the callout above. Worth walking through in an interview, since it looks like it should need a special case.
+</Accordion>
+
+<Accordion title="getRandom on an empty set">
+LeetCode guarantees at least one element exists. Defensively, Python's `random.choice([])` raises `IndexError` and the TypeScript version returns `undefined` — both worth guarding in real code.
+</Accordion>
+
+<Accordion title="Inserting a duplicate">
+Detected by the map lookup and rejected with `false`. The array never holds duplicates, which is what keeps `getRandom` uniform.
+</Accordion>
+
+<Accordion title="Removing a value that was never inserted">
+The map lookup misses and `false` is returned before anything is touched.
+</Accordion>
+
+<Accordion title="What if duplicates had to be supported?">
+That is LeetCode 381, Insert Delete GetRandom O(1) – Duplicates allowed. The map's value becomes a *set of indices* rather than a single index, and the swap has to update the right one. Same idea, considerably more bookkeeping.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Min Stack](/docs/stacks-queues/min-stack) — another design problem where extra storage buys `O(1)` queries
+- [Two Sum](/docs/arrays/two-sum) — hash maps replacing search with lookup
+- [Contains Duplicate](/docs/arrays/contains-duplicate) — set membership in `O(1)`

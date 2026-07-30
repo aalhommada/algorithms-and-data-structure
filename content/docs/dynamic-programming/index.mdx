@@ -1,0 +1,80 @@
+---
+title: Dynamic Programming
+description: Recognising overlapping subproblems, and turning exponential recursion into linear time
+---
+
+Dynamic programming has a reputation for being hard, but the core idea is small: **compute each subproblem once and remember the answer.**
+
+Everything else — memoization, tabulation, space optimisation — is bookkeeping around that one sentence.
+
+## When Does DP Apply?
+
+Two properties must both hold.
+
+<Callout type="info" title="1. Optimal substructure">
+The answer for a problem can be built from answers to smaller versions of the same problem.
+
+*"The number of ways to climb 5 stairs = ways to climb 4 + ways to climb 3."*
+</Callout>
+
+<Callout type="info" title="2. Overlapping subproblems">
+The same smaller problems come up again and again.
+
+This is what separates DP from divide-and-conquer. Merge sort has optimal substructure, but its halves never overlap — caching would buy nothing. In [Climbing Stairs](/docs/dynamic-programming/climbing-stairs), `f(3)` is recomputed exponentially many times without a cache.
+</Callout>
+
+## The Four Stages
+
+Most DP solutions pass through these, and you can stop at whichever is good enough.
+
+### 1. Naive recursion — `O(2ⁿ)`
+
+Write the recurrence directly. Correct, unusably slow, and the right place to start because it forces you to state the recurrence precisely.
+
+### 2. Memoization (top-down) — `O(n)`
+
+Keep the recursion, add a cache. In Python, `@lru_cache` does it in one line. The shape of your thinking stays intact.
+
+### 3. Tabulation (bottom-up) — `O(n)`
+
+Replace recursion with a loop that fills a table from the base cases upward. No stack-overflow risk, and usually a constant-factor faster.
+
+### 4. Space optimisation — often `O(1)`
+
+If the recurrence only looks back a fixed number of steps, the table collapses into that many variables.
+
+```text
+Climbing Stairs, n = 6:
+
+  Naive recursion:  ~25 calls, doubling with n
+  Memoized:         6 computations, O(n) space
+  Tabulated:        6 iterations, O(n) space
+  Two variables:    6 iterations, O(1) space   ← f(n) needs only f(n-1), f(n-2)
+```
+
+## Recognising DP in the Wild
+
+| The problem asks for… | Likely DP |
+|---|---|
+| "how many ways to…" | counting DP |
+| "minimum / maximum cost to…" | optimisation DP |
+| "can you reach / partition…" | boolean DP |
+| "longest / shortest subsequence" | sequence DP |
+
+<Callout type="warn" title="Not every DP-shaped problem needs DP">
+[Jump Game](/docs/greedy/jump-game) has a textbook `O(n²)` DP solution — and an `O(n)` greedy one. [Best Time to Buy and Sell Stock](/docs/arrays/best-time-to-buy-and-sell-stock) is DP with the table collapsed to two variables, at which point calling it DP is optional.
+
+When a greedy choice is provably safe, take it. DP is the fallback for when it is not.
+</Callout>
+
+## All Problems
+
+| Problem | Difficulty | Recurrence |
+|---|---|---|
+| [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) | Easy | `f(n) = f(n-1) + f(n-2)` |
+
+## Related Elsewhere
+
+- [Best Time to Buy and Sell Stock](/docs/arrays/best-time-to-buy-and-sell-stock) — DP compressed into a running minimum
+- [Jump Game](/docs/greedy/jump-game) — where greedy beats the DP formulation
+- [Trapping Rain Water](/docs/arrays/trapping-rain-water) — has a classic prefix/suffix DP solution alongside the two-pointer one

@@ -1,0 +1,195 @@
+---
+title: Final Value of Variable After Performing Operations
+description: Apply a list of increment and decrement operations by reading a single distinguishing character
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Simulation"
+  tags={["Array", "String", "Simulation"]}
+  leetcode="https://leetcode.com/problems/final-value-of-variable-after-performing-operations/"
+  problemNumber={2011}
+/>
+
+## Problem Statement
+
+You start with a variable `X = 0` and are given an array of operation strings. Each string is one of:
+
+| Operation | Effect |
+|---|---|
+| `"++X"` | increment, then read |
+| `"X++"` | read, then increment |
+| `"--X"` | decrement, then read |
+| `"X--"` | read, then decrement |
+
+Return the value of `X` after applying every operation in order.
+
+```text
+Input:  operations = ["--X", "X++", "X++"]
+Output: 1
+Why:    0 → -1 → 0 → 1
+
+Input:  operations = ["++X", "++X", "X++"]
+Output: 3
+
+Input:  operations = ["X++", "++X", "--X", "X--"]
+Output: 0
+```
+
+## Intuition
+
+The four forms look like they need four cases, but two observations collapse them.
+
+<Callout type="info" title="The key insight">
+1. **Prefix vs. postfix is a red herring.** In real C-like languages `++X` and `X++` differ in what the *expression* evaluates to. Here the result is never used — only the final value of `X` matters — so both simply add `1`.
+
+2. **Every string contains `X` and two identical symbols.** So one character is enough to identify the operation. `operations[i][1]` — the middle character — is `+` for both increment forms and `-` for both decrement forms.
+</Callout>
+
+```text
+"++X"     "X++"     "--X"     "X--"
+  ↑         ↑         ↑         ↑
+index 1   index 1   index 1   index 1
+  '+'       '+'       '-'       '-'
+```
+
+The middle character is the single reliable discriminator: index `0` and index `2` vary between the forms, index `1` never does.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start `X` at 0
+</Step>
+
+<Step>
+### For each operation, look at its middle character
+
+`'+'` → `X += 1`. `'-'` → `X -= 1`.
+</Step>
+
+<Step>
+### Return `X`
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title='operations = ["--X", "X++", "X++"]'
+  showIndices={false}
+  frames={[
+    {
+      values: ["--X", "X++", "X++"],
+      states: ["active", "idle", "idle"],
+      vars: { X: -1 },
+      note: "Middle character is '-' → decrement. X goes from 0 to -1.",
+    },
+    {
+      values: ["--X", "X++", "X++"],
+      states: ["done", "active", "idle"],
+      vars: { X: 0 },
+      note: "Middle character is '+' → increment. X goes from -1 to 0.",
+    },
+    {
+      values: ["--X", "X++", "X++"],
+      states: ["done", "done", "match"],
+      vars: { X: 1 },
+      note: "Middle character is '+' → increment. Final answer: X = 1.",
+    },
+  ]}
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def final_value_after_operations(operations: list[str]) -> int:
+    """Apply ++/-- operations to X, which starts at 0."""
+    x = 0
+
+    for op in operations:
+        # op[1] is '+' for "++X" and "X++", '-' for "--X" and "X--".
+        if op[1] == "+":
+            x += 1
+        else:
+            x -= 1
+
+    return x
+```
+
+A compact equivalent — each operation shifts `X` by `+1` or `-1`:
+
+```python
+def final_value_after_operations_short(operations: list[str]) -> int:
+    return sum(1 if op[1] == "+" else -1 for op in operations)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function finalValueAfterOperations(operations: string[]): number {
+  let x = 0;
+
+  for (const op of operations) {
+    // op[1] is '+' for "++X" and "X++", '-' for "--X" and "X--".
+    if (op[1] === '+') {
+      x += 1;
+    } else {
+      x -= 1;
+    }
+  }
+
+  return x;
+}
+```
+
+A compact equivalent:
+
+```typescript
+function finalValueAfterOperationsShort(operations: string[]): number {
+  return operations.reduce((x, op) => x + (op[1] === '+' ? 1 : -1), 0);
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Other characters that work">
+`op.includes('+')` and `op[0] === '+' || op[2] === '+'` are also correct. The middle character is preferred because it is a single fixed index with no scanning and no compound condition — the simplest thing that cannot be wrong.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — one constant-time character test per operation.
+- **Space** — a single integer. Note that `op.includes('+')` would scan up to 3 characters instead of 1 — still `O(1)` per operation, but doing needless work.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty operations list">
+The loop never runs and `X` stays `0` — the correct starting value.
+</Accordion>
+
+<Accordion title="Can X go negative?">
+Yes. `["--X", "--X"]` returns `-2`. There is no floor at zero.
+</Accordion>
+
+<Accordion title="Why doesn't prefix vs. postfix matter here?">
+In C or Java, `y = X++` assigns the old value while `y = ++X` assigns the new one. That distinction only shows up when the expression's *value* is consumed. This problem never consumes it — it asks only for `X` at the end — so both forms are just "+1".
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Running Sum of 1d Array](/docs/arrays/running-sum-of-1d-array) — accumulating across a single pass
+- [Evaluate Reverse Polish Notation](/docs/stacks-queues/evaluate-reverse-polish-notation) — simulation where operand order genuinely does matter

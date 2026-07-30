@@ -1,0 +1,243 @@
+---
+title: Valid Palindrome
+description: Check a string reads the same both ways using two pointers that skip non-alphanumeric characters
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Two Pointers (converging)"
+  tags={["String", "Two Pointers"]}
+  leetcode="https://leetcode.com/problems/valid-palindrome/"
+  problemNumber={125}
+/>
+
+## Problem Statement
+
+A phrase is a **palindrome** if, after converting all uppercase letters to lowercase and removing every non-alphanumeric character, it reads the same forwards and backwards.
+
+Given a string `s`, return `true` if it is a palindrome.
+
+```text
+Input:  "A man, a plan, a canal: Panama"
+Output: true
+Why:    cleans to "amanaplanacanalpanama"
+
+Input:  "race a car"
+Output: false
+Why:    cleans to "raceacar"
+
+Input:  " "
+Output: true
+Why:    cleans to "" — an empty string is a palindrome
+```
+
+## Intuition
+
+The simplest correct approach is two steps: build a cleaned string, then compare it with its reverse. That is easy to write and uses `O(n)` extra space.
+
+<Callout type="info" title="The key insight">
+You do not need the cleaned string. Walk two pointers inward from both ends of the **original** string:
+
+- Skip anything that is not a letter or digit.
+- Compare the two characters case-insensitively.
+- Any mismatch means it is not a palindrome.
+
+The cleaning happens implicitly, as a skip rule, so no second string is ever built.
+</Callout>
+
+### Real-world analogy
+
+Two people checking that a long banner reads the same from both ends. One starts at the left, one at the right, both walking toward the middle. Each ignores punctuation and spaces, calling out only real characters. If every called-out pair matches, the banner is a palindrome.
+
+### Watch it run
+
+<ArrayViz
+  title='"A man, a plan..." — showing the first characters'
+  showIndices={false}
+  intervalMs={1500}
+  frames={[
+    {
+      values: ["A", " ", "m", "a", "n", ",", "…", "m", "a", "n", "a"],
+      states: ["compare", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "compare"],
+      pointers: [
+        { index: 0, label: "L" },
+        { index: 10, label: "R" },
+      ],
+      vars: { left: "'A' → 'a'", right: "'a'" },
+      note: "Both are alphanumeric. Lowercased, 'a' == 'a' — match. Move both inward.",
+    },
+    {
+      values: ["A", " ", "m", "a", "n", ",", "…", "m", "a", "n", "a"],
+      states: ["done", "discard", "compare", "idle", "idle", "idle", "idle", "idle", "idle", "compare", "done"],
+      pointers: [
+        { index: 2, label: "L" },
+        { index: 9, label: "R" },
+      ],
+      vars: { skipped: "' '", left: "'m'", right: "'n'" },
+      note: "The left pointer skipped a space — non-alphanumeric characters are stepped over, not compared.",
+    },
+    {
+      values: ["A", " ", "m", "a", "n", ",", "…", "m", "a", "n", "a"],
+      states: ["done", "discard", "done", "compare", "idle", "discard", "idle", "idle", "compare", "done", "done"],
+      pointers: [
+        { index: 3, label: "L" },
+        { index: 8, label: "R" },
+      ],
+      vars: { left: "'a'", right: "'a'" },
+      note: "Continue matching pair by pair, skipping punctuation on either side as needed.",
+    },
+    {
+      values: ["A", " ", "m", "a", "n", ",", "…", "m", "a", "n", "a"],
+      states: ["match", "discard", "match", "match", "match", "discard", "match", "match", "match", "match", "match"],
+      vars: { result: "true" },
+      note: "The pointers meet without a single mismatch → the string is a palindrome.",
+    },
+  ]}
+  caption="Cleaning becomes a skip rule rather than a separate string."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start `left = 0` and `right = n - 1`
+</Step>
+
+<Step>
+### While `left < right`
+
+Advance `left` past non-alphanumeric characters, and retreat `right` past them.
+</Step>
+
+<Step>
+### Compare, case-insensitively
+
+If they differ, return `false`.
+</Step>
+
+<Step>
+### Move both inward and repeat
+
+If the loop finishes, return `true`.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Guard the skip loops with `left < right`">
+Writing `while not s[left].isalnum():` without the bounds check runs off the end of an all-punctuation string like `",.;"`. Every inner skip loop needs the same `left < right` condition as the outer loop.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def is_palindrome(s: str) -> bool:
+    """True if s reads the same both ways, ignoring case and punctuation."""
+    left, right = 0, len(s) - 1
+
+    while left < right:
+        # Skip anything that is not a letter or digit.
+        while left < right and not s[left].isalnum():
+            left += 1
+        while left < right and not s[right].isalnum():
+            right -= 1
+
+        if s[left].lower() != s[right].lower():
+            return False
+
+        left += 1
+        right -= 1
+
+    return True
+```
+
+The two-step version, if readability matters more than memory:
+
+```python
+def is_palindrome_simple(s: str) -> bool:
+    cleaned = "".join(char.lower() for char in s if char.isalnum())
+    return cleaned == cleaned[::-1]
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function isPalindrome(s: string): boolean {
+  const isAlphanumeric = (char: string): boolean => /[a-z0-9]/i.test(char);
+
+  let left = 0;
+  let right = s.length - 1;
+
+  while (left < right) {
+    // Skip anything that is not a letter or digit.
+    while (left < right && !isAlphanumeric(s[left])) left++;
+    while (left < right && !isAlphanumeric(s[right])) right--;
+
+    if (s[left].toLowerCase() !== s[right].toLowerCase()) {
+      return false;
+    }
+
+    left++;
+    right--;
+  }
+
+  return true;
+}
+```
+
+The two-step version:
+
+```typescript
+function isPalindromeSimple(s: string): boolean {
+  const cleaned = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return cleaned === [...cleaned].reverse().join('');
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="A note on `isalnum` across languages">
+Python's `str.isalnum()` is Unicode-aware — `"é".isalnum()` is `True`. The regex `/[a-z0-9]/i` is ASCII-only.
+
+For this problem the input is guaranteed ASCII, so both work. For real-world text the difference matters, and you would use `\p{L}\p{N}` with the `u` flag in JavaScript.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — each pointer moves monotonically toward the middle, so every character is examined at most once.
+- **Space** — two indices. The two-step version is also `O(n)` time but uses `O(n)` space for the cleaned string and its reverse.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty string or a single character">
+The loop never runs (`left < right` is false) and `true` is returned. Both are palindromes.
+</Accordion>
+
+<Accordion title='Only non-alphanumeric characters, e.g. ".,"'>
+The skip loops advance until `left` meets `right`, then the outer condition fails and `true` is returned. The cleaned string is empty, which is a palindrome.
+</Accordion>
+
+<Accordion title="Digits mixed with letters, e.g. '0P'">
+`'0'` and `'P'` are both alphanumeric and are compared directly. `'0' !== 'p'`, so `false`. This is a well-known test case that catches solutions comparing only letters.
+</Accordion>
+
+<Accordion title="Odd-length palindromes">
+The middle character is never compared — `left < right` becomes false when they meet. Correct, since a character always equals itself.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Longest Palindrome](/docs/strings/longest-palindrome) — building a palindrome from character counts
+- [Palindrome Number](/docs/strings/palindrome-number) — the same test on digits, without converting to a string
+- [Container With Most Water](/docs/arrays/container-with-most-water) — converging two pointers on an array

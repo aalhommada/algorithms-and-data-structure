@@ -1,0 +1,14 @@
+{
+  "title": "Linked Lists",
+  "icon": "Link",
+  "pages": [
+    "index",
+    "---Easy---",
+    "reverse-linked-list",
+    "middle-of-the-linked-list",
+    "merge-two-sorted-lists",
+    "intersection-of-two-linked-lists",
+    "---Medium---",
+    "linked-list-cycle-ii"
+  ]
+}

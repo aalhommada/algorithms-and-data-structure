@@ -1,0 +1,259 @@
+---
+title: Climbing Stairs
+description: Count the ways to climb n stairs — the gentlest introduction to dynamic programming
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Dynamic Programming"
+  tags={["Math", "Dynamic Programming", "Memoization"]}
+  leetcode="https://leetcode.com/problems/climbing-stairs/"
+  problemNumber={70}
+/>
+
+## Problem Statement
+
+You are climbing a staircase with `n` steps. Each time you may climb **1 step or 2 steps**. How many distinct ways can you reach the top?
+
+```text
+Input:  n = 2
+Output: 2
+Ways:   1+1,  2
+
+Input:  n = 3
+Output: 3
+Ways:   1+1+1,  1+2,  2+1
+
+Input:  n = 4
+Output: 5
+Ways:   1+1+1+1, 1+1+2, 1+2+1, 2+1+1, 2+2
+```
+
+## Intuition
+
+Enumerating every path works for `n = 4` and becomes hopeless by `n = 40`. The way in is to think **backwards from the destination**.
+
+<Callout type="info" title="The key insight">
+To be standing on step `n`, your final move was either a 1-step or a 2-step. There is no third option. So:
+
+- You were on step `n - 1` and took 1 step, **or**
+- You were on step `n - 2` and took 2 steps
+
+Those two groups are disjoint (they differ in the last move) and together they cover everything. Therefore:
+
+`ways(n) = ways(n - 1) + ways(n - 2)`
+</Callout>
+
+That is the **Fibonacci recurrence**. With base cases `ways(1) = 1` and `ways(2) = 2`, the sequence runs `1, 2, 3, 5, 8, 13, …`.
+
+### Why the naive recursion is unusable
+
+Writing the recurrence directly recomputes the same values astronomically often:
+
+```text
+                    f(5)
+              ┌───────┴───────┐
+            f(4)             f(3)
+         ┌────┴────┐      ┌────┴────┐
+       f(3)      f(2)   f(2)      f(1)
+    ┌───┴───┐
+  f(2)    f(1)
+```
+
+`f(3)` is computed twice, `f(2)` three times. The tree roughly doubles at each level, giving `O(2ⁿ)` — for `n = 45` that is over a trillion calls.
+
+<Callout type="info" title="This is exactly what dynamic programming fixes">
+The subproblems **overlap**. Compute each one once and reuse the answer:
+
+- **Top-down (memoization)** — keep the recursion, cache results in a dictionary.
+- **Bottom-up (tabulation)** — start from the base cases and build upward in a loop.
+
+Either turns `O(2ⁿ)` into `O(n)`.
+</Callout>
+
+### Watch it run
+
+<ArrayViz
+  title="Building the table bottom-up for n = 6"
+  intervalMs={1400}
+  frames={[
+    {
+      values: [1, 2, "?", "?", "?", "?"],
+      states: ["match", "match", "idle", "idle", "idle", "idle"],
+      showIndices: false,
+      vars: { "step 1": 1, "step 2": 2 },
+      note: "Base cases. One way to reach step 1; two ways to reach step 2 (1+1 or 2).",
+    },
+    {
+      values: [1, 2, 3, "?", "?", "?"],
+      states: ["compare", "compare", "active", "idle", "idle", "idle"],
+      vars: { "step 3": "1 + 2 = 3" },
+      note: "Step 3 = step 2 + step 1 = 2 + 1 = 3.",
+    },
+    {
+      values: [1, 2, 3, 5, "?", "?"],
+      states: ["done", "compare", "compare", "active", "idle", "idle"],
+      vars: { "step 4": "2 + 3 = 5" },
+      note: "Step 4 = step 3 + step 2 = 3 + 2 = 5.",
+    },
+    {
+      values: [1, 2, 3, 5, 8, "?"],
+      states: ["done", "done", "compare", "compare", "active", "idle"],
+      vars: { "step 5": "3 + 5 = 8" },
+      note: "Step 5 = 5 + 3 = 8.",
+    },
+    {
+      values: [1, 2, 3, 5, 8, 13],
+      states: ["done", "done", "done", "compare", "compare", "match"],
+      vars: { "step 6": "5 + 8 = 13", answer: 13 },
+      note: "Step 6 = 8 + 5 = 13. Each entry was computed exactly once.",
+    },
+  ]}
+  caption="Every value depends only on the two before it — so only two need to be kept."
+/>
+
+## Solution
+
+### Bottom-up with two variables
+
+Since `ways(n)` needs only the previous two values, the whole table collapses to two numbers.
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def climb_stairs(n: int) -> int:
+    """Number of distinct ways to climb n stairs taking 1 or 2 at a time."""
+    if n <= 2:
+        return n
+
+    prev, curr = 1, 2   # ways to reach step 1 and step 2
+
+    for _ in range(3, n + 1):
+        prev, curr = curr, prev + curr
+
+    return curr
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function climbStairs(n: number): number {
+  if (n <= 2) return n;
+
+  let prev = 1; // ways to reach step 1
+  let curr = 2; // ways to reach step 2
+
+  for (let step = 3; step <= n; step++) {
+    const next = prev + curr;
+    prev = curr;
+    curr = next;
+  }
+
+  return curr;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+### Top-down with memoization
+
+Closer to how you would first think about the problem, and useful when the recurrence is harder to unroll into a loop.
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from functools import lru_cache
+
+
+def climb_stairs_memo(n: int) -> int:
+    @lru_cache(maxsize=None)
+    def ways(step: int) -> int:
+        if step <= 2:
+            return step
+        return ways(step - 1) + ways(step - 2)
+
+    return ways(n)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function climbStairsMemo(n: number): number {
+  const cache = new Map<number, number>();
+
+  const ways = (step: number): number => {
+    if (step <= 2) return step;
+
+    const cached = cache.get(step);
+    if (cached !== undefined) return cached;
+
+    const result = ways(step - 1) + ways(step - 2);
+    cache.set(step, result);
+    return result;
+  };
+
+  return ways(n);
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Watch the base cases">
+`ways(1) = 1` and `ways(2) = 2` — **not** the usual Fibonacci `1, 1`. This sequence is Fibonacci shifted by one position. Getting the base cases wrong produces answers that are off by exactly one Fibonacci index, which is easy to miss on small tests.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+| Approach | Time | Space |
+|---|---|---|
+| Naive recursion | `O(2ⁿ)` | `O(n)` |
+| Memoization | `O(n)` | `O(n)` |
+| Tabulation (array) | `O(n)` | `O(n)` |
+| **Two variables** | **`O(n)`** | **`O(1)`** |
+
+The jump from `O(2ⁿ)` to `O(n)` is what dynamic programming buys. Dropping to `O(1)` space is a bonus available whenever a recurrence looks back a fixed number of steps.
+
+## Recognising a DP Problem
+
+Climbing Stairs is the smallest problem that shows both required properties:
+
+1. **Optimal substructure** — the answer for `n` is built from answers for smaller inputs.
+2. **Overlapping subproblems** — the same smaller inputs are needed repeatedly.
+
+Property 2 is what separates DP from plain divide-and-conquer. Merge sort has property 1 but its halves never overlap, so caching would buy nothing.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="n = 1">
+Returns `1` via the guard. One step, one way.
+</Accordion>
+
+<Accordion title="n = 2">
+Returns `2`. Also handled by the guard, since the loop starts at 3.
+</Accordion>
+
+<Accordion title="Large n, e.g. 45">
+The answer is 1,836,311,903 — near the 32-bit signed limit, which is why LeetCode caps `n` at 45. Python handles arbitrary integers, and TypeScript numbers stay exact well past this. The naive recursion, by contrast, would take hours.
+</Accordion>
+
+<Accordion title="What if you could also climb 3 steps?">
+The recurrence becomes `ways(n) = ways(n-1) + ways(n-2) + ways(n-3)` — the Tribonacci sequence. The same structure, one more term, one more variable.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Best Time to Buy and Sell Stock](/docs/arrays/best-time-to-buy-and-sell-stock) — DP whose table also collapses to a couple of variables
+- [Jump Game](/docs/greedy/jump-game) — solvable by DP, but greedy does it in `O(n)` with less thinking
+- [Min Stack](/docs/stacks-queues/min-stack) — carrying computed state forward instead of recomputing

@@ -1,0 +1,182 @@
+---
+title: Sort the People
+description: Reorder names by height by sorting pairs, or by sorting indices with a custom comparator
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Sorting with a Custom Key"
+  tags={["Array", "Hash Table", "String", "Sorting"]}
+  leetcode="https://leetcode.com/problems/sort-the-people/"
+  problemNumber={2418}
+/>
+
+## Problem Statement
+
+You are given an array `names` and an array `heights`, where `names[i]` and `heights[i]` describe the same person. All heights are **distinct**.
+
+Return `names` sorted in **descending order of height**.
+
+```text
+Input:  names   = ["Mary", "John", "Emma"]
+        heights = [180, 165, 170]
+Output: ["Mary", "Emma", "John"]
+Why:    180 > 170 > 165
+
+Input:  names   = ["Alice", "Bob", "Bob"]
+        heights = [155, 185, 150]
+Output: ["Bob", "Alice", "Bob"]
+```
+
+## Intuition
+
+The difficulty is not the sorting — it is that the data lives in **two parallel arrays**. Sorting `heights` alone destroys the link to `names`: after sorting you no longer know which name went with which height.
+
+<Callout type="info" title="The key insight">
+Keep each name glued to its height **before** sorting. Either:
+
+- **Zip them into pairs** and sort the pairs by height, or
+- **Sort the indices** `[0, 1, 2, …]` using height as the comparison key, then read the names in that order.
+
+Both preserve the pairing through the sort. The second uses less memory because it moves integers rather than strings.
+</Callout>
+
+### Real-world analogy
+
+A photo lineup. You do not sort a list of heights on paper and then guess who stands where — you ask the people themselves to arrange by height. Each person carries their name with them as they move.
+
+### Watch it run
+
+<ArrayViz
+  title="Sorting (height, name) pairs descending"
+  showIndices={false}
+  intervalMs={1600}
+  frames={[
+    {
+      values: ["Mary·180", "John·165", "Emma·170"],
+      note: "Start: names and heights are separate but index-aligned. Pair them up so nothing gets lost.",
+    },
+    {
+      values: ["(180,Mary)", "(165,John)", "(170,Emma)"],
+      states: ["compare", "compare", "compare"],
+      note: "Each name now travels with its height. Sorting can move these safely.",
+    },
+    {
+      values: ["(180,Mary)", "(170,Emma)", "(165,John)"],
+      states: ["match", "match", "match"],
+      note: "Sorted descending by the height component.",
+    },
+    {
+      values: ["Mary", "Emma", "John"],
+      states: ["done", "done", "done"],
+      note: "Drop the heights and return just the names.",
+    },
+  ]}
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Combine the two arrays
+
+Zip into `(height, name)` pairs, or build an index array `[0 … n-1]`.
+</Step>
+
+<Step>
+### Sort by height, descending
+
+In Python, `reverse=True`. In TypeScript, a comparator of `(a, b) => b - a`.
+</Step>
+
+<Step>
+### Extract the names in the new order
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def sort_people(names: list[str], heights: list[int]) -> list[str]:
+    """Return names ordered from tallest to shortest."""
+    paired = sorted(zip(heights, names), reverse=True)
+    return [name for _, name in paired]
+```
+
+The index-sorting variant, which never copies the strings:
+
+```python
+def sort_people_by_index(names: list[str], heights: list[int]) -> list[str]:
+    order = sorted(range(len(names)), key=lambda i: heights[i], reverse=True)
+    return [names[i] for i in order]
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function sortPeople(names: string[], heights: number[]): string[] {
+  const paired = names.map((name, i) => ({ name, height: heights[i] }));
+  paired.sort((a, b) => b.height - a.height); // descending
+  return paired.map((person) => person.name);
+}
+```
+
+The index-sorting variant:
+
+```typescript
+function sortPeopleByIndex(names: string[], heights: number[]): string[] {
+  const order = names.map((_, i) => i);
+  order.sort((a, b) => heights[b] - heights[a]); // descending
+  return order.map((i) => names[i]);
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Two language-specific traps">
+**Python:** `sorted(zip(heights, names))` puts `heights` first on purpose. Tuples compare element by element, so height is the primary key. Writing `zip(names, heights)` would sort alphabetically by name instead.
+
+**TypeScript:** `heights.sort()` without a comparator sorts **as strings** — `[9, 80, 100]` becomes `[100, 80, 9]`. Numeric sorts always need `(a, b) => a - b` or its reverse.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n log n)" space="O(n)" />
+
+- **Time** — dominated by the sort. Building the pairs is `O(n)`.
+- **Space** — `O(n)` for the pairs or index array plus the output. Sorting itself needs `O(log n)` to `O(n)` auxiliary space depending on the implementation.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title='Duplicate names, e.g. ["Bob", "Alice", "Bob"]'>
+Perfectly fine — names are never used as keys or for comparison. Only heights decide the order, and each `Bob` keeps its own height.
+</Accordion>
+
+<Accordion title="What if heights were not distinct?">
+The problem guarantees distinct heights, so ties never arise. If they could, the Python tuple sort would fall back to comparing names (a defined, deterministic outcome), while the TypeScript comparator returns `0` and relies on `Array.prototype.sort` being stable — which it is in modern engines, so equal heights would keep their input order.
+</Accordion>
+
+<Accordion title="A single person, or an empty array">
+Sorting a zero- or one-element list is a no-op and the input is returned unchanged.
+</Accordion>
+
+<Accordion title="Could this be done without sorting?">
+Yes — the LeetCode constraints cap heights at `10⁵`, so counting sort would give `O(n + maxHeight)`. That only pays off when `n` is much larger than the height range; for `n ≤ 10³` the comparison sort is both faster in practice and far simpler.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [H-Index](/docs/arrays/h-index) — sorting to expose a property that is invisible in the original order
+- [Top K Frequent Elements](/docs/arrays/top-k-frequent-elements) — ordering by a derived key rather than the value itself
+- [Group Anagrams](/docs/arrays/group-anagrams) — sorting used as a canonical form rather than for output order

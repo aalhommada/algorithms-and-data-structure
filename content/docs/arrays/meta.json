@@ -1,0 +1,28 @@
+{
+  "title": "Arrays",
+  "icon": "Binary",
+  "pages": [
+    "index",
+    "---Easy---",
+    "two-sum",
+    "contains-duplicate",
+    "best-time-to-buy-and-sell-stock",
+    "running-sum-of-1d-array",
+    "find-pivot-index",
+    "maximum-average-subarray-i",
+    "merge-sorted-array",
+    "number-of-good-pairs",
+    "minimum-index-sum-of-two-lists",
+    "sort-the-people",
+    "final-value-of-variable-after-performing-operations",
+    "---Medium---",
+    "container-with-most-water",
+    "product-of-array-except-self",
+    "group-anagrams",
+    "top-k-frequent-elements",
+    "h-index",
+    "remove-duplicates-from-sorted-array-ii",
+    "---Hard---",
+    "trapping-rain-water"
+  ]
+}

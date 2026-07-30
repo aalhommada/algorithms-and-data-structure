@@ -1,0 +1,315 @@
+---
+title: Is Subsequence
+description: Check whether one string can be formed by deleting characters from another, with two pointers
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Two Pointers (same direction)"
+  tags={["String", "Two Pointers", "Dynamic Programming"]}
+  leetcode="https://leetcode.com/problems/is-subsequence/"
+  problemNumber={392}
+/>
+
+## Problem Statement
+
+Given two strings `s` and `t`, return `true` if `s` is a **subsequence** of `t`.
+
+A subsequence is formed by deleting zero or more characters from a string **without changing the order** of the remaining ones.
+
+```text
+Input:  s = "abc", t = "ahbgdc"
+Output: true
+Why:    a h b g d c
+        ↑   ↑     ↑
+
+Input:  s = "axc", t = "ahbgdc"
+Output: false
+Why:    'a' and 'c' appear, but there is no 'x'
+```
+
+<Callout type="info" title="Subsequence vs. substring">
+A **substring** is contiguous: `"bgd"` is a substring of `"ahbgdc"`.
+
+A **subsequence** need not be: `"abc"` is a subsequence of `"ahbgdc"` but not a substring. Order must be preserved in both, but only substrings require adjacency.
+</Callout>
+
+## Intuition
+
+<Callout type="info" title="The key insight">
+Walk `t` once with a pointer into `s`. Whenever the current character of `t` matches the character `s` is waiting for, advance `s`'s pointer. Otherwise just move on through `t`.
+
+If `s`'s pointer reaches the end, every character was found in order → `true`.
+</Callout>
+
+The greedy part is subtle but important: **always match at the earliest opportunity**. If `s[i]` can be matched now, matching it now is never worse than waiting for a later occurrence — an earlier match leaves strictly more of `t` available for the remaining characters.
+
+### Real-world analogy
+
+Proofreading a long document for a checklist of words that must appear in order. You read the document once, top to bottom, ticking items off as you encounter them. You never go back — and you tick an item the first time you see it, because saving it for later can only cost you.
+
+### Watch it run
+
+<ArrayViz
+  title='s = "abc", t = "ahbgdc"'
+  showIndices={false}
+  intervalMs={1400}
+  frames={[
+    {
+      values: ["a", "h", "b", "g", "d", "c"],
+      states: ["match", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "t" }],
+      vars: { looking_for: "a", matched: "a" },
+      note: "t[0] = 'a' matches what s needs → advance both pointers.",
+    },
+    {
+      values: ["a", "h", "b", "g", "d", "c"],
+      states: ["done", "discard", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "t" }],
+      vars: { looking_for: "b", matched: "a" },
+      note: "t[1] = 'h' does not match 'b' → advance only t. Non-matches are simply skipped.",
+    },
+    {
+      values: ["a", "h", "b", "g", "d", "c"],
+      states: ["done", "discard", "match", "idle", "idle", "idle"],
+      pointers: [{ index: 2, label: "t" }],
+      vars: { looking_for: "c", matched: "ab" },
+      note: "t[2] = 'b' matches → advance both. Now looking for 'c'.",
+    },
+    {
+      values: ["a", "h", "b", "g", "d", "c"],
+      states: ["done", "discard", "done", "discard", "discard", "idle"],
+      pointers: [{ index: 4, label: "t" }],
+      vars: { looking_for: "c", matched: "ab" },
+      note: "'g' and 'd' are skipped — they are not what s is waiting for.",
+    },
+    {
+      values: ["a", "h", "b", "g", "d", "c"],
+      states: ["match", "discard", "match", "discard", "discard", "match"],
+      pointers: [{ index: 5, label: "t" }],
+      vars: { matched: "abc", result: "true" },
+      note: "t[5] = 'c' matches. The s pointer has consumed all of s → true.",
+    },
+  ]}
+  caption="One pointer walks t continuously; the other advances only on a match."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start both pointers at 0
+</Step>
+
+<Step>
+### Walk `t`
+
+If `s[i] == t[j]`, advance `i`. Always advance `j`.
+</Step>
+
+<Step>
+### Return whether `i` reached the end of `s`
+
+If `t` runs out first with characters of `s` unmatched, the answer is `false`.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def is_subsequence(s: str, t: str) -> bool:
+    """True if s can be formed by deleting characters from t."""
+    i = 0   # index into s — the character we are looking for
+
+    for char in t:
+        if i < len(s) and s[i] == char:
+            i += 1
+
+    return i == len(s)
+```
+
+An explicit two-pointer form:
+
+```python
+def is_subsequence_two_pointers(s: str, t: str) -> bool:
+    i = j = 0
+
+    while i < len(s) and j < len(t):
+        if s[i] == t[j]:
+            i += 1
+        j += 1
+
+    return i == len(s)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function isSubsequence(s: string, t: string): boolean {
+  let i = 0; // index into s — the character we are looking for
+
+  for (const char of t) {
+    if (i < s.length && s[i] === char) {
+      i++;
+    }
+  }
+
+  return i === s.length;
+}
+```
+
+An explicit two-pointer form:
+
+```typescript
+function isSubsequenceTwoPointers(s: string, t: string): boolean {
+  let i = 0;
+  let j = 0;
+
+  while (i < s.length && j < t.length) {
+    if (s[i] === t[j]) i++;
+    j++;
+  }
+
+  return i === s.length;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## The Follow-Up That Changes the Answer
+
+LeetCode adds: *what if there are billions of strings `s₁, s₂, …` to check against the same `t`?*
+
+The two-pointer solution costs `O(|t|)` per query, so a billion queries means a billion full scans of `t`.
+
+<Callout type="info" title="Preprocess t into a position index">
+Build, once, a map from each character to the sorted list of positions where it appears in `t`:
+
+```text
+t = "ahbgdc"
+{a: [0], h: [1], b: [2], g: [3], d: [4], c: [5]}
+```
+
+Then for each `s`, track the last matched position and binary-search that character's list for the smallest position greater than it. Each query becomes `O(|s| log |t|)` instead of `O(|t|)`.
+</Callout>
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from bisect import bisect_right
+from collections import defaultdict
+
+
+class SubsequenceChecker:
+    """Preprocess t once, then answer many is_subsequence queries quickly."""
+
+    def __init__(self, t: str) -> None:
+        self._positions: defaultdict[str, list[int]] = defaultdict(list)
+        for index, char in enumerate(t):
+            self._positions[char].append(index)
+
+    def check(self, s: str) -> bool:
+        prev = -1
+        for char in s:
+            spots = self._positions.get(char)
+            if not spots:
+                return False
+            # First position strictly greater than prev.
+            k = bisect_right(spots, prev)
+            if k == len(spots):
+                return False
+            prev = spots[k]
+        return True
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class SubsequenceChecker {
+  private positions = new Map<string, number[]>();
+
+  constructor(t: string) {
+    for (let i = 0; i < t.length; i++) {
+      const list = this.positions.get(t[i]);
+      if (list) list.push(i);
+      else this.positions.set(t[i], [i]);
+    }
+  }
+
+  check(s: string): boolean {
+    let prev = -1;
+
+    for (const char of s) {
+      const spots = this.positions.get(char);
+      if (spots === undefined) return false;
+
+      // Binary search for the first position strictly greater than prev.
+      let lo = 0;
+      let hi = spots.length;
+      while (lo < hi) {
+        const mid = lo + Math.floor((hi - lo) / 2);
+        if (spots[mid] <= prev) lo = mid + 1;
+        else hi = mid;
+      }
+
+      if (lo === spots.length) return false;
+      prev = spots[lo];
+    }
+
+    return true;
+  }
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n + m)" space="O(1)" />
+
+- **Time** — one pass over `t`, with `n = |s|` and `m = |t|`. Effectively `O(m)`, since the pointer into `s` never outpaces it.
+- **Space** — two indices.
+
+The preprocessing variant is `O(m)` setup and `O(m)` space, then `O(n log m)` per query — the right trade when queries are numerous.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="s is empty">
+The loop never advances `i`, and `0 == 0` is true. The empty string is a subsequence of anything.
+</Accordion>
+
+<Accordion title="t is empty but s is not">
+The loop over `t` never runs, `i` stays `0`, and `0 != len(s)` → `false`.
+</Accordion>
+
+<Accordion title="s is longer than t">
+`t` runs out before `s` is consumed, so `false`. Adding an early `if len(s) > len(t): return False` is a cheap optimisation.
+</Accordion>
+
+<Accordion title="s equals t">
+Every character matches in order and `i` reaches the end. Returns `true` — a string is a subsequence of itself.
+</Accordion>
+
+<Accordion title="Repeated characters, e.g. s = 'aa', t = 'aba'">
+The first `a` matches at index 0, the second at index 2. Returns `true`. The pointer into `s` only advances on a match, so each character is matched separately.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Find the Index of the First Occurrence in a String](/docs/strings/find-the-index-of-the-first-occurrence-in-a-string) — the substring version, which requires adjacency
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — two pointers advancing at independent rates
+- [Binary Search](/docs/searching/binary-search) — the tool behind the follow-up optimisation

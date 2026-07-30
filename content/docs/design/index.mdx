@@ -1,0 +1,57 @@
+---
+title: Design
+description: Building data structures with specific complexity guarantees, by combining simpler ones
+---
+
+Design problems give you an interface and a performance target — *"support these four operations in `O(1)`"* — and ask you to build something that meets it.
+
+The recurring lesson is that **no single structure does everything**, and the answer is almost always a combination.
+
+## The Core Move: Combine Structures
+
+Each basic structure is fast at some things and slow at others.
+
+| Structure | Fast | Slow |
+|---|---|---|
+| Array | random access, append | insert/delete in the middle, search |
+| Hash map | lookup, insert, delete by key | ordered access, random selection |
+| Linked list | insert/delete given a node | random access, search |
+| Heap | min/max access | arbitrary lookup |
+
+<Callout type="info" title="The design pattern">
+When one structure's weakness is another's strength, keep **both** and maintain them in step.
+
+[Insert Delete GetRandom O(1)](/docs/design/insert-delete-getrandom-o1) is the clearest case: an array for random selection, a hash map for `O(1)` lookup, and a swap-with-last trick so deletion never shifts anything.
+</Callout>
+
+## The Other Move: Store Extra State
+
+Sometimes you do not need a second structure — just more information per entry.
+
+[Min Stack](/docs/stacks-queues/min-stack) stores, alongside each value, the minimum as of that push. `getMin` becomes a single array read, and `pop` automatically restores the previous minimum because it was never overwritten.
+
+The general principle: **if a query would require a scan, precompute its answer at write time.** You pay memory and a little work per write in exchange for constant-time reads.
+
+## What Interviewers Are Testing
+
+<Callout type="warn" title="Invariants are the whole game">
+Design bugs are almost never in the happy path. They are in the moments where two structures drift out of sync.
+
+In Insert Delete GetRandom, the trap is forgetting to update the moved element's index in the map. In Min Stack, it is popping the min-stack at the wrong time. Both leave the structure quietly corrupted rather than crashing.
+
+Before you finish, state your invariants explicitly and check that every operation preserves them.
+</Callout>
+
+Also worth saying out loud: the **trade-off you chose**. Doubling memory to make an operation constant-time is a decision, not an accident, and naming it shows you understand what you built.
+
+## All Problems
+
+| Problem | Difficulty | Combination |
+|---|---|---|
+| [Insert Delete GetRandom O(1)](/docs/design/insert-delete-getrandom-o1) | Medium | Array + hash map |
+
+## Related Elsewhere
+
+- [Min Stack](/docs/stacks-queues/min-stack) — a stack augmented with per-entry state
+- [Top K Frequent Elements](/docs/arrays/top-k-frequent-elements) — choosing between a heap and bucket sort based on constraints
+- [Two Sum](/docs/arrays/two-sum) — the simplest instance of "trade memory for time"

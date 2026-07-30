@@ -1,0 +1,234 @@
+---
+title: Minimum Index Sum of Two Lists
+description: Find the common strings with the smallest combined index using one hash map and a running best
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Hash Map"
+  tags={["Array", "Hash Table", "String"]}
+  leetcode="https://leetcode.com/problems/minimum-index-sum-of-two-lists/"
+  problemNumber={599}
+/>
+
+## Problem Statement
+
+Two friends each give you a list of favourite restaurants, ordered by preference. Find the restaurants they have **in common** with the **least index sum** (`index in list1 + index in list2`).
+
+If several restaurants tie for the least index sum, return all of them, in any order.
+
+```text
+Input:  list1 = ["Shogun", "Tapioca Express", "Burger King", "KFC"]
+        list2 = ["Piatti", "The Grill at Torrey Pines", "Hungry Hunter Steakhouse", "Shogun"]
+Output: ["Shogun"]
+Why:    "Shogun" is the only common name — index 0 + index 3 = 3
+
+Input:  list1 = ["Shogun", "Tapioca Express", "Burger King", "KFC"]
+        list2 = ["KFC", "Shogun", "Burger King"]
+Output: ["Shogun"]
+Why:    "Shogun"     → 0 + 1 = 1   ← smallest
+        "Burger King" → 2 + 2 = 4
+        "KFC"        → 3 + 0 = 3
+```
+
+## Intuition
+
+The naive method compares every name in `list1` with every name in `list2` — `O(n × m)` string comparisons, and string comparison itself is not free.
+
+<Callout type="info" title="The key insight">
+Turn the first list into a **lookup table** — `restaurant → its index in list1`. Then a single walk through `list2` answers everything: for each name, one `O(1)` question tells you whether it is common *and* what its index in `list1` was.
+</Callout>
+
+The second half is a standard "find the minimum, keeping ties" pattern:
+
+- If the current index sum **beats** the best so far → throw away the old results and start a fresh list.
+- If it **equals** the best → append to the results.
+- If it is **worse** → ignore it.
+
+### Real-world analogy
+
+Two people comparing restaurant shortlists. Rather than reading both lists aloud against each other, one person writes their list on a board with rank numbers. The other then reads their own list once, glancing at the board for each name.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Build the index map from `list1`
+
+`{name: index}`. One pass, `O(n)`.
+</Step>
+
+<Step>
+### Walk `list2` with its index `j`
+
+If `name` is in the map, you have a common restaurant with index sum `map[name] + j`.
+</Step>
+
+<Step>
+### Maintain `best` and `results`
+
+Start `best` at infinity. On a strictly smaller sum, reset `results` to `[name]` and update `best`. On an equal sum, append `name`.
+</Step>
+
+<Step>
+### Return `results`
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<HashMapViz
+  title='list1 = ["Shogun", "Tapioca Express", "Burger King", "KFC"] → index map'
+  label="index in list1"
+  intervalMs={1600}
+  frames={[
+    {
+      scan: { values: ["KFC", "Shogun", "Burger King"], cursor: 0 },
+      entries: [
+        { key: "Shogun", value: 0 },
+        { key: "Tapioca Express", value: 1 },
+        { key: "Burger King", value: 2 },
+        { key: "KFC", value: 3, state: "compare" },
+      ],
+      vars: { j: 0, sum: 3, best: 3, results: "[KFC]" },
+      note: "j = 0, 'KFC' is in the map at index 3 → sum = 3 + 0 = 3. First candidate, so best = 3.",
+    },
+    {
+      scan: { values: ["KFC", "Shogun", "Burger King"], cursor: 1 },
+      entries: [
+        { key: "Shogun", value: 0, state: "match" },
+        { key: "Tapioca Express", value: 1 },
+        { key: "Burger King", value: 2 },
+        { key: "KFC", value: 3 },
+      ],
+      vars: { j: 1, sum: 1, best: 1, results: "[Shogun]" },
+      note: "j = 1, 'Shogun' is at index 0 → sum = 0 + 1 = 1. Beats 3 → discard old results, start fresh.",
+    },
+    {
+      scan: { values: ["KFC", "Shogun", "Burger King"], cursor: 2 },
+      entries: [
+        { key: "Shogun", value: 0, state: "match" },
+        { key: "Tapioca Express", value: 1 },
+        { key: "Burger King", value: 2, state: "discard" },
+        { key: "KFC", value: 3 },
+      ],
+      vars: { j: 2, sum: 4, best: 1, results: "[Shogun]" },
+      note: "j = 2, 'Burger King' is at index 2 → sum = 2 + 2 = 4. Worse than 1, ignore. Final answer: [Shogun].",
+    },
+  ]}
+  caption="One map build, one pass — no nested comparison of strings."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def find_restaurant(list1: list[str], list2: list[str]) -> list[str]:
+    """Common restaurants with the smallest index sum (all ties included)."""
+    index_of = {name: i for i, name in enumerate(list1)}
+
+    best = float("inf")
+    results: list[str] = []
+
+    for j, name in enumerate(list2):
+        if name not in index_of:
+            continue
+
+        total = index_of[name] + j
+        if total < best:
+            best = total
+            results = [name]      # strictly better — replace
+        elif total == best:
+            results.append(name)  # tie — keep both
+
+    return results
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function findRestaurant(list1: string[], list2: string[]): string[] {
+  const indexOf = new Map<string, number>();
+  list1.forEach((name, i) => indexOf.set(name, i));
+
+  let best = Infinity;
+  let results: string[] = [];
+
+  for (let j = 0; j < list2.length; j++) {
+    const i = indexOf.get(list2[j]);
+    if (i === undefined) continue;
+
+    const total = i + j;
+    if (total < best) {
+      best = total;
+      results = [list2[j]]; // strictly better — replace
+    } else if (total === best) {
+      results.push(list2[j]); // tie — keep both
+    }
+  }
+
+  return results;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Two mistakes worth naming">
+**Using `if (i)` instead of `if (i === undefined)`** — an index of `0` is falsy in JavaScript, so a restaurant at the top of `list1` would be silently skipped.
+
+**Resetting on `<=` instead of `<`** — that would drop earlier ties instead of collecting them, returning only one of several correct answers.
+</Callout>
+
+### An early-exit refinement
+
+Once you are `j` steps into `list2`, no future match can have an index sum below `j`. So if `best <= j`, nothing further can improve it and you may stop:
+
+```python
+for j, name in enumerate(list2):
+    if j > best:
+        break
+    ...
+```
+
+This does not change the worst-case complexity but often ends the scan very early, since good matches tend to appear near the front.
+
+## Complexity Analysis
+
+<Complexity time="O(n + m)" space="O(n)" />
+
+- **Time** — `O(n)` to build the map plus `O(m)` to scan `list2`, with `O(1)` average lookups. The brute force is `O(n × m)` string comparisons.
+- **Space** — the map holds all `n` names from `list1`.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="No restaurant in common">
+Nothing ever enters `results`, so an empty list is returned. LeetCode guarantees at least one common name, but a robust solution should not crash without one.
+</Accordion>
+
+<Accordion title="Several restaurants tie on index sum">
+All of them are returned, because the `== best` branch appends rather than replaces. Order is not required to match anything specific.
+</Accordion>
+
+<Accordion title="Duplicate names inside one list">
+The dictionary comprehension keeps the **last** index for a repeated name, which could hide a smaller earlier index. LeetCode guarantees distinct names within each list; if that guarantee were removed, you would insert only when the name is not already present.
+</Accordion>
+
+<Accordion title="Which list should become the map?">
+Building the map from the shorter list minimises memory. Correctness is unaffected — the index sum is symmetric.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Two Sum](/docs/arrays/two-sum) — the same "turn a search into a lookup" move
+- [Group Anagrams](/docs/arrays/group-anagrams) — hash maps keyed by strings
+- [Unique Email Addresses](/docs/strings/unique-email-addresses) — sets of normalised strings

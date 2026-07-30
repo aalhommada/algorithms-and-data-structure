@@ -1,0 +1,232 @@
+---
+title: First Bad Version
+description: Binary search over a range of versions to find the first failure with the fewest API calls
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Binary Search (boundary)"
+  tags={["Binary Search", "Interactive"]}
+  leetcode="https://leetcode.com/problems/first-bad-version/"
+  problemNumber={278}
+/>
+
+## Problem Statement
+
+You have `n` versions, numbered `1` to `n`, and one of them introduced a bug. **Every version after a bad one is also bad**, so the sequence looks like `good, good, …, good, bad, bad, …, bad`.
+
+You are given an API `isBadVersion(version)` that returns a boolean. Find the **first** bad version, using as few API calls as possible.
+
+```text
+Input:  n = 5, first bad version = 4
+Output: 4
+Why:    isBadVersion(3) → false
+        isBadVersion(5) → true
+        isBadVersion(4) → true, and 3 is good → 4 is the first bad one
+```
+
+## Intuition
+
+There is no array here — just a range of numbers and a question you can ask about each one. That is the point of this problem: **binary search does not need an array.** It needs a *sorted* structure, and here the sorting is in the answers themselves.
+
+<Callout type="info" title="The key insight">
+"Every version after a bad one is also bad" means the API's answers form a monotonic sequence:
+
+```text
+version:  1      2      3      4      5
+isBad:  false  false  false  true   true
+                              ↑
+                    the boundary you are looking for
+```
+
+Once `false` flips to `true` it never flips back. Any predicate with that shape can be binary-searched, and each call halves the candidate range.
+</Callout>
+
+Checking every version one at a time costs up to `n` API calls. Binary search costs `log₂ n` — for `n = 2³¹ - 1` that is 31 calls instead of two billion.
+
+### Real-world analogy
+
+`git bisect`. You know the code worked 500 commits ago and is broken now. Rather than testing 500 commits, you test the middle one: if it works the bug is in the newer half, if it fails the bug is in the older half. Around 9 tests pin it down.
+
+### Watch it run
+
+<ArrayViz
+  title="n = 5, first bad version = 4"
+  showIndices={false}
+  intervalMs={1700}
+  frames={[
+    {
+      values: ["v1", "v2", "v3", "v4", "v5"],
+      states: ["idle", "idle", "compare", "idle", "idle"],
+      pointers: [
+        { index: 0, label: "lo" },
+        { index: 2, label: "mid" },
+        { index: 4, label: "hi" },
+      ],
+      vars: { "isBad(3)": "false", calls: 1 },
+      note: "Test version 3 → good. So the first bad version is strictly after 3. lo = 4.",
+    },
+    {
+      values: ["v1", "v2", "v3", "v4", "v5"],
+      states: ["discard", "discard", "discard", "compare", "idle"],
+      pointers: [
+        { index: 3, label: "lo" },
+        { index: 3, label: "mid" },
+        { index: 4, label: "hi" },
+      ],
+      vars: { "isBad(4)": "true", calls: 2 },
+      note: "Range is [4, 5]. mid = 4 → bad. Version 4 might itself be the first bad one, so KEEP it: hi = 4.",
+    },
+    {
+      values: ["v1", "v2", "v3", "v4", "v5"],
+      states: ["discard", "discard", "discard", "match", "discard"],
+      pointers: [{ index: 3, label: "lo=hi" }],
+      vars: { answer: 4, calls: 2 },
+      note: "lo and hi have met at 4. That is the answer — found with only 2 API calls.",
+    },
+  ]}
+  caption="A bad mid stays in the range; a good mid is excluded."
+/>
+
+## Approach
+
+This problem needs the **exclusive/lower-bound template**, not the `lo <= hi` one, because it is a boundary search rather than an equality search.
+
+<Steps>
+
+<Step>
+### Set `lo = 1`, `hi = n`
+
+Versions are 1-indexed, and both ends are live candidates.
+</Step>
+
+<Step>
+### Loop while `lo < hi`
+
+Strictly less-than. When they meet, the answer has been pinned down and no further call is needed.
+</Step>
+
+<Step>
+### If `isBadVersion(mid)` is true → `hi = mid`
+
+**Keep `mid`.** It is bad, so it could be the *first* bad one. Writing `hi = mid - 1` would discard the answer.
+</Step>
+
+<Step>
+### If it is false → `lo = mid + 1`
+
+`mid` is good, so it definitely is not the answer and can be excluded.
+</Step>
+
+<Step>
+### Return `lo`
+
+At that point `lo == hi`, and it is the first bad version.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="The asymmetry is the whole problem">
+`hi = mid` but `lo = mid + 1`.
+
+A bad version might be the answer, so it stays. A good version definitely is not, so it goes. Making both symmetric either loses the answer (`hi = mid - 1`) or loops forever (`lo = mid`).
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+# Provided by the platform:
+# def isBadVersion(version: int) -> bool: ...
+
+
+def first_bad_version(n: int) -> int:
+    """Smallest version number for which isBadVersion returns True."""
+    lo, hi = 1, n
+
+    while lo < hi:                  # stop when they meet
+        mid = lo + (hi - lo) // 2
+
+        if isBadVersion(mid):
+            hi = mid                # mid is bad — it may be the first, keep it
+        else:
+            lo = mid + 1            # mid is good — it cannot be the answer
+
+    return lo                       # lo == hi == first bad version
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+// Provided by the platform:
+declare function isBadVersion(version: number): boolean;
+
+function firstBadVersion(n: number): number {
+  let lo = 1;
+  let hi = n;
+
+  while (lo < hi) {
+    // stop when they meet
+    const mid = lo + Math.floor((hi - lo) / 2);
+
+    if (isBadVersion(mid)) {
+      hi = mid; // mid is bad — it may be the first, keep it
+    } else {
+      lo = mid + 1; // mid is good — it cannot be the answer
+    }
+  }
+
+  return lo; // lo === hi === first bad version
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why the loop always terminates">
+When `lo < hi`, the midpoint satisfies `lo <= mid < hi` — floor division always rounds toward `lo`. So `hi = mid` strictly decreases `hi`, and `lo = mid + 1` strictly increases `lo`. The gap shrinks every iteration and the loop cannot spin.
+
+This is also why `mid` must round *down*: with rounding up, `hi = mid` could leave the range unchanged when `hi = lo + 1`.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(log n)" space="O(1)" />
+
+- **Time** — `⌈log₂ n⌉` API calls. For `n = 2,126,753,390` (a real LeetCode test case) that is 31 calls.
+- **Space** — three integers.
+
+<Callout type="warn" title="Overflow in other languages">
+This problem is a well-known overflow trap. In Java or C++ with `n` near `2³¹`, `(lo + hi) / 2` overflows to a negative number and the search breaks. `lo + (hi - lo) / 2` avoids it. Python and TypeScript are immune — Python integers are unbounded, and TypeScript numbers are exact well past `2³¹` — but the habit is worth keeping.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="n = 1">
+`lo = hi = 1`, so the loop never runs and `1` is returned. Correct — the problem guarantees a bad version exists, so with one version it must be the bad one, and zero API calls are used.
+</Accordion>
+
+<Accordion title="The first version is bad">
+Every test returns `true`, so `hi` marches down to `1` while `lo` stays there. Returns `1`.
+</Accordion>
+
+<Accordion title="Only the last version is bad">
+Every test returns `false` until the range narrows to `n` itself. Returns `n`.
+</Accordion>
+
+<Accordion title="What if no version were bad?">
+The problem guarantees one exists. Without that guarantee, the loop would converge on `n` and you would need one final `isBadVersion(lo)` check to distinguish "n is the first bad version" from "there is none".
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Binary Search](/docs/searching/binary-search) — the equality-search template
+- [Search Insert Position](/docs/searching/search-insert-position) — the same boundary search, over an array
+- [Jump Game II](/docs/greedy/jump-game-ii) — another problem where thinking in terms of ranges beats element-by-element work

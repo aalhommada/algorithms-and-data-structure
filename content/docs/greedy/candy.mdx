@@ -1,0 +1,264 @@
+---
+title: Candy
+description: Distribute the fewest candies satisfying neighbour constraints, by sweeping left then right
+---
+
+<ProblemMeta
+  difficulty="hard"
+  pattern="Greedy (two passes)"
+  tags={["Array", "Greedy"]}
+  leetcode="https://leetcode.com/problems/candy/"
+  problemNumber={135}
+/>
+
+## Problem Statement
+
+`n` children stand in a line, each with a rating. Distribute candies subject to two rules:
+
+1. Every child gets **at least one** candy.
+2. A child with a **higher rating than an immediate neighbour** gets **more candies** than that neighbour.
+
+Return the minimum total number of candies.
+
+```text
+Input:  ratings = [1, 0, 2]
+Output: 5
+Why:    candies = [2, 1, 2]
+
+Input:  ratings = [1, 2, 2]
+Output: 4
+Why:    candies = [1, 2, 1]
+        The last two children have EQUAL ratings, so neither
+        needs more than the other.
+```
+
+## Intuition
+
+The trap is trying to satisfy both neighbours at once. Fixing a child relative to the left can break the constraint on the right, and fixing that can break the next one — an endless ripple.
+
+<Callout type="info" title="The key insight — split one hard constraint into two easy ones">
+Rule 2 is really two independent rules:
+
+- **Left rule:** if `ratings[i] > ratings[i-1]` then `candies[i] > candies[i-1]`
+- **Right rule:** if `ratings[i] > ratings[i+1]` then `candies[i] > candies[i+1]`
+
+Each rule alone is trivially satisfiable in a single directional sweep. Then take the **maximum** of the two results per child — a value that satisfies both requirements simultaneously, and is the smallest such value.
+</Callout>
+
+### Why the maximum is both valid and minimal
+
+- **Valid:** the left sweep's requirement for child `i` depends only on `i-1`, and the right sweep's depends only on `i+1`. Taking the max is at least each requirement, so both hold.
+- **Minimal:** each child's count is exactly the larger of two hard lower bounds. Going below either would break a rule, so nothing smaller is possible.
+
+### Real-world analogy
+
+Adjusting a row of picture frames so each is higher than any shorter neighbour. Do one pass left to right fixing every leftward violation, then one pass right to left fixing every rightward violation — keeping whichever height is greater at each spot. Two disciplined sweeps beat endless local nudging.
+
+### Watch it run
+
+<ArrayViz
+  title="Pass 1 — left to right, enforcing the left rule on ratings = [1, 0, 2, 5, 3, 1]"
+  intervalMs={1500}
+  frames={[
+    {
+      values: [1, 1, 1, 1, 1, 1],
+      states: ["match", "idle", "idle", "idle", "idle", "idle"],
+      vars: { ratings: "[1,0,2,5,3,1]" },
+      note: "Everyone starts with 1 candy — rule 1 is satisfied by construction.",
+    },
+    {
+      values: [1, 1, 1, 1, 1, 1],
+      states: ["done", "compare", "idle", "idle", "idle", "idle"],
+      vars: { i: 1, check: "0 > 1? no" },
+      note: "i = 1: rating 0 is not greater than 1, so no left constraint. Leave it at 1.",
+    },
+    {
+      values: [1, 1, 2, 1, 1, 1],
+      states: ["done", "done", "active", "idle", "idle", "idle"],
+      vars: { i: 2, check: "2 > 0? yes" },
+      note: "i = 2: rating 2 > 0, so candies[2] = candies[1] + 1 = 2.",
+    },
+    {
+      values: [1, 1, 2, 3, 1, 1],
+      states: ["done", "done", "done", "active", "idle", "idle"],
+      vars: { i: 3, check: "5 > 2? yes" },
+      note: "i = 3: rating 5 > 2 → candies[3] = 3.",
+    },
+    {
+      values: [1, 1, 2, 3, 1, 1],
+      states: ["done", "done", "done", "done", "compare", "compare"],
+      vars: { left: "[1,1,2,3,1,1]" },
+      note: "i = 4 (3 < 5) and i = 5 (1 < 3) have no left constraint. Pass 1 done — but 3 > 1 to its right is still violated.",
+    },
+  ]}
+/>
+
+<ArrayViz
+  title="Pass 2 — right to left, taking the max at each position"
+  intervalMs={1500}
+  frames={[
+    {
+      values: [1, 1, 2, 3, 1, 1],
+      states: ["idle", "idle", "idle", "idle", "idle", "match"],
+      vars: { i: 5 },
+      note: "Start from the right end. The last child has no right neighbour — unchanged at 1.",
+    },
+    {
+      values: [1, 1, 2, 3, 2, 1],
+      states: ["idle", "idle", "idle", "idle", "active", "done"],
+      vars: { i: 4, check: "3 > 1? yes", right: 2 },
+      note: "i = 4: rating 3 > 1 → needs candies[5] + 1 = 2. max(1, 2) = 2.",
+    },
+    {
+      values: [1, 1, 2, 3, 2, 1],
+      states: ["idle", "idle", "idle", "active", "done", "done"],
+      vars: { i: 3, check: "5 > 3? yes", right: 3 },
+      note: "i = 3: rating 5 > 3 → needs 2 + 1 = 3. The left pass already gave 3, so max(3, 3) = 3.",
+    },
+    {
+      values: [1, 1, 2, 3, 2, 1],
+      states: ["done", "done", "done", "done", "done", "done"],
+      vars: { i: 2, check: "2 > 5? no" },
+      note: "i = 2: rating 2 is not greater than 5 — no right constraint. Keep 2.",
+    },
+    {
+      values: [2, 1, 2, 3, 2, 1],
+      states: ["active", "done", "done", "done", "done", "done"],
+      vars: { i: 0, check: "1 > 0? yes", total: 11 },
+      note: "i = 1 has no right constraint (0 < 2). i = 0: rating 1 > 0 → needs 2. Final: [2,1,2,3,2,1], total 11.",
+    },
+  ]}
+  caption="The second sweep only ever raises values, so the first sweep's guarantees survive."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Give everyone 1 candy
+
+This satisfies rule 1 and establishes the floor.
+</Step>
+
+<Step>
+### Left-to-right sweep
+
+For `i` from 1 to n-1: if `ratings[i] > ratings[i-1]`, set `candies[i] = candies[i-1] + 1`.
+</Step>
+
+<Step>
+### Right-to-left sweep
+
+For `i` from n-2 down to 0: if `ratings[i] > ratings[i+1]`, set `candies[i] = max(candies[i], candies[i+1] + 1)`.
+
+The `max` is what preserves the left sweep's work.
+</Step>
+
+<Step>
+### Return the sum
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="The second sweep must use `max`, not plain assignment">
+Writing `candies[i] = candies[i+1] + 1` would overwrite a larger value earned in the first pass and break the left constraint.
+
+For `ratings = [1, 3, 2]`: the left pass gives `[1, 2, 1]`. At `i = 1` the right rule needs `candies[2] + 1 = 2`. Plain assignment would also give `2` here, but with `ratings = [1, 5, 4, 3, 2]` the left pass builds up a large value at index 1 that a plain assignment would destroy. `max` keeps both constraints alive.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def candy(ratings: list[int]) -> int:
+    """Fewest candies satisfying both neighbour rules."""
+    n = len(ratings)
+    candies = [1] * n   # rule 1: everyone gets at least one
+
+    # Pass 1: satisfy the left-neighbour rule.
+    for i in range(1, n):
+        if ratings[i] > ratings[i - 1]:
+            candies[i] = candies[i - 1] + 1
+
+    # Pass 2: satisfy the right-neighbour rule without losing pass 1.
+    for i in range(n - 2, -1, -1):
+        if ratings[i] > ratings[i + 1]:
+            candies[i] = max(candies[i], candies[i + 1] + 1)
+
+    return sum(candies)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function candy(ratings: number[]): number {
+  const n = ratings.length;
+  const candies = new Array<number>(n).fill(1); // rule 1: at least one each
+
+  // Pass 1: satisfy the left-neighbour rule.
+  for (let i = 1; i < n; i++) {
+    if (ratings[i] > ratings[i - 1]) {
+      candies[i] = candies[i - 1] + 1;
+    }
+  }
+
+  // Pass 2: satisfy the right-neighbour rule without losing pass 1.
+  for (let i = n - 2; i >= 0; i--) {
+    if (ratings[i] > ratings[i + 1]) {
+      candies[i] = Math.max(candies[i], candies[i + 1] + 1);
+    }
+  }
+
+  return candies.reduce((sum, c) => sum + c, 0);
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Equal ratings impose no constraint at all">
+Rule 2 only fires on a **strictly higher** rating. With `ratings = [1, 2, 2]` the third child needs nothing relative to the second, so `[1, 2, 1]` is valid and totals `4`. Using `>=` anywhere would inflate the answer — this is the most common wrong reading of the problem.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — three linear passes (two sweeps plus the sum).
+- **Space** — the `candies` array. A one-pass `O(1)`-space solution exists that counts ascending and descending run lengths, but it is considerably harder to get right and rarely worth it.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A single child">
+Both sweeps are skipped and `1` is returned.
+</Accordion>
+
+<Accordion title="All ratings equal, e.g. [3, 3, 3]">
+No comparison is ever strictly greater, so everyone keeps 1 candy. Returns `3`.
+</Accordion>
+
+<Accordion title="Strictly increasing, e.g. [1, 2, 3, 4]">
+The left pass builds `[1, 2, 3, 4]`; the right pass changes nothing. Returns `10`.
+</Accordion>
+
+<Accordion title="Strictly decreasing, e.g. [4, 3, 2, 1]">
+The left pass does nothing; the right pass builds `[4, 3, 2, 1]`. Returns `10`. This is the case that proves a single left-to-right pass is insufficient.
+</Accordion>
+
+<Accordion title="A peak in the middle, e.g. [1, 3, 2]">
+Left gives `[1, 2, 1]`; right raises index 1 to `max(2, 2) = 2`. Result `[1, 2, 1]`, total `4`.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Trapping Rain Water](/docs/arrays/trapping-rain-water) — the same left-sweep / right-sweep / combine structure
+- [Product of Array Except Self](/docs/arrays/product-of-array-except-self) — prefix and suffix passes over one array
+- [Gas Station](/docs/greedy/gas-station) — greedy reasoning with a correctness proof

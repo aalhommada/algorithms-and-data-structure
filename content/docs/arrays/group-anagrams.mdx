@@ -1,0 +1,253 @@
+---
+title: Group Anagrams
+description: Group words that are rearrangements of each other by giving every anagram family the same canonical key
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Hash Map with a Canonical Key"
+  tags={["Array", "Hash Table", "String", "Sorting"]}
+  leetcode="https://leetcode.com/problems/group-anagrams/"
+  problemNumber={49}
+/>
+
+## Problem Statement
+
+Given an array of strings, group the **anagrams** together. Two words are anagrams if one is a rearrangement of the other's letters. Return the groups in any order.
+
+```text
+Input:  ["eat", "tea", "tan", "ate", "nat", "bat"]
+Output: [["eat", "tea", "ate"], ["tan", "nat"], ["bat"]]
+
+Input:  [""]
+Output: [[""]]
+```
+
+## Intuition
+
+The naive plan — compare every word with every other word to test anagram-ness — is `O(n² × k)` and gets tangled quickly.
+
+<Callout type="info" title="The key insight">
+Stop comparing words to each other. Instead, give each word a **canonical form**: a value that is *identical for all anagrams and different for everything else*.
+
+Then grouping is trivial — a hash map keyed by that canonical form does all the work in one pass.
+</Callout>
+
+Two canonical forms work:
+
+**1. The sorted letters.** `"eat"`, `"tea"` and `"ate"` all sort to `"aet"`. Anagrams have the same multiset of letters, so sorting always produces the same string.
+
+**2. The letter-count signature.** `"eat"` → one `a`, one `e`, one `t` → the tuple `(1,0,0,0,1,0,…,1,…)` over 26 slots. Anagrams have identical counts by definition.
+
+Sorting is shorter to write; counting is asymptotically faster because it skips the `log k` factor.
+
+### Real-world analogy
+
+Sorting mail into pigeonholes. You do not compare each letter against every other letter — you read the postcode (the canonical key) and drop it into the matching slot. Everything sharing a postcode ends up together automatically.
+
+### Watch it run
+
+<HashMapViz
+  title='Grouping ["eat", "tea", "tan", "ate", "nat", "bat"] by sorted letters'
+  label="sorted key → group"
+  intervalMs={1500}
+  frames={[
+    {
+      scan: { values: ["eat", "tea", "tan", "ate", "nat", "bat"], cursor: 0 },
+      entries: [{ key: "aet", value: "[eat]", state: "active" }],
+      note: '"eat" sorts to "aet". New key → start a group.',
+    },
+    {
+      scan: { values: ["eat", "tea", "tan", "ate", "nat", "bat"], cursor: 1 },
+      entries: [{ key: "aet", value: "[eat, tea]", state: "match" }],
+      note: '"tea" also sorts to "aet". Existing key → join the group.',
+    },
+    {
+      scan: { values: ["eat", "tea", "tan", "ate", "nat", "bat"], cursor: 2 },
+      entries: [
+        { key: "aet", value: "[eat, tea]" },
+        { key: "ant", value: "[tan]", state: "active" },
+      ],
+      note: '"tan" sorts to "ant". Different key → a second group appears.',
+    },
+    {
+      scan: { values: ["eat", "tea", "tan", "ate", "nat", "bat"], cursor: 3 },
+      entries: [
+        { key: "aet", value: "[eat, tea, ate]", state: "match" },
+        { key: "ant", value: "[tan]" },
+      ],
+      note: '"ate" → "aet". Joins the first group.',
+    },
+    {
+      scan: { values: ["eat", "tea", "tan", "ate", "nat", "bat"], cursor: 4 },
+      entries: [
+        { key: "aet", value: "[eat, tea, ate]" },
+        { key: "ant", value: "[tan, nat]", state: "match" },
+      ],
+      note: '"nat" → "ant". Joins the second group.',
+    },
+    {
+      scan: { values: ["eat", "tea", "tan", "ate", "nat", "bat"], cursor: 5 },
+      entries: [
+        { key: "aet", value: "[eat, tea, ate]" },
+        { key: "ant", value: "[tan, nat]" },
+        { key: "abt", value: "[bat]", state: "active" },
+      ],
+      note: '"bat" → "abt". A group of one. Return the three groups.',
+    },
+  ]}
+  caption="The map's values are the answer — no cross-comparison ever happened."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Create a map from key to list of words
+</Step>
+
+<Step>
+### For each word, compute its canonical key
+
+Sorted characters, or a 26-slot count signature.
+</Step>
+
+<Step>
+### Append the original word under that key
+
+Store the original, not the key — the output must contain the real words.
+</Step>
+
+<Step>
+### Return the map's values
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import defaultdict
+
+
+def group_anagrams(strs: list[str]) -> list[list[str]]:
+    """Group words that are rearrangements of one another."""
+    groups: defaultdict[str, list[str]] = defaultdict(list)
+
+    for word in strs:
+        key = "".join(sorted(word))  # anagrams share this exact key
+        groups[key].append(word)
+
+    return list(groups.values())
+```
+
+The counting version, which avoids the `O(k log k)` sort:
+
+```python
+def group_anagrams_counting(strs: list[str]) -> list[list[str]]:
+    groups: defaultdict[tuple[int, ...], list[str]] = defaultdict(list)
+
+    for word in strs:
+        counts = [0] * 26
+        for char in word:
+            counts[ord(char) - ord("a")] += 1
+        groups[tuple(counts)].append(word)  # tuples are hashable, lists are not
+
+    return list(groups.values())
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function groupAnagrams(strs: string[]): string[][] {
+  const groups = new Map<string, string[]>();
+
+  for (const word of strs) {
+    const key = word.split('').sort().join(''); // anagrams share this exact key
+
+    const group = groups.get(key);
+    if (group) {
+      group.push(word);
+    } else {
+      groups.set(key, [word]);
+    }
+  }
+
+  return Array.from(groups.values());
+}
+```
+
+The counting version:
+
+```typescript
+function groupAnagramsCounting(strs: string[]): string[][] {
+  const groups = new Map<string, string[]>();
+
+  for (const word of strs) {
+    const counts = new Array<number>(26).fill(0);
+    for (const char of word) {
+      counts[char.charCodeAt(0) - 97] += 1; // 97 is 'a'
+    }
+    // Join with a separator so [1,11] and [11,1] cannot collide.
+    const key = counts.join('#');
+
+    const group = groups.get(key);
+    if (group) group.push(word);
+    else groups.set(key, [word]);
+  }
+
+  return Array.from(groups.values());
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Two subtle bugs to avoid">
+**Python:** a `list` cannot be a dictionary key — it is mutable and therefore unhashable. Convert the count array to a `tuple` first.
+
+**TypeScript:** building the key with `counts.join('')` is broken. Counts of `[1, 11]` and `[11, 1]` both stringify to `"111"`. Use a separator like `'#'`, or pad each count to a fixed width.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n × k log k)" space="O(n × k)" />
+
+Where `n` is the number of words and `k` is the maximum word length.
+
+- **Time (sorting keys)** — `O(k log k)` to sort each of `n` words.
+- **Time (counting keys)** — `O(n × k)`, since building a 26-slot signature is linear in the word. This is strictly better, and the gap widens for long words.
+- **Space** — every word is stored once in the output, plus the keys.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty string in the input">
+`""` sorts to `""`, which is a perfectly valid key. `[""]` returns `[[""]]`, and all empty strings group together.
+</Accordion>
+
+<Accordion title="No anagrams at all">
+Each word gets a unique key, producing `n` groups of one. Correct.
+</Accordion>
+
+<Accordion title="Duplicate words, e.g. ['abc', 'abc']">
+They share a key and land in the same group: `[['abc', 'abc']]`. Duplicates are words too — nothing should be de-duplicated.
+</Accordion>
+
+<Accordion title="What if the input were not lowercase-only?">
+The 26-slot counting trick assumes `a`–`z`. For arbitrary Unicode, use the sorting key, or count into a hash map instead of a fixed array.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Valid Anagram](/docs/strings/valid-anagram) — the two-word version of the same canonical-form idea
+- [Two Sum](/docs/arrays/two-sum) — hash maps turning search into lookup
+- [Top K Frequent Elements](/docs/arrays/top-k-frequent-elements) — building a count map, then ranking it

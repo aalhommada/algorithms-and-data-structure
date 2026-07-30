@@ -1,0 +1,234 @@
+---
+title: Jump Game II
+description: Find the minimum number of jumps to the end by treating each jump as a BFS level
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Greedy / Implicit BFS"
+  tags={["Array", "Greedy", "Dynamic Programming"]}
+  leetcode="https://leetcode.com/problems/jump-game-ii/"
+  problemNumber={45}
+/>
+
+## Problem Statement
+
+You are given an array `nums`. You start at index `0`, and `nums[i]` is the maximum jump length from position `i`. The last index is guaranteed reachable.
+
+Return the **minimum number of jumps** needed to reach the last index.
+
+```text
+Input:  nums = [2, 3, 1, 1, 4]
+Output: 2
+Why:    index 0 → index 1 (jump of 1), then index 1 → index 4 (jump of 3)
+
+Input:  nums = [2, 3, 0, 1, 4]
+Output: 2
+```
+
+## Intuition
+
+[Jump Game](/docs/greedy/jump-game) asked *whether* the end is reachable. This asks for the **cheapest** route, which sounds like it needs real search. It does not.
+
+<Callout type="info" title="The key insight — think in levels, not in jumps">
+Group the indices by how many jumps it takes to reach them:
+
+```text
+nums = [2, 3, 1, 1, 4]
+
+0 jumps: index 0
+1 jump:  indices 1–2      (from index 0 you can reach up to 0 + 2 = 2)
+2 jumps: indices 3–4      (from 1 you reach 4; from 2 you reach 3 — union is 3–4)
+```
+
+Each level is a **contiguous range**, for the same reason as in Jump Game: reachability is monotone. So instead of tracking individual positions, track the range boundary.
+
+This is breadth-first search where each "level" is one more jump — but because the levels are intervals, you never need an actual queue.
+</Callout>
+
+### The two boundaries
+
+- **`current_end`** — the last index reachable with the jumps counted so far. Crossing it means you must spend another jump.
+- **`furthest`** — the furthest index reachable using **one more** jump from anywhere in the current level.
+
+When `i` reaches `current_end`, the current level is exhausted: increment the jump count and set `current_end = furthest`.
+
+### Real-world analogy
+
+Flight connections. Level 0 is your home city. Level 1 is everywhere reachable with one flight. Level 2 is everywhere reachable with two. To find the fewest flights to a destination, you expand a whole level at a time rather than tracing individual itineraries.
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [2, 3, 1, 1, 4]"
+  intervalMs={1700}
+  frames={[
+    {
+      values: [2, 3, 1, 1, 4],
+      states: ["active", "idle", "idle", "idle", "idle"],
+      pointers: [
+        { index: 0, label: "i" },
+        { index: 0, label: "end" },
+      ],
+      vars: { jumps: 0, furthest: 2, current_end: 0 },
+      note: "i = 0. furthest = 0 + 2 = 2. i has hit current_end (0), so a jump is needed: jumps = 1, current_end = 2.",
+    },
+    {
+      values: [2, 3, 1, 1, 4],
+      states: ["done", "active", "compare", "idle", "idle"],
+      pointers: [
+        { index: 1, label: "i" },
+        { index: 2, label: "end" },
+      ],
+      vars: { jumps: 1, furthest: 4, current_end: 2 },
+      note: "i = 1, inside level 1 (indices 1–2). furthest = max(2, 1 + 3) = 4. i has not reached current_end yet.",
+    },
+    {
+      values: [2, 3, 1, 1, 4],
+      states: ["done", "done", "active", "idle", "idle"],
+      pointers: [
+        { index: 2, label: "i" },
+        { index: 2, label: "end" },
+      ],
+      vars: { jumps: 2, furthest: 4, current_end: 4 },
+      note: "i = 2 = current_end. Level 1 is exhausted → jumps = 2, current_end = furthest = 4.",
+    },
+    {
+      values: [2, 3, 1, 1, 4],
+      states: ["done", "match", "done", "done", "match"],
+      vars: { jumps: 2, answer: 2 },
+      note: "current_end (4) now covers the last index, so the loop ends. Answer: 2 jumps.",
+    },
+  ]}
+  caption="Each time i crosses the level boundary, one jump has been spent."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Track three numbers
+
+`jumps = 0`, `current_end = 0`, `furthest = 0`.
+</Step>
+
+<Step>
+### Loop `i` from 0 to **n - 2**
+
+Stopping one short of the end is essential — see the warning below.
+</Step>
+
+<Step>
+### Extend the reach
+
+`furthest = max(furthest, i + nums[i])`.
+</Step>
+
+<Step>
+### When `i == current_end`, spend a jump
+
+Increment `jumps` and set `current_end = furthest`. You have consumed the entire current level.
+</Step>
+
+<Step>
+### Return `jumps`
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="The loop must stop at n - 2">
+If the loop included the last index and `current_end` happened to equal `n - 1`, it would count one extra jump *after arriving* — an off-by-one that returns `3` instead of `2`.
+
+Excluding the final index encodes the fact that arriving is free; only departing costs a jump.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def jump(nums: list[int]) -> int:
+    """Minimum number of jumps to reach the last index."""
+    jumps = 0
+    current_end = 0   # last index reachable with `jumps` jumps
+    furthest = 0      # furthest index reachable with one more jump
+
+    for i in range(len(nums) - 1):   # stop before the last index
+        furthest = max(furthest, i + nums[i])
+
+        if i == current_end:         # the current level is exhausted
+            jumps += 1
+            current_end = furthest
+
+    return jumps
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function jump(nums: number[]): number {
+  let jumps = 0;
+  let currentEnd = 0; // last index reachable with `jumps` jumps
+  let furthest = 0; // furthest index reachable with one more jump
+
+  for (let i = 0; i < nums.length - 1; i++) {
+    // stop before the last index
+    furthest = Math.max(furthest, i + nums[i]);
+
+    if (i === currentEnd) {
+      // the current level is exhausted
+      jumps++;
+      currentEnd = furthest;
+    }
+  }
+
+  return jumps;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why greedy gives the true minimum">
+Within a level, it does not matter which index you jump from — all of them cost the same one jump. So the only thing worth optimising is how far the level reaches, and taking the maximum is optimal.
+
+This is BFS's shortest-path guarantee: the first level that contains the destination is the minimum, and levels here are computed exactly, not approximated.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — one pass, constant work per index. The DP formulation (`dp[i] = min jumps to reach i`) is `O(n²)`; explicit BFS with a queue is `O(n)` time but `O(n)` space.
+- **Space** — three integers, no queue.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Single element, e.g. [0]">
+The loop runs zero times and `0` is returned. You are already at the destination.
+</Accordion>
+
+<Accordion title="Two elements, e.g. [1, 5]">
+One iteration: `furthest = 1`, `i == current_end == 0` → `jumps = 1`. Correct — one jump crosses the gap.
+</Accordion>
+
+<Accordion title="A large first jump, e.g. [10, 1, 1, 1, 1]">
+`furthest` covers the whole array after the first index, so one jump suffices. Returns `1`.
+</Accordion>
+
+<Accordion title="Zeros along the way, e.g. [2, 3, 0, 1, 4]">
+Index 2 contributes nothing to `furthest`, but index 1 already reached far enough. Still `2` jumps. The problem guarantees the end is reachable, so a blocking zero cannot occur.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Jump Game](/docs/greedy/jump-game) — reachability rather than cost; solve it first
+- [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — the explicit BFS that this problem performs implicitly
+- [Gas Station](/docs/greedy/gas-station) — another greedy argument about safe skipping

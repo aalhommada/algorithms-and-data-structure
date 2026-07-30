@@ -1,0 +1,252 @@
+---
+title: Contains Duplicate
+description: Detect whether any value appears twice in an array, using a hash set to remember what you have seen
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Hash Set"
+  tags={["Array", "Hash Table", "Sorting"]}
+  leetcode="https://leetcode.com/problems/contains-duplicate/"
+  problemNumber={217}
+/>
+
+## Problem Statement
+
+Given an integer array `nums`, return `true` if any value appears **at least twice**, and `false` if every element is distinct.
+
+```text
+Input:  nums = [1, 2, 3, 1]
+Output: true       (1 appears twice)
+
+Input:  nums = [1, 2, 3, 4]
+Output: false      (all distinct)
+
+Input:  nums = [1, 1, 1, 3, 3, 4, 3, 2, 4, 2]
+Output: true
+```
+
+## Intuition
+
+The naive instinct is to compare every element with every other element — `O(n²)`. Two much better ideas exist, and comparing them teaches a lesson you will reuse constantly.
+
+<Callout type="info" title="Two ways to make duplicates easy to spot">
+1. **Sort first.** Duplicates cannot hide once the array is ordered — they end up sitting next to each other. Then a single pass comparing neighbours is enough.
+2. **Remember as you go.** Keep a set of everything seen so far. The instant you meet a number already in the set, you are done.
+</Callout>
+
+Sorting is `O(n log n)` time but `O(1)` extra space. The set is `O(n)` time but `O(n)` space. This is the classic **time–space trade-off**, and the set version is usually the one you want.
+
+### Why does sorting work?
+
+Sorting groups equal values together. If `1` appears at positions 0 and 3 in the original array, after sorting both `1`s are adjacent. So a duplicate anywhere in the array becomes a duplicate *next to each other* — and neighbours are cheap to check.
+
+<ArrayViz
+  title="Sorting makes duplicates adjacent"
+  frames={[
+    {
+      values: [1, 2, 3, 1],
+      note: "Original array. The two 1s are three positions apart — you would have to search to notice them.",
+    },
+    {
+      values: [1, 1, 2, 3],
+      states: ["match", "match", "idle", "idle"],
+      note: "After sorting, the duplicates are neighbours. One left-to-right pass comparing nums[i] with nums[i+1] finds them.",
+    },
+  ]}
+/>
+
+### Why the set is better
+
+The set version can **exit early**. If the duplicate sits at positions 0 and 1 of a million-element array, the set returns after two steps. Sorting always pays the full `O(n log n)` before it can answer anything.
+
+<HashMapViz
+  title="nums = [1, 2, 3, 1] — the hash set approach"
+  label="seen"
+  frames={[
+    {
+      scan: { values: [1, 2, 3, 1], cursor: 0 },
+      entries: [],
+      note: "1 is not in the set. Add it.",
+    },
+    {
+      scan: { values: [1, 2, 3, 1], cursor: 1 },
+      entries: [{ key: 1, value: "✓" }],
+      note: "2 is not in the set. Add it.",
+    },
+    {
+      scan: { values: [1, 2, 3, 1], cursor: 2 },
+      entries: [
+        { key: 1, value: "✓" },
+        { key: 2, value: "✓" },
+      ],
+      note: "3 is not in the set. Add it.",
+    },
+    {
+      scan: { values: [1, 2, 3, 1], cursor: 3 },
+      entries: [
+        { key: 1, value: "✓", state: "match" },
+        { key: 2, value: "✓" },
+        { key: 3, value: "✓" },
+      ],
+      note: "1 is already in the set → return true immediately. The rest of the array is never touched.",
+    },
+  ]}
+  caption="Membership questions are what sets are built for: O(1) per check."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Create an empty set
+
+A set stores only *whether* a value is present — no counts, no positions. That is exactly the question being asked.
+</Step>
+
+<Step>
+### For each number, ask before adding
+
+If the number is already in the set, a duplicate exists → return `true` right away.
+</Step>
+
+<Step>
+### Otherwise add it and continue
+
+If the loop finishes without a hit, every value was distinct → return `false`.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def contains_duplicate(nums: list[int]) -> bool:
+    """Return True if any value in nums appears more than once."""
+    seen: set[int] = set()
+
+    for num in nums:
+        if num in seen:
+            return True  # early exit — no need to scan the rest
+        seen.add(num)
+
+    return False
+```
+
+A one-liner using the same idea — a set drops duplicates, so a shorter set means duplicates existed:
+
+```python
+def contains_duplicate(nums: list[int]) -> bool:
+    return len(set(nums)) < len(nums)
+```
+
+The one-liner is elegant but always processes the entire array; the loop can stop early.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function containsDuplicate(nums: number[]): boolean {
+  const seen = new Set<number>();
+
+  for (const num of nums) {
+    if (seen.has(num)) {
+      return true; // early exit — no need to scan the rest
+    }
+    seen.add(num);
+  }
+
+  return false;
+}
+```
+
+The equivalent one-liner:
+
+```typescript
+function containsDuplicate(nums: number[]): boolean {
+  return new Set(nums).size < nums.length;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+### The sorting alternative
+
+Worth knowing for when you are told you may not use extra memory:
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def contains_duplicate_sorted(nums: list[int]) -> bool:
+    nums.sort()  # mutates the input — O(n log n)
+
+    for i in range(len(nums) - 1):
+        if nums[i] == nums[i + 1]:
+            return True
+
+    return False
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function containsDuplicateSorted(nums: number[]): boolean {
+  // Default sort is lexicographic — always pass a comparator for numbers.
+  nums.sort((a, b) => a - b);
+
+  for (let i = 0; i < nums.length - 1; i++) {
+    if (nums[i] === nums[i + 1]) {
+      return true;
+    }
+  }
+
+  return false;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="A classic JavaScript trap">
+`[10, 9, 1].sort()` returns `[1, 10, 9]`, not `[1, 9, 10]`. JavaScript's default sort converts elements to strings and compares them alphabetically. Numeric sorts **must** pass `(a, b) => a - b`.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — one pass, with `O(1)` average-case set operations.
+- **Space** — the set can grow to hold all `n` values when there are no duplicates.
+
+The sorting version trades this around: `O(n log n)` time, `O(1)` extra space (ignoring the sort's internal stack).
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty array or a single element">
+Both return `false`. The loop body either never runs or runs once with an empty set — a duplicate needs at least two elements.
+</Accordion>
+
+<Accordion title="Very large arrays">
+The set version wins clearly. It exits as soon as it meets the duplicate, whereas sorting must finish ordering the whole array before comparing anything.
+</Accordion>
+
+<Accordion title="Does the sorting version have a hidden cost?">
+Yes — it **mutates the caller's array**. If the original order matters to the code that called you, sort a copy (`sorted(nums)` in Python, `[...nums].sort(...)` in TypeScript), which reintroduces `O(n)` space.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Two Sum](/docs/arrays/two-sum) — the same "have I seen it?" idea, but storing indices in a map
+- [Valid Anagram](/docs/strings/valid-anagram) — counting occurrences instead of just presence
+- [Number of Good Pairs](/docs/arrays/number-of-good-pairs) — counting *how many* duplicate pairs exist

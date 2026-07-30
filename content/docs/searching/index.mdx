@@ -1,0 +1,85 @@
+---
+title: Binary Search
+description: Halving the search space — for exact matches, for boundaries, and for answers with no array at all
+---
+
+Binary search is the payoff for having sorted data. Each comparison discards half of what remains, so a billion candidates collapse to about 30 questions.
+
+The idea is easy. Getting the boundaries right is not — which is why it deserves its own section.
+
+## Two Templates
+
+Nearly every binary search you write is one of these, and mixing lines between them is the source of almost every bug.
+
+### Template 1 — exact match (inclusive bounds)
+
+```text
+lo = 0, hi = n - 1
+while lo <= hi:
+    mid = lo + (hi - lo) // 2
+    if a[mid] == target: return mid
+    if a[mid] <  target: lo = mid + 1
+    else:                hi = mid - 1
+return -1
+```
+
+Use it when you want to find a specific value. See [Binary Search](/docs/searching/binary-search).
+
+### Template 2 — boundary / lower bound (exclusive upper bound)
+
+```text
+lo = 0, hi = n            ← note: n, not n - 1
+while lo < hi:            ← note: <, not <=
+    mid = lo + (hi - lo) // 2
+    if predicate(mid): hi = mid       ← KEEP mid, it may be the answer
+    else:              lo = mid + 1
+return lo
+```
+
+Use it when you want the **first position where something becomes true**. See [Search Insert Position](/docs/searching/search-insert-position) and [First Bad Version](/docs/searching/first-bad-version).
+
+<Callout type="warn" title="The asymmetry in template 2 is deliberate">
+`hi = mid` but `lo = mid + 1`.
+
+A candidate that satisfies the predicate might be the *first* one, so it stays. A candidate that fails definitely is not the answer, so it goes. Making both symmetric either discards the answer or loops forever.
+</Callout>
+
+## The Real Insight: Binary Search Without an Array
+
+Template 2 does not need an array. It needs a **monotonic predicate** — one that is false, false, …, false, true, true, …, true over a range.
+
+[First Bad Version](/docs/searching/first-bad-version) is the clearest example: there is no array, only version numbers and an API. The predicate "is this version bad?" is monotonic because every version after a bad one is also bad, and that is all binary search requires.
+
+This unlocks a whole family of "binary search on the answer" problems: minimum capacity to ship packages in `d` days, smallest divisor under a threshold, minimum eating speed. In each, you binary-search the *answer space* and use a feasibility check as the predicate.
+
+## The Three Classic Bugs
+
+<Accordions>
+
+<Accordion title="1. Using `while lo < hi` with inclusive bounds">
+The loop exits with one candidate untested. Searching `[5]` for `5` returns `-1`. If `hi` is inclusive, the condition must be `lo <= hi`.
+</Accordion>
+
+<Accordion title="2. Forgetting the ± 1 when shrinking">
+`lo = mid` with `lo = 0, hi = 1` leaves the range unchanged and spins forever. In template 1, `mid` has already been tested and must leave the range.
+</Accordion>
+
+<Accordion title="3. Computing `mid` as (lo + hi) / 2">
+Overflows in fixed-width languages — a bug that lived in Java's standard library for nine years. `lo + (hi - lo) // 2` is identical mathematically and never exceeds `hi`. Python and TypeScript are immune, but the habit transfers.
+</Accordion>
+
+</Accordions>
+
+## All Problems
+
+| Problem | Difficulty | Template |
+|---|---|---|
+| [Binary Search](/docs/searching/binary-search) | Easy | Exact match |
+| [Search Insert Position](/docs/searching/search-insert-position) | Easy | Boundary |
+| [First Bad Version](/docs/searching/first-bad-version) | Easy | Boundary, no array |
+
+## Related Elsewhere
+
+- [H-Index](/docs/arrays/h-index) — the pre-sorted variant is a binary search
+- [Is Subsequence](/docs/strings/is-subsequence) — binary search over position lists in the follow-up
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — another algorithm that exists only because the input is sorted

@@ -1,0 +1,250 @@
+---
+title: Binary Search
+description: Find a target in a sorted array by halving the search space, and get the boundary conditions right
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Binary Search"
+  tags={["Array", "Binary Search"]}
+  leetcode="https://leetcode.com/problems/binary-search/"
+  problemNumber={704}
+/>
+
+## Problem Statement
+
+Given a **sorted** array of distinct integers `nums` and a `target`, return the index of `target` if it exists, or `-1` if it does not.
+
+Your algorithm must run in `O(log n)` time.
+
+```text
+Input:  nums = [-1, 0, 3, 5, 9, 12], target = 9
+Output: 4
+
+Input:  nums = [-1, 0, 3, 5, 9, 12], target = 2
+Output: -1
+```
+
+## Intuition
+
+Scanning left to right is `O(n)` and ignores the one fact you were given: the array is **sorted**. Sorted means every comparison carries far more information than "match or no match".
+
+<Callout type="info" title="The key insight">
+Look at the middle element. Three outcomes:
+
+- `nums[mid] == target` → found it.
+- `nums[mid] < target` → because the array is sorted, everything at or left of `mid` is also too small. **Discard the entire left half.**
+- `nums[mid] > target` → everything at or right of `mid` is too big. **Discard the entire right half.**
+
+One comparison eliminates half the remaining candidates.
+</Callout>
+
+### Why `O(log n)` is dramatic
+
+Halving repeatedly means the number of steps is how many times you can halve `n` before reaching 1:
+
+| Array size | Linear scan (worst case) | Binary search |
+|---|---|---|
+| 100 | 100 | 7 |
+| 1,000,000 | 1,000,000 | 20 |
+| 1,000,000,000 | 1,000,000,000 | 30 |
+
+A billion-element array is resolved in about 30 comparisons.
+
+### Real-world analogy
+
+Looking up a word in a paper dictionary. You do not start at "aardvark" — you open it near the middle, see whether your word falls before or after, and throw away half the book. Then repeat.
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [-1, 0, 3, 5, 9, 12], target = 9"
+  intervalMs={1600}
+  frames={[
+    {
+      values: [-1, 0, 3, 5, 9, 12],
+      states: ["idle", "idle", "compare", "idle", "idle", "idle"],
+      pointers: [
+        { index: 0, label: "lo" },
+        { index: 2, label: "mid" },
+        { index: 5, label: "hi" },
+      ],
+      vars: { mid: 2, "nums[mid]": 3, target: 9 },
+      note: "mid = (0 + 5) // 2 = 2. nums[2] = 3 < 9 → the target must be to the right. Discard indices 0–2.",
+    },
+    {
+      values: [-1, 0, 3, 5, 9, 12],
+      states: ["discard", "discard", "discard", "idle", "compare", "idle"],
+      pointers: [
+        { index: 3, label: "lo" },
+        { index: 4, label: "mid" },
+        { index: 5, label: "hi" },
+      ],
+      vars: { mid: 4, "nums[mid]": 9, target: 9 },
+      note: "Search space is now [3, 5]. mid = (3 + 5) // 2 = 4. nums[4] = 9 — match!",
+    },
+    {
+      values: [-1, 0, 3, 5, 9, 12],
+      states: ["discard", "discard", "discard", "discard", "match", "discard"],
+      vars: { answer: 4 },
+      note: "Return index 4. Six elements resolved in two comparisons.",
+    },
+  ]}
+  caption="Each step throws away half of what remains."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Set the boundaries
+
+`lo = 0`, `hi = n - 1`. These are **inclusive** — every index in `[lo, hi]` is still a candidate.
+</Step>
+
+<Step>
+### Loop while `lo <= hi`
+
+The `<=` matters: when `lo == hi` there is exactly one candidate left, and it still has to be checked.
+</Step>
+
+<Step>
+### Compute the midpoint safely
+
+`mid = lo + (hi - lo) // 2` rather than `(lo + hi) // 2`.
+</Step>
+
+<Step>
+### Compare and shrink
+
+Equal → return `mid`. Too small → `lo = mid + 1`. Too big → `hi = mid - 1`.
+
+The `± 1` is essential: `mid` has already been tested and must leave the search space, otherwise the loop never ends.
+</Step>
+
+<Step>
+### Return `-1` when the range empties
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def search(nums: list[int], target: int) -> int:
+    """Return the index of target in the sorted array nums, or -1."""
+    lo, hi = 0, len(nums) - 1
+
+    while lo <= hi:                 # <= : a single remaining element still counts
+        mid = lo + (hi - lo) // 2   # overflow-safe midpoint
+
+        if nums[mid] == target:
+            return mid
+        if nums[mid] < target:
+            lo = mid + 1            # mid is too small — exclude it
+        else:
+            hi = mid - 1            # mid is too big — exclude it
+
+    return -1
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function search(nums: number[], target: number): number {
+  let lo = 0;
+  let hi = nums.length - 1;
+
+  while (lo <= hi) {
+    // <= : a single remaining element still counts
+    const mid = lo + Math.floor((hi - lo) / 2); // overflow-safe midpoint
+
+    if (nums[mid] === target) {
+      return mid;
+    }
+    if (nums[mid] < target) {
+      lo = mid + 1; // mid is too small — exclude it
+    } else {
+      hi = mid - 1; // mid is too big — exclude it
+    }
+  }
+
+  return -1;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## The Three Bugs Everyone Writes
+
+Binary search is famously easy to get subtly wrong. All three classic bugs are about boundaries, not about the idea.
+
+<Accordions>
+
+<Accordion title="1. Using `while lo < hi` instead of `lo <= hi`">
+With `<`, the loop exits while one candidate is still untested. Searching for `5` in `[5]`: `lo = hi = 0`, the condition `0 < 0` is false, the loop never runs, and `-1` is returned for an element that is right there.
+
+The rule follows from the invariant: `hi` is **inclusive**, so `lo == hi` describes a non-empty range and must be entered.
+</Accordion>
+
+<Accordion title="2. Forgetting the ± 1 when shrinking">
+Writing `lo = mid` instead of `lo = mid + 1` can leave the range unchanged. With `lo = 0`, `hi = 1`, `mid` is `0`; if `nums[0] < target` then `lo = mid = 0` — nothing moved, and the loop spins forever.
+
+`mid` was already compared and is not the answer, so it must be excluded.
+</Accordion>
+
+<Accordion title="3. Computing the midpoint as (lo + hi) / 2">
+In languages with fixed-width integers, `lo + hi` can overflow when both are large — a real bug that sat in the Java standard library for nine years.
+
+`lo + (hi - lo) // 2` is mathematically identical but never exceeds `hi`. Python integers are unbounded and TypeScript numbers are doubles, so neither overflows in practice — but the habit costs nothing and transfers to every other language.
+</Accordion>
+
+</Accordions>
+
+## Complexity Analysis
+
+<Complexity time="O(log n)" space="O(1)" />
+
+- **Time** — the search space is `n`, then `n/2`, `n/4`, … reaching `1` after `log₂ n` steps.
+- **Space** — three integers. A recursive formulation would use `O(log n)` stack space instead; the iterative version is preferred.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty array">
+`hi = -1`, so `lo <= hi` is false immediately and `-1` is returned without ever indexing the array.
+</Accordion>
+
+<Accordion title="Target at the very first or very last index">
+Both are reached normally. The `lo <= hi` condition guarantees the boundaries are eventually tested.
+</Accordion>
+
+<Accordion title="Target smaller than everything, or larger than everything">
+The range collapses toward one end until `lo > hi`, then returns `-1`. No out-of-bounds access occurs because `mid` is always within `[lo, hi]`.
+</Accordion>
+
+<Accordion title="Duplicate values">
+This version returns *some* matching index, not necessarily the first. Finding the leftmost occurrence needs a different template: on a match, record the index and continue searching left with `hi = mid - 1` instead of returning immediately.
+</Accordion>
+
+</Accordions>
+
+## Beyond Exact Matching
+
+Binary search's real power is finding **boundaries**, not just values. Whenever a predicate is `false, false, …, false, true, true, …, true` over a range, binary search locates the flip point in `O(log n)` — even when there is no array at all.
+
+- [Search Insert Position](/docs/searching/search-insert-position) — where the target *would* go
+- [First Bad Version](/docs/searching/first-bad-version) — binary search over version numbers, using an API instead of an array
+
+## Related Problems
+
+- [Search Insert Position](/docs/searching/search-insert-position) — the same loop, with a different return value
+- [First Bad Version](/docs/searching/first-bad-version) — binary search without an array
+- [H-Index](/docs/arrays/h-index) — the sorted variant is solvable by binary search

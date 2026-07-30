@@ -1,0 +1,222 @@
+---
+title: Merge Sorted Array
+description: Merge two sorted arrays in place by filling from the back, avoiding any shifting
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Two Pointers (from the back)"
+  tags={["Array", "Two Pointers", "Sorting"]}
+  leetcode="https://leetcode.com/problems/merge-sorted-array/"
+  problemNumber={88}
+/>
+
+## Problem Statement
+
+You are given two sorted integer arrays `nums1` and `nums2`, plus two integers `m` and `n` giving the number of real elements in each.
+
+`nums1` has length `m + n`: the first `m` slots hold its values, and the last `n` slots are zero placeholders reserved for the merge. Merge `nums2` into `nums1` **in place**, keeping the result sorted.
+
+```text
+Input:  nums1 = [1, 2, 3, 0, 0, 0], m = 3
+        nums2 = [2, 5, 6],          n = 3
+Output: nums1 = [1, 2, 2, 3, 5, 6]
+
+Input:  nums1 = [1], m = 1
+        nums2 = [],  n = 0
+Output: nums1 = [1]
+```
+
+## Intuition
+
+Merging two sorted lists front-to-back is the standard technique from merge sort: look at the two front elements, take the smaller, advance that pointer. But here there is a catch — the output has to land **inside `nums1`**, and `nums1`'s real values occupy exactly the front.
+
+If you write to the front, you overwrite values you have not read yet. `nums1 = [1, 2, 3, 0, 0, 0]` with `nums2 = [2, 5, 6]`: writing `2` from `nums2` into position 1 destroys `nums1`'s own `2`. Avoiding that means shifting everything right — `O(m × n)` work.
+
+<Callout type="info" title="The key insight">
+Fill from the **back**.
+
+The tail of `nums1` is empty space nobody needs. Compare the two *largest* remaining values and place the bigger one at the far right, walking leftwards. A write can only ever land on a slot that is empty or already consumed — so nothing valuable is ever overwritten.
+</Callout>
+
+### Why the back is always safe
+
+Formally: the write pointer starts at `m + n - 1` and each step moves all three pointers left by at most one. The write pointer is always at least as far right as the read pointer into `nums1`, so by the time you write to a cell, its original value has already been read.
+
+### Real-world analogy
+
+Two stacks of numbered cards must merge into a single box that already contains one of the stacks at the front. Loading from the front means constantly nudging cards along. Loading from the back — placing the highest card at the back of the box first — means the empty space swallows each card and nothing needs to move twice.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Set up three pointers
+
+`i = m - 1` (last real value in `nums1`), `j = n - 1` (last value in `nums2`), `k = m + n - 1` (last slot overall, where the next write goes).
+</Step>
+
+<Step>
+### While `nums2` still has elements
+
+Compare `nums1[i]` and `nums2[j]`. Write the larger one into `nums1[k]`, decrement whichever source pointer was used, then decrement `k`.
+</Step>
+
+<Step>
+### Stop when `j` runs out
+
+If `j < 0`, everything from `nums2` has been placed, and whatever remains in `nums1` is already sorted and already in the right place. No copying is needed.
+</Step>
+
+<Step>
+### If `i` runs out first, keep draining `nums2`
+
+The condition `i >= 0 and nums1[i] > nums2[j]` handles this: once `i < 0` the comparison short-circuits and `nums2` values keep flowing in.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="nums1 = [1, 2, 3, 0, 0, 0] (m = 3), nums2 = [2, 5, 6] (n = 3)"
+  intervalMs={1600}
+  frames={[
+    {
+      values: [1, 2, 3, 0, 0, 0],
+      states: ["idle", "idle", "compare", "idle", "idle", "active"],
+      pointers: [
+        { index: 2, label: "i" },
+        { index: 5, label: "k" },
+      ],
+      vars: { "nums2[j]": 6, "nums1[i]": 3 },
+      note: "Compare 3 and 6. 6 is larger → write 6 into slot 5. j moves left.",
+    },
+    {
+      values: [1, 2, 3, 0, 0, 6],
+      states: ["idle", "idle", "compare", "idle", "active", "match"],
+      pointers: [
+        { index: 2, label: "i" },
+        { index: 4, label: "k" },
+      ],
+      vars: { "nums2[j]": 5, "nums1[i]": 3 },
+      note: "Compare 3 and 5. 5 is larger → write 5 into slot 4.",
+    },
+    {
+      values: [1, 2, 3, 0, 5, 6],
+      states: ["idle", "idle", "compare", "active", "match", "match"],
+      pointers: [
+        { index: 2, label: "i" },
+        { index: 3, label: "k" },
+      ],
+      vars: { "nums2[j]": 2, "nums1[i]": 3 },
+      note: "Compare 3 and 2. Now nums1 wins → write 3 into slot 3. i moves left.",
+    },
+    {
+      values: [1, 2, 3, 3, 5, 6],
+      states: ["idle", "compare", "active", "match", "match", "match"],
+      pointers: [
+        { index: 1, label: "i" },
+        { index: 2, label: "k" },
+      ],
+      vars: { "nums2[j]": 2, "nums1[i]": 2 },
+      note: "Compare 2 and 2. They tie — take from nums2 so the write pointer keeps its lead. Write 2 into slot 2.",
+    },
+    {
+      values: [1, 2, 2, 3, 5, 6],
+      states: ["match", "match", "match", "match", "match", "match"],
+      vars: { j: -1 },
+      note: "nums2 is exhausted. The remaining [1, 2] in nums1 are already sorted and already in place. Done.",
+    },
+  ]}
+  caption="Every write lands in empty or already-read space — no shifting, no temporary array."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def merge(nums1: list[int], m: int, nums2: list[int], n: int) -> None:
+    """Merge nums2 into nums1 in place. nums1 has m real values then n blanks."""
+    i = m - 1          # last real value in nums1
+    j = n - 1          # last value in nums2
+    k = m + n - 1      # next slot to write
+
+    while j >= 0:
+        if i >= 0 and nums1[i] > nums2[j]:
+            nums1[k] = nums1[i]
+            i -= 1
+        else:
+            nums1[k] = nums2[j]
+            j -= 1
+        k -= 1
+    # If j hits -1 first, the rest of nums1 is already correct.
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function merge(nums1: number[], m: number, nums2: number[], n: number): void {
+  let i = m - 1; // last real value in nums1
+  let j = n - 1; // last value in nums2
+  let k = m + n - 1; // next slot to write
+
+  while (j >= 0) {
+    if (i >= 0 && nums1[i] > nums2[j]) {
+      nums1[k] = nums1[i];
+      i--;
+    } else {
+      nums1[k] = nums2[j];
+      j--;
+    }
+    k--;
+  }
+  // If j hits -1 first, the rest of nums1 is already correct.
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why the loop condition is `j >= 0` and not `i >= 0 || j >= 0`">
+Once `nums2` is empty, the untouched prefix of `nums1` is already sorted **and already sitting at the right indices**. Continuing to copy `nums1` onto itself would be correct but pointless. Looping on `j` alone stops as early as possible.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(m + n)" space="O(1)" />
+
+- **Time** — each of the `m + n` slots is written at most once.
+- **Space** — three integer pointers. Sorting the concatenation instead (`nums1[m:] = nums2; nums1.sort()`) is a valid one-liner but costs `O((m+n) log(m+n))` time, and interviewers ask this question specifically to see the linear in-place merge.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="n = 0 (nums2 is empty)">
+The `while j >= 0` loop never runs and `nums1` is left untouched — already the correct answer.
+</Accordion>
+
+<Accordion title="m = 0 (nums1 has no real values)">
+`i` starts at `-1`, so the `i >= 0` guard fails immediately and every value is copied from `nums2`. The result is a straight copy of `nums2`.
+</Accordion>
+
+<Accordion title="Every element of nums2 is smaller than every element of nums1">
+For example `nums1 = [4, 5, 6, 0, 0, 0]`, `nums2 = [1, 2, 3]`. All of `nums1`'s values are pushed to the back first, then `nums2` fills the front. Still one pass.
+</Accordion>
+
+<Accordion title="Duplicate values across the two arrays">
+The `>` (rather than `>=`) comparison sends ties to the `else` branch, taking from `nums2`. Either choice produces a correctly sorted result; the merge is stable with respect to `nums1` values.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Merge Two Sorted Lists](/docs/linked-lists/merge-two-sorted-lists) — the same merge, but on linked lists where front-to-back is natural
+- [Remove Duplicates from Sorted Array II](/docs/arrays/remove-duplicates-from-sorted-array-ii) — another in-place rewrite driven by a write pointer
+- [Container With Most Water](/docs/arrays/container-with-most-water) — two pointers converging rather than draining

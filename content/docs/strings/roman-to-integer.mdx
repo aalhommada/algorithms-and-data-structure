@@ -1,0 +1,249 @@
+---
+title: Roman to Integer
+description: Convert Roman numerals to integers by subtracting whenever a smaller symbol precedes a larger one
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Hash Map / Local Comparison"
+  tags={["String", "Hash Table", "Math"]}
+  leetcode="https://leetcode.com/problems/roman-to-integer/"
+  problemNumber={13}
+/>
+
+## Problem Statement
+
+Convert a Roman numeral string to an integer.
+
+| Symbol | Value |
+|---|---|
+| I | 1 |
+| V | 5 |
+| X | 10 |
+| L | 50 |
+| C | 100 |
+| D | 500 |
+| M | 1000 |
+
+```text
+Input:  "III"      → 3
+Input:  "LVIII"    → 58     (L=50, V=5, III=3)
+Input:  "MCMXCIV"  → 1994   (M=1000, CM=900, XC=90, IV=4)
+```
+
+## Intuition
+
+Roman numerals are usually written largest-to-smallest, and you just add: `LVIII` is `50 + 5 + 1 + 1 + 1 = 58`.
+
+The exception is **subtractive notation**. To avoid four repeated symbols, a smaller symbol placed *before* a larger one is subtracted: `IV` is `4`, not `6`. There are six such pairs — `IV`, `IX`, `XL`, `XC`, `CD`, `CM`.
+
+Special-casing all six is tedious. There is a single rule that covers everything.
+
+<Callout type="info" title="The key insight">
+Scan left to right. For each symbol, compare it with the **next** one:
+
+- If the current value is **less than** the next → **subtract** it.
+- Otherwise → **add** it.
+
+That one comparison handles all six subtractive pairs and every ordinary case, with no lookup table of pairs.
+</Callout>
+
+Check it on `MCMXCIV`:
+
+```text
+M (1000) vs C (100)   → 1000 ≥ 100  → +1000    total 1000
+C (100)  vs M (1000)  → 100 < 1000  →  -100    total  900
+M (1000) vs X (10)    → 1000 ≥ 10   → +1000    total 1900
+X (10)   vs C (100)   → 10 < 100    →   -10    total 1890
+C (100)  vs I (1)     → 100 ≥ 1     →  +100    total 1990
+I (1)    vs V (5)     → 1 < 5       →    -1    total 1989
+V (5)    — last symbol, always added →    +5    total 1994
+```
+
+The last symbol has nothing after it, so it is always added.
+
+### Watch it run
+
+<ArrayViz
+  title='"MCMXCIV" = 1994'
+  showIndices={false}
+  intervalMs={1500}
+  frames={[
+    {
+      values: ["M", "C", "M", "X", "C", "I", "V"],
+      states: ["active", "compare", "idle", "idle", "idle", "idle", "idle"],
+      vars: { compare: "1000 ≥ 100", op: "+1000", total: 1000 },
+      note: "M is not smaller than the next symbol C → add 1000.",
+    },
+    {
+      values: ["M", "C", "M", "X", "C", "I", "V"],
+      states: ["done", "discard", "compare", "idle", "idle", "idle", "idle"],
+      vars: { compare: "100 < 1000", op: "-100", total: 900 },
+      note: "C is smaller than the next symbol M → subtract 100. This is the CM = 900 pair.",
+    },
+    {
+      values: ["M", "C", "M", "X", "C", "I", "V"],
+      states: ["done", "done", "active", "compare", "idle", "idle", "idle"],
+      vars: { compare: "1000 ≥ 10", op: "+1000", total: 1900 },
+      note: "M vs X → add 1000.",
+    },
+    {
+      values: ["M", "C", "M", "X", "C", "I", "V"],
+      states: ["done", "done", "done", "discard", "compare", "idle", "idle"],
+      vars: { compare: "10 < 100", op: "-10", total: 1890 },
+      note: "X before C → subtract 10. The XC = 90 pair.",
+    },
+    {
+      values: ["M", "C", "M", "X", "C", "I", "V"],
+      states: ["done", "done", "done", "done", "active", "compare", "idle"],
+      vars: { compare: "100 ≥ 1", op: "+100", total: 1990 },
+      note: "C vs I → add 100.",
+    },
+    {
+      values: ["M", "C", "M", "X", "C", "I", "V"],
+      states: ["done", "done", "done", "done", "done", "discard", "compare"],
+      vars: { compare: "1 < 5", op: "-1", total: 1989 },
+      note: "I before V → subtract 1. The IV = 4 pair.",
+    },
+    {
+      values: ["M", "C", "M", "X", "C", "I", "V"],
+      states: ["done", "done", "done", "done", "done", "done", "match"],
+      vars: { op: "+5", total: 1994 },
+      note: "V is the last symbol — nothing follows, so it is always added. Answer: 1994.",
+    },
+  ]}
+  caption="One comparison with the next symbol replaces six special cases."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Build a symbol-to-value map
+</Step>
+
+<Step>
+### Walk the string, looking one character ahead
+
+If `value[i] < value[i+1]`, subtract; otherwise add.
+</Step>
+
+<Step>
+### Always add the final symbol
+
+It has no successor, so the subtraction rule cannot apply.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def roman_to_int(s: str) -> int:
+    """Convert a Roman numeral to its integer value."""
+    values = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+
+    total = 0
+    for i in range(len(s)):
+        # A smaller symbol before a larger one means subtraction.
+        if i + 1 < len(s) and values[s[i]] < values[s[i + 1]]:
+            total -= values[s[i]]
+        else:
+            total += values[s[i]]
+
+    return total
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function romanToInt(s: string): number {
+  const values: Record<string, number> = {
+    I: 1,
+    V: 5,
+    X: 10,
+    L: 50,
+    C: 100,
+    D: 500,
+    M: 1000,
+  };
+
+  let total = 0;
+  for (let i = 0; i < s.length; i++) {
+    // A smaller symbol before a larger one means subtraction.
+    if (i + 1 < s.length && values[s[i]] < values[s[i + 1]]) {
+      total -= values[s[i]];
+    } else {
+      total += values[s[i]];
+    }
+  }
+
+  return total;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="The right-to-left variant">
+Scanning backwards removes the bounds check. Track the previous (larger-index) value: if the current value is smaller, subtract; otherwise add.
+
+```python
+def roman_to_int_reverse(s: str) -> int:
+    values = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+    total = 0
+    prev = 0
+
+    for char in reversed(s):
+        value = values[char]
+        total += -value if value < prev else value
+        prev = value
+
+    return total
+```
+
+Both are `O(n)`; pick whichever reads more naturally to you.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — one pass with a constant-time map lookup per character.
+- **Space** — the value map has a fixed 7 entries, so it does not grow with the input.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A single symbol, e.g. 'V'">
+The bounds check `i + 1 < len(s)` fails, so it is added. Returns `5`.
+</Accordion>
+
+<Accordion title="Repeated symbols, e.g. 'III'">
+Each `I` is compared with the next `I`. `1 < 1` is false, so all are added. Returns `3`.
+</Accordion>
+
+<Accordion title="Multiple subtractive pairs, e.g. 'MCMXCIV'">
+Each pair is handled independently by the local comparison — there is no interaction between them. Returns `1994`.
+</Accordion>
+
+<Accordion title="The largest valid input, 'MMMCMXCIX'">
+Returns `3999`, the maximum expressible in standard Roman numerals. LeetCode caps input at this.
+</Accordion>
+
+<Accordion title="Why is a lookup table of the six pairs unnecessary?">
+Because the six subtractive pairs are exactly the cases where a smaller symbol precedes a larger one — the comparison *defines* the set rather than enumerating it. Fewer lines and nothing to mistype.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Integer to Roman](/docs/strings/integer-to-roman) — the inverse conversion, which is greedy rather than comparative
+- [Evaluate Reverse Polish Notation](/docs/stacks-queues/evaluate-reverse-polish-notation) — another notation-parsing problem

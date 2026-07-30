@@ -1,0 +1,336 @@
+---
+title: Linked List Cycle II
+description: Detect a loop with fast and slow pointers, then find where it starts using Floyd's algorithm
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Floyd's Cycle Detection"
+  tags={["Linked List", "Two Pointers", "Hash Table"]}
+  leetcode="https://leetcode.com/problems/linked-list-cycle-ii/"
+  problemNumber={142}
+/>
+
+## Problem Statement
+
+Given the head of a linked list, return the node where a cycle **begins**. If there is no cycle, return `null`.
+
+You must solve it using `O(1)` memory.
+
+```text
+Input:  3 → 2 → 0 → -4
+             ↑        ↓
+             ←————————
+Output: the node with value 2  (index 1)
+
+Input:  1 → 2 → 1 (cycle back to the head)
+Output: the node with value 1
+
+Input:  1 → null
+Output: null
+```
+
+## Intuition
+
+There are two questions here: *is there a cycle?* and *where does it start?* The first is easy; the second is where the famous trick lives.
+
+### Part 1 — detecting the cycle
+
+<Callout type="info" title="Fast and slow pointers must collide inside a loop">
+Run `slow` one step at a time and `fast` two steps at a time.
+
+- **No cycle** → `fast` reaches `null` and you are done.
+- **Cycle** → both pointers are eventually trapped inside the loop. Each step, `fast` gains exactly one position on `slow`. On a circular track, a gap that shrinks by one every step must reach zero — so they **must** meet. There is no way to skip past.
+</Callout>
+
+That "gain exactly one per step" argument is why `fast` moves by two and not three. With a larger stride the gap changes by more than one and could step over `slow` on a loop whose length shares a factor with the stride.
+
+### Part 2 — locating the cycle's start
+
+This is the surprising part. Label the distances:
+
+```text
+head ──── F ────► S ──── a ────► M
+                  ▲               │
+                  └───── b ───────┘
+
+F = distance from head to the cycle start S
+a = distance from S forward to the meeting point M
+b = remaining distance from M back around to S
+C = a + b = cycle length
+```
+
+When they meet:
+- `slow` has travelled `F + a` (it enters the loop and walks `a`).
+- `fast` has travelled `F + a + nC` for some whole number of extra laps `n ≥ 1`.
+- `fast` moved twice as far: `2(F + a) = F + a + nC`.
+
+Simplify: `F + a = nC`, so `F = nC - a = (n-1)C + (C - a) = (n-1)C + b`.
+
+<Callout type="info" title="What that equation means in plain English">
+`F = (n-1)C + b`
+
+**The distance from the head to the cycle start equals the distance from the meeting point to the cycle start** (plus some whole laps, which change nothing since you end up in the same place).
+
+So: put one pointer back at the head, leave the other at the meeting point, and advance **both one step at a time**. They meet exactly at the cycle's entrance.
+</Callout>
+
+### Watch it run
+
+<LinkedListViz
+  title="3 → 2 → 0 → -4, with -4 pointing back to 2"
+  intervalMs={1800}
+  frames={[
+    {
+      nodes: [
+        { value: 3, state: "active", pointers: ["slow", "fast"] },
+        { value: 2 },
+        { value: 0 },
+        { value: -4 },
+      ],
+      cycleTo: 1,
+      note: "Phase 1. Both start at the head. The cycle begins at node 2 (index 1).",
+    },
+    {
+      nodes: [
+        { value: 3, state: "done" },
+        { value: 2, state: "active", pointers: ["slow"] },
+        { value: 0, state: "active", pointers: ["fast"] },
+        { value: -4 },
+      ],
+      cycleTo: 1,
+      note: "slow → 2, fast → 0. Not equal.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "done" },
+        { value: 2, state: "done" },
+        { value: 0, state: "active", pointers: ["slow"] },
+        { value: -4, state: "idle" },
+      ],
+      cycleTo: 1,
+      vars: { fast: "2 (wrapped around)" },
+      note: "slow → 0. fast takes two steps: -4 then wraps to 2. Still not equal.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "done" },
+        { value: 2, state: "idle" },
+        { value: 0, state: "idle" },
+        { value: -4, state: "match", pointers: ["slow", "fast"] },
+      ],
+      cycleTo: 1,
+      note: "slow → -4. fast goes 0 then -4. They MEET at node -4. A cycle exists.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "active", pointers: ["p1 (from head)"] },
+        { value: 2 },
+        { value: 0 },
+        { value: -4, state: "active", pointers: ["p2 (at meeting point)"] },
+      ],
+      cycleTo: 1,
+      note: "Phase 2. Reset one pointer to the head. Now BOTH move one step at a time.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "done" },
+        { value: 2, state: "match", pointers: ["p1", "p2"] },
+        { value: 0 },
+        { value: -4, state: "done" },
+      ],
+      cycleTo: 1,
+      note: "p1 → 2. p2 goes from -4 and wraps to 2. They meet at node 2 — the cycle's start. Return it.",
+    },
+  ]}
+  caption="Phase 1 finds a meeting point; phase 2 converts it into the entrance."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Phase 1 — find a meeting point
+
+Advance `slow` by one and `fast` by two while `fast` and `fast.next` exist. If they ever become the same node, a cycle exists. If `fast` reaches `null`, return `null`.
+</Step>
+
+<Step>
+### Phase 2 — walk to the entrance
+
+Reset one pointer to `head`. Move **both** one step at a time. Where they meet is the start of the cycle.
+</Step>
+
+<Step>
+### Return that node
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from typing import Optional
+
+
+class ListNode:
+    def __init__(self, val: int = 0, next: Optional["ListNode"] = None):
+        self.val = val
+        self.next = next
+
+
+def detect_cycle(head: Optional[ListNode]) -> Optional[ListNode]:
+    """Return the node where the cycle begins, or None."""
+    slow = fast = head
+
+    # Phase 1: find a meeting point inside the cycle.
+    while fast and fast.next:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            break
+    else:
+        return None  # fast ran off the end — no cycle
+
+    # Phase 2: F == b, so both pointers reach the entrance together.
+    finder = head
+    while finder is not slow:
+        finder = finder.next
+        slow = slow.next
+
+    return finder
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class ListNode {
+  val: number;
+  next: ListNode | null;
+
+  constructor(val = 0, next: ListNode | null = null) {
+    this.val = val;
+    this.next = next;
+  }
+}
+
+function detectCycle(head: ListNode | null): ListNode | null {
+  let slow = head;
+  let fast = head;
+  let met = false;
+
+  // Phase 1: find a meeting point inside the cycle.
+  while (fast !== null && fast.next !== null) {
+    slow = slow!.next;
+    fast = fast.next.next;
+    if (slow === fast) {
+      met = true;
+      break;
+    }
+  }
+
+  if (!met) return null; // fast ran off the end — no cycle
+
+  // Phase 2: F === b, so both pointers reach the entrance together.
+  let finder = head;
+  while (finder !== slow) {
+    finder = finder!.next;
+    slow = slow!.next;
+  }
+
+  return finder;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Python's while/else">
+The `else` on a `while` loop runs only when the loop finished **without** hitting `break`. Here that means `fast` reached the end of the list, so there is no cycle. It expresses "the loop completed normally" without an extra flag — which is what the TypeScript version needs `met` for.
+</Callout>
+
+### The hash-set version
+
+If `O(n)` memory is acceptable, the problem becomes almost trivial:
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def detect_cycle_set(head: Optional[ListNode]) -> Optional[ListNode]:
+    seen = set()
+    node = head
+
+    while node:
+        if id(node) in seen:
+            return node  # first revisited node IS the cycle start
+        seen.add(id(node))
+        node = node.next
+
+    return None
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function detectCycleSet(head: ListNode | null): ListNode | null {
+  const seen = new Set<ListNode>();
+
+  for (let node = head; node !== null; node = node.next) {
+    if (seen.has(node)) return node; // first revisited node IS the cycle start
+    seen.add(node);
+  }
+
+  return null;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+Worth mentioning in an interview as the obvious baseline before presenting Floyd's — it shows you know the trade-off rather than just the trick.
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — phase 1 takes at most `O(n)` steps (`slow` cannot travel further than the list length plus one lap); phase 2 takes `F ≤ n` steps.
+- **Space** — four references. This is the whole reason to prefer Floyd's over the hash set, which needs `O(n)`.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="No cycle at all">
+`fast` or `fast.next` becomes `null` and `null` is returned before phase 2 ever starts.
+</Accordion>
+
+<Accordion title="Empty list or a single node with no cycle">
+The loop condition fails immediately and `null` is returned.
+</Accordion>
+
+<Accordion title="A single node pointing at itself">
+After one step both pointers are on that node, so they meet. In phase 2, `finder` starts at `head` and already equals `slow`, so the loop body never runs and the node is returned. Correct — `F = 0`.
+</Accordion>
+
+<Accordion title="The whole list is one big cycle">
+`F = 0`, and phase 2 exits immediately with `finder = head`. The head is the cycle's entrance.
+</Accordion>
+
+<Accordion title="Why must phase 2 move both pointers at the same speed?">
+The identity `F = (n-1)C + b` compares two *equal* distances. Moving one pointer faster would break that equality and they would meet somewhere arbitrary — or not at all.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Middle of the Linked List](/docs/linked-lists/middle-of-the-linked-list) — the gentle introduction to fast and slow pointers
+- [Intersection of Two Linked Lists](/docs/linked-lists/intersection-of-two-linked-lists) — pointers synchronised by a distance argument
+- [Reverse Linked List](/docs/linked-lists/reverse-linked-list) — careful pointer handling

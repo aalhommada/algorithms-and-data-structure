@@ -1,0 +1,212 @@
+---
+title: Simplify Path
+description: Canonicalise a Unix file path with a stack, where `..` is a pop and `.` is a no-op
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Stack"
+  tags={["String", "Stack"]}
+  leetcode="https://leetcode.com/problems/simplify-path/"
+  problemNumber={71}
+/>
+
+## Problem Statement
+
+Given an absolute Unix-style path, return its **canonical** form. The canonical path:
+
+- Starts with a single `/`
+- Has exactly one `/` between components
+- Does not end with `/` (unless it is the root `/`)
+- Contains no `.` or `..` components
+
+```text
+Input:  "/home/"           → "/home"
+Input:  "/../"             → "/"          (cannot go above root)
+Input:  "/home//foo/"      → "/home/foo"  (collapse repeated slashes)
+Input:  "/a/./b/../../c/"  → "/c"
+Input:  "/a/../../b/"      → "/b"
+```
+
+## Intuition
+
+Directory navigation is naturally last-in-first-out: `..` undoes the most recent `cd`. That is a stack.
+
+<Callout type="info" title="The key insight">
+Split the path on `/` and process the components left to right:
+
+| Component | Action |
+|---|---|
+| `""` (from `//` or a trailing `/`) | ignore |
+| `"."` (current directory) | ignore |
+| `".."` (parent directory) | **pop** — but only if the stack is non-empty |
+| anything else | **push** — it is a real directory name |
+
+Join the stack with `/`, prefix a `/`, and you have the canonical path.
+</Callout>
+
+Splitting handles the messy slash rules for free. `"/home//foo/".split("/")` gives `["", "home", "", "foo", ""]` — every irregularity becomes an empty string, and empty strings are simply ignored.
+
+### Watch it run
+
+<StackViz
+  title='Simplifying "/a/./b/../../c/"'
+  intervalMs={1500}
+  frames={[
+    {
+      input: { values: ["", "a", ".", "b", "..", "..", "c", ""], cursor: 0 },
+      items: [],
+      note: 'Split on "/" gives 8 components. The leading empty string comes from the initial slash — ignore it.',
+    },
+    {
+      input: { values: ["", "a", ".", "b", "..", "..", "c", ""], cursor: 1 },
+      items: [{ value: "a", state: "active" }],
+      note: '"a" is a real directory → push.',
+    },
+    {
+      input: { values: ["", "a", ".", "b", "..", "..", "c", ""], cursor: 2 },
+      items: [{ value: "a" }],
+      note: '"." means the current directory → do nothing.',
+    },
+    {
+      input: { values: ["", "a", ".", "b", "..", "..", "c", ""], cursor: 3 },
+      items: [{ value: "a" }, { value: "b", state: "active" }],
+      note: '"b" → push. Current path is /a/b.',
+    },
+    {
+      input: { values: ["", "a", ".", "b", "..", "..", "c", ""], cursor: 4 },
+      items: [{ value: "a" }, { value: "b", state: "discard" }],
+      note: '".." → pop "b". Back at /a.',
+    },
+    {
+      input: { values: ["", "a", ".", "b", "..", "..", "c", ""], cursor: 5 },
+      items: [{ value: "a", state: "discard" }],
+      note: '".." → pop "a". Back at root.',
+    },
+    {
+      input: { values: ["", "a", ".", "b", "..", "..", "c", ""], cursor: 6 },
+      items: [{ value: "c", state: "match" }],
+      vars: { result: "/c" },
+      note: '"c" → push. The trailing empty string is ignored. Join: "/" + "c" = "/c".',
+    },
+  ]}
+  caption="Splitting on / turns every slash irregularity into an empty component."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Split the path on `/`
+</Step>
+
+<Step>
+### Walk the components
+
+Skip `""` and `"."`. On `".."`, pop if the stack is non-empty. Otherwise push the component.
+</Step>
+
+<Step>
+### Join with `/` and prefix a `/`
+
+An empty stack joins to `""`, and `"/" + "" = "/"` — the root case falls out with no special handling.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="`..` at the root must be a no-op, not an error">
+`"/../"` resolves to `"/"`. In Unix, the parent of the root is the root itself. Popping an empty stack would crash in Python and silently return `undefined` in TypeScript, so the emptiness check is required.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def simplify_path(path: str) -> str:
+    """Return the canonical form of an absolute Unix path."""
+    stack: list[str] = []
+
+    for part in path.split("/"):
+        if part == "" or part == ".":
+            continue          # empty (from // or a trailing /) or current dir
+        if part == "..":
+            if stack:         # cannot go above the root
+                stack.pop()
+            continue
+        stack.append(part)    # a real directory name
+
+    return "/" + "/".join(stack)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function simplifyPath(path: string): string {
+  const stack: string[] = [];
+
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.') {
+      continue; // empty (from // or a trailing /) or current dir
+    }
+    if (part === '..') {
+      stack.pop(); // pop() on an empty array is a safe no-op in JS
+      continue;
+    }
+    stack.push(part); // a real directory name
+  }
+
+  return '/' + stack.join('/');
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="A language difference worth knowing">
+`Array.prototype.pop()` on an empty array returns `undefined` and does nothing — so TypeScript needs no emptiness guard. Python's `list.pop()` raises `IndexError`, so the `if stack:` check is mandatory.
+
+The same asymmetry appeared in [Valid Parentheses](/docs/stacks-queues/valid-parentheses).
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — splitting is `O(n)`, and each component is pushed and popped at most once.
+- **Space** — `O(n)` for the split components and the stack. A path like `"/a/b/c/d/…"` with no `..` keeps everything.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title='Root only, "/"'>
+Splitting gives `["", ""]`, both ignored. The stack is empty, and `"/" + "" = "/"`.
+</Accordion>
+
+<Accordion title='Going above the root, "/../" or "/a/../../"'>
+Each `..` on an empty stack does nothing. The result is `"/"`, matching Unix behaviour.
+</Accordion>
+
+<Accordion title='Directories named "..." or "..hidden"'>
+Only the exact strings `"."` and `".."` are special. `"..."` is a legitimate directory name and gets pushed. This is why the comparison must be exact equality, not `startsWith('.')`.
+</Accordion>
+
+<Accordion title='Repeated slashes, "/home//foo"'>
+Splitting produces an empty string for each extra slash, and empty strings are skipped. Collapsing comes for free.
+</Accordion>
+
+<Accordion title="Trailing slash">
+Produces a trailing empty component, which is skipped — so the output never ends in `/` unless it is the root.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Valid Parentheses](/docs/stacks-queues/valid-parentheses) — the stack as a matching structure
+- [Evaluate Reverse Polish Notation](/docs/stacks-queues/evaluate-reverse-polish-notation) — a stack of operands
+- [Min Stack](/docs/stacks-queues/min-stack) — designing around stack behaviour

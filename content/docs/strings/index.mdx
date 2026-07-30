@@ -1,0 +1,80 @@
+---
+title: Strings
+description: Character counting, two pointers and normalisation — the recurring shapes of string problems
+---
+
+Strings are arrays of characters, so most array techniques carry over directly. What makes string problems distinct is that the *content* often has structure worth exploiting — letters have counts, words have boundaries, and equivalent strings can be reduced to a shared canonical form.
+
+## The Patterns
+
+### 1. Counting — reduce a string to a multiset
+
+Once you only care about *which characters and how many*, order stops mattering and the problem usually becomes easy.
+
+- [Valid Anagram](/docs/strings/valid-anagram) — exact count equality
+- [Longest Palindrome](/docs/strings/longest-palindrome) — pairs plus at most one centre
+- [Shortest Completing Word](/docs/strings/shortest-completing-word) — count containment, where a set would be wrong
+
+<Callout type="warn" title="Sets lose multiplicity">
+The most common bug in this family is using a set where counts are needed. `"step"` has an `s`; it does not have *two*. If the problem cares how many times something appears, count it.
+</Callout>
+
+### 2. Two pointers — walk from both ends or at different rates
+
+- [Valid Palindrome](/docs/strings/valid-palindrome) — converging, with skip rules
+- [Is Subsequence](/docs/strings/is-subsequence) — same direction, one pointer advancing conditionally
+- [Length of Last Word](/docs/strings/length-of-last-word) — scanning backwards in two phases
+
+### 3. Normalisation — make equivalent strings identical
+
+Rather than asking "are these equivalent?", transform both into a canonical form and ask "are these equal?".
+
+- [Unique Email Addresses](/docs/strings/unique-email-addresses) — apply the rules, then de-duplicate with a set
+- [Isomorphic Strings](/docs/strings/isomorphic-strings) — structural equivalence via two maps
+- [Keyboard Row](/docs/strings/keyboard-row) — map each character to a category
+
+### 4. Simulation — follow the specification exactly
+
+Some problems have no clever insight; the challenge is holding a fiddly rule set straight.
+
+- [Roman to Integer](/docs/strings/roman-to-integer) / [Integer to Roman](/docs/strings/integer-to-roman) — inverse conversions with different techniques
+- [Zigzag Conversion](/docs/strings/zigzag-conversion) — a bouncing row index
+- [Text Justification](/docs/strings/text-justification) — three interacting formatting rules
+
+## Language Gotchas Worth Memorising
+
+| Situation | Python | TypeScript |
+|---|---|---|
+| Split on whitespace, dropping empties | `s.split()` | `s.trim().split(/\s+/)` |
+| Split on a single space (keeps empties) | `s.split(" ")` | `s.split(" ")` |
+| Reverse a string | `s[::-1]` | `[...s].reverse().join("")` |
+| Integer division | `a // b` | `Math.floor(a / b)` |
+| Truncate toward zero | `int(a / b)` | `Math.trunc(a / b)` |
+| Count characters | `Counter(s)` | a `Map` built by hand |
+| Missing key returns 0 | `Counter[k]` | `map.get(k) ?? 0` |
+
+<Callout type="warn" title="Build strings with join, not +=">
+Repeated `result += char` inside a loop allocates a new string each iteration — `O(n²)` overall. Collect pieces in a list and join once.
+</Callout>
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [Valid Palindrome](/docs/strings/valid-palindrome) | Easy | Two Pointers |
+| [Valid Anagram](/docs/strings/valid-anagram) | Easy | Counting |
+| [Longest Common Prefix](/docs/strings/longest-common-prefix) | Easy | Vertical Scan |
+| [Length of Last Word](/docs/strings/length-of-last-word) | Easy | Reverse Scan |
+| [Roman to Integer](/docs/strings/roman-to-integer) | Easy | Local Comparison |
+| [Is Subsequence](/docs/strings/is-subsequence) | Easy | Two Pointers |
+| [Isomorphic Strings](/docs/strings/isomorphic-strings) | Easy | Two Hash Maps |
+| [Longest Palindrome](/docs/strings/longest-palindrome) | Easy | Counting |
+| [First Occurrence in a String](/docs/strings/find-the-index-of-the-first-occurrence-in-a-string) | Easy | String Matching |
+| [Keyboard Row](/docs/strings/keyboard-row) | Easy | Hash Map |
+| [Shortest Completing Word](/docs/strings/shortest-completing-word) | Easy | Counting |
+| [Unique Email Addresses](/docs/strings/unique-email-addresses) | Easy | Normalisation |
+| [Palindrome Number](/docs/strings/palindrome-number) | Easy | Digit Math |
+| [Integer to Roman](/docs/strings/integer-to-roman) | Medium | Greedy |
+| [Reverse Words in a String](/docs/strings/reverse-words-in-a-string) | Medium | Two Pointers |
+| [Zigzag Conversion](/docs/strings/zigzag-conversion) | Medium | Simulation |
+| [Text Justification](/docs/strings/text-justification) | Hard | Simulation |

@@ -1,0 +1,61 @@
+---
+title: Stacks & Queues
+description: Last-in-first-out and first-in-first-out — and how to recognise which one a problem needs
+---
+
+Stacks and queues are the same idea — a sequence you add to and remove from — differing only in **which end** you remove from. That single choice determines which problems they solve.
+
+## Stack — Last In, First Out
+
+Reach for a stack whenever the most recent thing is the first thing you need to resolve.
+
+<Callout type="info" title="Signals that a stack is the answer">
+- **Nesting** — brackets, tags, nested structures ([Valid Parentheses](/docs/stacks-queues/valid-parentheses))
+- **Undo / go back** — `..` in a path ([Simplify Path](/docs/stacks-queues/simplify-path))
+- **Deferred operands** — postfix evaluation ([Evaluate Reverse Polish Notation](/docs/stacks-queues/evaluate-reverse-polish-notation))
+- **Depth-first traversal** — recursion *is* a stack, whether you manage it or the runtime does
+</Callout>
+
+## Queue — First In, First Out
+
+Reach for a queue when things must be processed in arrival order.
+
+- **Level-by-level exploration** — [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal)
+- **Shortest path in an unweighted graph** — BFS reaches every node in the fewest possible steps
+
+<Callout type="warn" title="Do not use a plain list as a queue">
+**Python:** `list.pop(0)` is `O(n)` because everything shifts left. Use `collections.deque`, whose `popleft` is `O(1)`.
+
+**TypeScript:** `Array.prototype.shift()` has the same cost. Either keep a read index into the array, or build a fresh array per BFS level.
+
+Getting this wrong silently turns an `O(n)` traversal into `O(n²)`.
+</Callout>
+
+## Augmented Stacks
+
+A stack can carry extra state alongside its values, giving `O(1)` answers to questions that would otherwise need a scan.
+
+- [Min Stack](/docs/stacks-queues/min-stack) — every entry stores the minimum as of its push
+
+The same idea powers **monotonic stacks**, which keep their contents sorted and solve "next greater element" style problems in linear time.
+
+## Language Notes
+
+| Operation | Python | TypeScript |
+|---|---|---|
+| Push | `stack.append(x)` | `stack.push(x)` |
+| Pop | `stack.pop()` — raises on empty | `stack.pop()` — returns `undefined` |
+| Peek | `stack[-1]` | `stack[stack.length - 1]` |
+| Enqueue | `queue.append(x)` | `queue.push(x)` |
+| Dequeue | `queue.popleft()` (deque) | index-based read, or swap arrays |
+
+That difference in `pop` behaviour on an empty container shows up repeatedly: Python needs an explicit emptiness check where TypeScript's `undefined` falls through harmlessly.
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [Valid Parentheses](/docs/stacks-queues/valid-parentheses) | Easy | Stack |
+| [Min Stack](/docs/stacks-queues/min-stack) | Medium | Augmented Stack |
+| [Evaluate Reverse Polish Notation](/docs/stacks-queues/evaluate-reverse-polish-notation) | Medium | Stack |
+| [Simplify Path](/docs/stacks-queues/simplify-path) | Medium | Stack |

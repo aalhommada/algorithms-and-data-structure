@@ -1,0 +1,194 @@
+---
+title: Two Sum
+description: Find the two numbers in an array that add up to a target, using a hash map for O(n) lookups
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Hash Map"
+  tags={["Array", "Hash Table"]}
+  leetcode="https://leetcode.com/problems/two-sum/"
+  problemNumber={1}
+/>
+
+## Problem Statement
+
+Given an array of integers `nums` and an integer `target`, return the **indices** of the two numbers that add up to `target`.
+
+You may assume each input has **exactly one** solution, and you may not use the same element twice. You can return the answer in any order.
+
+```text
+Input:  nums = [2, 7, 11, 15], target = 9
+Output: [0, 1]
+Why:    nums[0] + nums[1] = 2 + 7 = 9
+
+Input:  nums = [3, 2, 4], target = 6
+Output: [1, 2]
+```
+
+## Intuition
+
+Start with the obvious idea: try every pair. Take `2`, check it against `7`, `11`, `15`. Take `7`, check it against `11`, `15`. That works, but for an array of 10,000 numbers it means about 50 million comparisons.
+
+Here is the shift in thinking that makes it fast:
+
+<Callout type="info" title="The key insight">
+You are never really searching for "some pair that works". While standing on the number `2` with `target = 9`, you are searching for **exactly one specific number**: `9 - 2 = 7`. That number has a name — the **complement**.
+</Callout>
+
+So the question changes from *"which of the remaining numbers pairs with me?"* (slow, requires scanning) to *"have I already seen the number 7?"* (fast, if you kept notes).
+
+A **hash map** is the notebook. Writing down `number → index` costs O(1), and asking "is 7 in my notes?" also costs O(1).
+
+### Real-world analogy
+
+Imagine you are matching socks from a laundry pile. The slow way is to pick one sock and compare it against every other sock. The fast way: lay each sock on a table in a labelled spot as you pull it out. When you pull out a red sock, you don't search — you look straight at the "red" spot to see if its partner is already there.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Create an empty hash map
+
+It will store `{number: index}` for every number you have already walked past.
+</Step>
+
+<Step>
+### Walk the array once, keeping the index
+
+For each `num` at position `i`, compute `complement = target - num`.
+</Step>
+
+<Step>
+### Check the map *before* inserting
+
+If `complement` is already a key in the map, you have found the pair — return `[map[complement], i]`.
+
+Checking before inserting is what stops you from using the same element twice. If `target = 6` and `num = 3`, you don't want to match `3` with itself.
+</Step>
+
+<Step>
+### Otherwise, record the current number
+
+Store `map[num] = i` and continue to the next element.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<HashMapViz
+  title="nums = [2, 7, 11, 15], target = 9"
+  label="seen (number → index)"
+  frames={[
+    {
+      scan: { values: [2, 7, 11, 15], cursor: 0 },
+      entries: [],
+      vars: { i: 0, num: 2, complement: 7 },
+      note: "i = 0. complement = 9 - 2 = 7. The map is empty, so 7 is not there. Record 2 → 0.",
+    },
+    {
+      scan: { values: [2, 7, 11, 15], cursor: 0 },
+      entries: [{ key: 2, value: 0, state: "active" }],
+      vars: { i: 0, num: 2, complement: 7 },
+      note: "2 is now written down at index 0. Move on.",
+    },
+    {
+      scan: { values: [2, 7, 11, 15], cursor: 1 },
+      entries: [{ key: 2, value: 0 }],
+      vars: { i: 1, num: 7, complement: 2 },
+      note: "i = 1. complement = 9 - 7 = 2. Is 2 in the map?",
+    },
+    {
+      scan: { values: [2, 7, 11, 15], cursor: 1 },
+      entries: [{ key: 2, value: 0, state: "match" }],
+      vars: { i: 1, num: 7, complement: 2, answer: "[0, 1]" },
+      note: "Yes — 2 sits at index 0. Return [0, 1]. Only two elements were ever examined.",
+    },
+  ]}
+  caption="The map turns 'search the rest of the array' into a single O(1) question."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def two_sum(nums: list[int], target: int) -> list[int]:
+    """Return the indices of the two numbers that add up to target."""
+    seen: dict[int, int] = {}  # number -> index it was found at
+
+    for i, num in enumerate(nums):
+        complement = target - num
+
+        # Check before inserting so an element can't pair with itself.
+        if complement in seen:
+            return [seen[complement], i]
+
+        seen[num] = i
+
+    return []  # unreachable when a solution is guaranteed
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function twoSum(nums: number[], target: number): number[] {
+  const seen = new Map<number, number>(); // number -> index it was found at
+
+  for (let i = 0; i < nums.length; i++) {
+    const complement = target - nums[i];
+
+    // Check before inserting so an element can't pair with itself.
+    const match = seen.get(complement);
+    if (match !== undefined) {
+      return [match, i];
+    }
+
+    seen.set(nums[i], i);
+  }
+
+  return []; // unreachable when a solution is guaranteed
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Why `match !== undefined` and not `if (match)`">
+In TypeScript, an index of `0` is falsy. If the answer lives at index `0`, `if (match)` silently skips it. Always compare against `undefined` when a `Map` can legitimately hold `0`.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — one pass over `n` elements, and each hash-map read or write is O(1) on average. Compare with the brute-force `O(n²)`: at `n = 10,000` that is 10,000 steps instead of ~50,000,000.
+- **Space** — in the worst case (the pair is the last two elements) the map holds nearly every number.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Duplicate numbers, e.g. nums = [3, 3], target = 6">
+This works. At `i = 0` the map is empty, so `3 → 0` is stored. At `i = 1`, `complement = 3` is found in the map at index `0`, so the answer is `[0, 1]`. The later `3` overwrites nothing important because the lookup happens first.
+</Accordion>
+
+<Accordion title="Negative numbers, e.g. nums = [-3, 4, 3, 90], target = 0">
+Nothing special is needed. `complement = 0 - (-3) = 3`, and `3` is found normally. Subtraction handles negatives for free.
+</Accordion>
+
+<Accordion title="Why not sort the array first and use two pointers?">
+You can — but sorting destroys the original indices, and the problem asks for indices. You would need to keep `(value, original_index)` pairs and sort those, which costs `O(n log n)` time. The hash map is both simpler and faster here.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Contains Duplicate](/docs/arrays/contains-duplicate) — the same "have I seen this before?" trick, with a set instead of a map
+- [Group Anagrams](/docs/arrays/group-anagrams) — a hash map keyed by a computed signature
+- [Container With Most Water](/docs/arrays/container-with-most-water) — when the array *is* sorted-ish, two pointers beat a map

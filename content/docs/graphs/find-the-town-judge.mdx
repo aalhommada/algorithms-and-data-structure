@@ -1,0 +1,224 @@
+---
+title: Find the Town Judge
+description: Identify the one node with in-degree n-1 and out-degree 0, using a single trust-score array
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Graph Degree Counting"
+  tags={["Graph", "Array", "Hash Table"]}
+  leetcode="https://leetcode.com/problems/find-the-town-judge/"
+  problemNumber={997}
+/>
+
+## Problem Statement
+
+In a town of `n` people labelled `1` to `n`, there is a rumour that one of them is secretly the **town judge**. The judge satisfies three properties:
+
+1. The judge trusts **nobody**.
+2. **Everybody** else trusts the judge.
+3. Exactly one person satisfies both.
+
+You are given `trust`, where `trust[i] = [a, b]` means person `a` trusts person `b`. Return the judge's label, or `-1` if there is no judge.
+
+```text
+Input:  n = 2, trust = [[1, 2]]
+Output: 2
+
+Input:  n = 3, trust = [[1, 3], [2, 3]]
+Output: 3
+
+Input:  n = 3, trust = [[1, 3], [2, 3], [3, 1]]
+Output: -1     (3 trusts someone, so 3 cannot be the judge)
+```
+
+## Intuition
+
+This is a graph problem in disguise. Each person is a **node**, and `[a, b]` is a **directed edge** from `a` to `b`.
+
+<Callout type="info" title="Restating the rules in graph language">
+- "The judge trusts nobody" → **out-degree = 0**
+- "Everybody else trusts the judge" → **in-degree = n - 1**
+
+So you are looking for the unique node with in-degree `n - 1` and out-degree `0`. No traversal, no BFS, no DFS — just counting edges.
+</Callout>
+
+You could keep two arrays, `in_degree` and `out_degree`. But there is a neater encoding.
+
+<Callout type="info" title="The key insight — one score instead of two">
+Give every person a single score:
+
+- Trusting someone: **-1** to the truster (they can no longer be the judge)
+- Being trusted: **+1** to the trustee
+
+The judge is the only person who can reach a score of exactly **`n - 1`**: they gain `+1` from each of the other `n - 1` people and lose nothing.
+
+Nobody else can reach it. A non-judge trusts at least one person (the judge), so they carry a `-1`, capping their score at `n - 2`.
+</Callout>
+
+### Watch it run
+
+<GraphViz
+  title="n = 3, trust = [[1, 3], [2, 3]]"
+  directed
+  nodes={[
+    { id: 1, x: 0.05, y: 0.1 },
+    { id: 2, x: 0.05, y: 0.9 },
+    { id: 3, x: 0.75, y: 0.5 },
+  ]}
+  intervalMs={1700}
+  frames={[
+    {
+      edges: [],
+      states: {},
+      vars: { "score[1]": 0, "score[2]": 0, "score[3]": 0 },
+      note: "Three people, no edges processed yet. All scores start at 0.",
+    },
+    {
+      edges: [{ from: 1, to: 3, highlight: true }],
+      states: { "1": "discard", "3": "compare" },
+      vars: { "score[1]": -1, "score[2]": 0, "score[3]": 1 },
+      note: "Edge [1, 3]: person 1 trusts someone → score[1] -= 1. Person 3 is trusted → score[3] += 1.",
+    },
+    {
+      edges: [
+        { from: 1, to: 3 },
+        { from: 2, to: 3, highlight: true },
+      ],
+      states: { "1": "discard", "2": "discard", "3": "compare" },
+      vars: { "score[1]": -1, "score[2]": -1, "score[3]": 2 },
+      note: "Edge [2, 3]: score[2] -= 1, score[3] += 1.",
+    },
+    {
+      edges: [
+        { from: 1, to: 3 },
+        { from: 2, to: 3 },
+      ],
+      states: { "1": "discard", "2": "discard", "3": "match" },
+      vars: { "score[3]": 2, "n - 1": 2, answer: 3 },
+      note: "score[3] = 2 = n - 1. Person 3 is the judge. Everyone else is negative.",
+    },
+  ]}
+  caption="One combined score encodes both degree conditions."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Create a score array of size `n + 1`
+
+Index `0` is unused so the labels `1 … n` map directly to indices — no `- 1` arithmetic anywhere.
+</Step>
+
+<Step>
+### For each `[a, b]`
+
+`score[a] -= 1` and `score[b] += 1`.
+</Step>
+
+<Step>
+### Scan for a score of `n - 1`
+
+Return that person's label.
+</Step>
+
+<Step>
+### Return `-1` if nobody qualifies
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def find_judge(n: int, trust: list[list[int]]) -> int:
+    """Return the town judge's label, or -1 if there is none."""
+    # Index 0 is unused so people map straight onto indices 1..n.
+    score = [0] * (n + 1)
+
+    for truster, trustee in trust:
+        score[truster] -= 1   # trusting someone disqualifies you
+        score[trustee] += 1   # being trusted moves you toward n - 1
+
+    for person in range(1, n + 1):
+        if score[person] == n - 1:
+            return person
+
+    return -1
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function findJudge(n: number, trust: number[][]): number {
+  // Index 0 is unused so people map straight onto indices 1..n.
+  const score = new Array<number>(n + 1).fill(0);
+
+  for (const [truster, trustee] of trust) {
+    score[truster] -= 1; // trusting someone disqualifies you
+    score[trustee] += 1; // being trusted moves you toward n - 1
+  }
+
+  for (let person = 1; person <= n; person++) {
+    if (score[person] === n - 1) return person;
+  }
+
+  return -1;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why a score of n - 1 is provably unique">
+Suppose two people both scored `n - 1`. Each would need `+1` from all `n - 1` others, including from each other. But receiving trust from the other means that other person trusts someone — costing them a `-1` and capping them at `n - 2`. Contradiction.
+
+So the first match found is the only match, and returning immediately is safe.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n + E)" space="O(n)" />
+
+Where `E` is the number of trust relationships.
+
+- **Time** — one pass over the edges plus one pass over the people.
+- **Space** — a single array of `n + 1` integers. Using two separate degree arrays would work identically but doubles the memory for no benefit.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="n = 1 with an empty trust list">
+`score[1] = 0` and `n - 1 = 0`, so `1` is returned. A town of one person has a judge who trusts nobody and is trusted by everybody — vacuously true, and LeetCode expects `1`.
+</Accordion>
+
+<Accordion title="Nobody trusts anybody, n > 1">
+All scores are `0` but `n - 1 > 0`, so `-1` is returned. Nobody is trusted, so there is no judge.
+</Accordion>
+
+<Accordion title="The candidate trusts someone back, e.g. n = 3, trust = [[1,3],[2,3],[3,1]]">
+Person 3 gains `+2` but loses `1`, landing on `1` instead of `2`. Returns `-1`. This is precisely the case the combined score catches automatically.
+</Accordion>
+
+<Accordion title="Everybody trusts everybody">
+Every score is `(n-1) - (n-1) = 0`, which is below `n - 1` for `n > 1`. Returns `-1`.
+</Accordion>
+
+<Accordion title="Could the trust list contain duplicate edges?">
+LeetCode guarantees all pairs are unique. Duplicates would inflate a score past `n - 1` and cause a miss; guarding against that would mean de-duplicating the edges into a set first.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — BFS, for graph problems that genuinely need traversal
+- [Contains Duplicate](/docs/arrays/contains-duplicate) — counting rather than searching
+- [Number of Good Pairs](/docs/arrays/number-of-good-pairs) — another problem solved purely by accumulating counts

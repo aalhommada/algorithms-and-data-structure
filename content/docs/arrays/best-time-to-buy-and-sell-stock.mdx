@@ -1,0 +1,224 @@
+---
+title: Best Time to Buy and Sell Stock
+description: Maximise profit from one buy and one sell by tracking the cheapest price seen so far
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Single Pass / Running Minimum"
+  tags={["Array", "Dynamic Programming", "Greedy"]}
+  leetcode="https://leetcode.com/problems/best-time-to-buy-and-sell-stock/"
+  problemNumber={121}
+/>
+
+## Problem Statement
+
+You are given an array `prices` where `prices[i]` is the price of a stock on day `i`.
+
+You want to maximise profit by choosing **one day to buy** and a **different, later day to sell**. Return the maximum profit you can achieve. If no profit is possible, return `0`.
+
+```text
+Input:  prices = [7, 1, 5, 3, 6, 4]
+Output: 5
+Why:    buy on day 1 (price 1), sell on day 4 (price 6) → 6 - 1 = 5
+
+Input:  prices = [7, 6, 4, 3, 1]
+Output: 0
+Why:    prices only fall — never buy at all
+```
+
+<Callout type="warn" title="The constraint that shapes everything">
+You must **buy before you sell**. `7 - 1 = 6` is not a valid answer for the first example, because price `7` happens on day 0, *before* price `1`. Every solution has to respect this ordering.
+</Callout>
+
+## Intuition
+
+The brute force is to try every buy day paired with every later sell day — `O(n²)`.
+
+Now flip the perspective. Instead of asking *"which pair should I pick?"*, stand on each day and ask a much simpler question:
+
+<Callout type="info" title="The key insight">
+**"If I sell today, what is the best I could have done?"**
+
+The answer is: today's price minus the **cheapest price that ever occurred before today**. You do not need to remember every past price — only the minimum of them.
+</Callout>
+
+That single remembered value collapses the problem from `O(n²)` to `O(n)`. Walking left to right, you already have all the past prices behind you, so keeping a running minimum is free.
+
+### Real-world analogy
+
+Imagine watching prices scroll by on a screen. You keep a sticky note with one number on it: *the lowest price I have seen so far*. Each new price, you do two things — check what you'd earn selling now against your sticky note, and update the note if the new price is lower. You never need a full history.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Track two numbers
+
+`min_price` — the cheapest price seen so far (start at the first price, or infinity).
+
+`max_profit` — the best profit found so far (start at `0`, since doing nothing is always allowed).
+</Step>
+
+<Step>
+### For each price, first try selling
+
+`profit = price - min_price`. If it beats `max_profit`, keep it.
+
+Doing this *before* updating `min_price` guarantees the buy day is strictly earlier than the sell day.
+</Step>
+
+<Step>
+### Then update the minimum
+
+If `price < min_price`, this becomes the new best day to have bought.
+</Step>
+
+<Step>
+### Return `max_profit`
+
+If every price fell, no `profit` ever beat `0`, so `0` is returned — meaning "don't trade".
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="prices = [7, 1, 5, 3, 6, 4]"
+  variant="bars"
+  intervalMs={1500}
+  frames={[
+    {
+      values: [7, 1, 5, 3, 6, 4],
+      states: ["active", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "day" }],
+      vars: { min: 7, profit: 0 },
+      note: "Day 0, price 7. Nothing came before it, so no sale is possible. min = 7.",
+    },
+    {
+      values: [7, 1, 5, 3, 6, 4],
+      states: ["discard", "active", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "day" }],
+      vars: { min: 1, profit: 0 },
+      note: "Day 1, price 1. Selling here gives 1 - 7 = -6, worse than 0. But 1 < 7, so min becomes 1.",
+    },
+    {
+      values: [7, 1, 5, 3, 6, 4],
+      states: ["discard", "match", "active", "idle", "idle", "idle"],
+      pointers: [{ index: 2, label: "day" }],
+      vars: { min: 1, profit: 4 },
+      note: "Day 2, price 5. Selling gives 5 - 1 = 4. New best profit.",
+    },
+    {
+      values: [7, 1, 5, 3, 6, 4],
+      states: ["discard", "match", "done", "active", "idle", "idle"],
+      pointers: [{ index: 3, label: "day" }],
+      vars: { min: 1, profit: 4 },
+      note: "Day 3, price 3. Selling gives 3 - 1 = 2, which does not beat 4. min stays 1.",
+    },
+    {
+      values: [7, 1, 5, 3, 6, 4],
+      states: ["discard", "match", "done", "done", "active", "idle"],
+      pointers: [{ index: 4, label: "day" }],
+      vars: { min: 1, profit: 5 },
+      note: "Day 4, price 6. Selling gives 6 - 1 = 5. New best profit.",
+    },
+    {
+      values: [7, 1, 5, 3, 6, 4],
+      states: ["discard", "match", "done", "done", "match", "active"],
+      pointers: [{ index: 5, label: "day" }],
+      vars: { min: 1, profit: 5 },
+      note: "Day 5, price 4. Selling gives 3, no improvement. Final answer: buy at 1, sell at 6 → profit 5.",
+    },
+  ]}
+  caption="One pass, two remembered numbers, no nested loop."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def max_profit(prices: list[int]) -> int:
+    """Maximum profit from a single buy followed by a later sell."""
+    if not prices:
+        return 0
+
+    min_price = prices[0]
+    best = 0
+
+    for price in prices[1:]:
+        # Try selling today against the cheapest earlier day.
+        best = max(best, price - min_price)
+        # Then consider today as a future buy day.
+        min_price = min(min_price, price)
+
+    return best
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function maxProfit(prices: number[]): number {
+  if (prices.length === 0) return 0;
+
+  let minPrice = prices[0];
+  let best = 0;
+
+  for (let i = 1; i < prices.length; i++) {
+    const price = prices[i];
+    // Try selling today against the cheapest earlier day.
+    best = Math.max(best, price - minPrice);
+    // Then consider today as a future buy day.
+    minPrice = Math.min(minPrice, price);
+  }
+
+  return best;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Order matters">
+If you updated `min_price` *before* computing the profit, then on a day that sets a new minimum you would compute `price - price = 0` — harmless here, but the habit breaks in similar problems. Keep the rule: **sell against the past, then update the past.**
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — a single pass over the prices; each day does two constant-time comparisons.
+- **Space** — only two numbers are stored regardless of how many days there are.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Prices only go down, e.g. [7, 6, 4, 3, 1]">
+Every computed profit is negative, so `best` never rises above its starting value of `0`. Returning `0` correctly means "the best move is not to trade".
+</Accordion>
+
+<Accordion title="Fewer than two days, e.g. [] or [5]">
+You cannot buy and sell on different days, so the answer is `0`. The guard on an empty array handles `[]`; for `[5]` the loop body never runs and `best` stays `0`.
+</Accordion>
+
+<Accordion title="All prices identical, e.g. [3, 3, 3]">
+Every profit is `3 - 3 = 0`, so the answer is `0` — correct, since a trade would gain nothing.
+</Accordion>
+
+<Accordion title="Why is this also called a dynamic programming problem?">
+`best` is really "the answer for the prefix ending at day i", built from the answer for the previous prefix. That is dynamic programming with the table compressed down to a single variable — a pattern you will meet again in [Climbing Stairs](/docs/dynamic-programming/climbing-stairs).
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Maximum Average Subarray I](/docs/arrays/maximum-average-subarray-i) — another single-pass running statistic
+- [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) — the same "collapse the DP table into variables" trick
+- [Jump Game](/docs/greedy/jump-game) — greedy decisions made in one left-to-right pass

@@ -1,0 +1,231 @@
+---
+title: Container With Most Water
+description: Maximise the area between two lines using converging two pointers, and understand why moving the shorter side is always safe
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Two Pointers (converging)"
+  tags={["Array", "Two Pointers", "Greedy"]}
+  leetcode="https://leetcode.com/problems/container-with-most-water/"
+  problemNumber={11}
+/>
+
+## Problem Statement
+
+You are given an array `height` where `height[i]` is the height of a vertical line drawn at position `i`. Pick **two lines** that, together with the x-axis, form a container. Return the maximum amount of water it can hold.
+
+```text
+Input:  height = [1, 8, 6, 2, 5, 4, 8, 3, 7]
+Output: 49
+Why:    lines at index 1 (height 8) and index 8 (height 7)
+        width  = 8 - 1 = 7
+        height = min(8, 7) = 7
+        area   = 7 × 7 = 49
+```
+
+<Callout type="info" title="The area formula">
+`area = (right - left) × min(height[left], height[right])`
+
+Two things matter. The **width** is the distance between the lines. The **usable height** is the **shorter** of the two lines — water spills over the lower wall, so the taller line's extra height is wasted.
+</Callout>
+
+## Intuition
+
+Brute force checks all `n × (n-1) / 2` pairs — `O(n²)`.
+
+To do better, start from the widest possible container: `left = 0`, `right = n - 1`. This maximises the width. Any other pair is narrower, so it can only win by being *taller*.
+
+Now the crucial question: which pointer should move inward?
+
+<Callout type="info" title="Always move the shorter line — here is the proof">
+Say `height[left] < height[right]`. Consider keeping `left` fixed and moving `right` inward:
+
+- The width **strictly decreases** (the pointers got closer).
+- The usable height is `min(height[left], height[new right])`, which can never exceed `height[left]` — it is capped by the short line, which did not change.
+
+So every container that keeps the short line is narrower and no taller. **All of them are worse.** You can discard the short line entirely, and moving it is the only move that could ever help.
+</Callout>
+
+That argument is what makes the algorithm correct rather than just plausible. Each step permanently eliminates one line, so `n` steps suffice.
+
+### Real-world analogy
+
+Two people hold a sheet between them to catch water. The sheet fills only up to the lower hand. Asking the taller person to step closer helps nobody — the water level is set by the lower hand. The only hope of improvement is to replace the lower hand.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start at both ends
+
+`left = 0`, `right = n - 1` — the widest container possible.
+</Step>
+
+<Step>
+### Compute the area and keep the best
+
+`area = (right - left) × min(height[left], height[right])`.
+</Step>
+
+<Step>
+### Move the pointer at the shorter line inward
+
+If they tie, either move works — both lines are equally limiting, so both can be discarded.
+</Step>
+
+<Step>
+### Stop when the pointers meet
+
+A container needs two distinct lines.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="height = [1, 8, 6, 2, 5, 4, 8, 3, 7]"
+  variant="bars"
+  intervalMs={1700}
+  frames={[
+    {
+      values: [1, 8, 6, 2, 5, 4, 8, 3, 7],
+      states: ["active", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "active"],
+      overlay: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      pointers: [
+        { index: 0, label: "L" },
+        { index: 8, label: "R" },
+      ],
+      vars: { width: 8, height: 1, area: 8, best: 8 },
+      note: "Widest container: width 8, but the left line is only 1 tall → area 8. Left is shorter, so move L.",
+    },
+    {
+      values: [1, 8, 6, 2, 5, 4, 8, 3, 7],
+      states: ["discard", "active", "idle", "idle", "idle", "idle", "idle", "idle", "active"],
+      pointers: [
+        { index: 1, label: "L" },
+        { index: 8, label: "R" },
+      ],
+      vars: { width: 7, height: 7, area: 49, best: 49 },
+      note: "L = 1 (height 8), R = 8 (height 7). area = 7 × 7 = 49. Right is shorter now → move R.",
+    },
+    {
+      values: [1, 8, 6, 2, 5, 4, 8, 3, 7],
+      states: ["discard", "active", "idle", "idle", "idle", "idle", "idle", "active", "discard"],
+      pointers: [
+        { index: 1, label: "L" },
+        { index: 7, label: "R" },
+      ],
+      vars: { width: 6, height: 3, area: 18, best: 49 },
+      note: "R = 7 (height 3). area = 6 × 3 = 18. Worse. Right is shorter → move R again.",
+    },
+    {
+      values: [1, 8, 6, 2, 5, 4, 8, 3, 7],
+      states: ["discard", "active", "idle", "idle", "idle", "idle", "active", "discard", "discard"],
+      pointers: [
+        { index: 1, label: "L" },
+        { index: 6, label: "R" },
+      ],
+      vars: { width: 5, height: 8, area: 40, best: 49 },
+      note: "R = 6 (height 8). area = 5 × 8 = 40. Still short of 49. Heights tie, move either.",
+    },
+    {
+      values: [1, 8, 6, 2, 5, 4, 8, 3, 7],
+      states: ["discard", "match", "discard", "discard", "discard", "discard", "discard", "discard", "match"],
+      vars: { best: 49 },
+      note: "The pointers keep converging; nothing beats 49. Answer: lines at indices 1 and 8.",
+    },
+  ]}
+  caption="Each step throws away exactly one line that can never be part of a better answer."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def max_area(height: list[int]) -> int:
+    """Largest area of water between any two vertical lines."""
+    left, right = 0, len(height) - 1
+    best = 0
+
+    while left < right:
+        # Water spills over the shorter wall, so it caps the height.
+        area = (right - left) * min(height[left], height[right])
+        best = max(best, area)
+
+        # Moving the taller line can never help — see the proof above.
+        if height[left] < height[right]:
+            left += 1
+        else:
+            right -= 1
+
+    return best
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function maxArea(height: number[]): number {
+  let left = 0;
+  let right = height.length - 1;
+  let best = 0;
+
+  while (left < right) {
+    // Water spills over the shorter wall, so it caps the height.
+    const area = (right - left) * Math.min(height[left], height[right]);
+    best = Math.max(best, area);
+
+    // Moving the taller line can never help — see the proof above.
+    if (height[left] < height[right]) {
+      left++;
+    } else {
+      right--;
+    }
+  }
+
+  return best;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — the pointers only ever move toward each other, so the loop runs at most `n - 1` times. Brute force is `O(n²)`: at `n = 10⁵`, that is 100,000 steps versus 5 billion.
+- **Space** — two indices and a running maximum.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Exactly two lines">
+One iteration computes the only possible container and returns it.
+</Accordion>
+
+<Accordion title="All heights equal, e.g. [5, 5, 5, 5]">
+The widest pair wins, because every pair has the same usable height and width is the only differentiator. The first iteration already finds it.
+</Accordion>
+
+<Accordion title="Heights of zero, e.g. [0, 2, 0]">
+A zero-height line holds no water, giving area `0`. Nothing breaks — those pairs simply never become the maximum.
+</Accordion>
+
+<Accordion title="Why is moving either pointer fine on a tie?">
+When `height[left] == height[right]`, both lines are equally limiting. Keeping either one means the width shrinks while the height stays capped at the same value, so neither can produce a strictly better container. Discarding either is safe.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Trapping Rain Water](/docs/arrays/trapping-rain-water) — the same two-pointer setup, but summing water above *every* bar
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — two pointers draining rather than converging
+- [Valid Palindrome](/docs/strings/valid-palindrome) — the simplest converging-pointer problem

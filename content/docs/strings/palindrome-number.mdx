@@ -1,0 +1,255 @@
+---
+title: Palindrome Number
+description: Test whether an integer reads the same both ways by reversing only half of its digits
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Math / Digit Manipulation"
+  tags={["Math"]}
+  leetcode="https://leetcode.com/problems/palindrome-number/"
+  problemNumber={9}
+/>
+
+## Problem Statement
+
+Given an integer `x`, return `true` if it is a palindrome — that is, if it reads the same forwards and backwards.
+
+The interesting version of this problem forbids converting the number to a string.
+
+```text
+Input:  121    → true
+Input:  -121   → false   ("-121" reversed is "121-")
+Input:  10     → false   ("10" reversed is "01")
+Input:  0      → true
+```
+
+## Intuition
+
+### The quick observations
+
+Two cases are decided before any real work:
+
+<Callout type="info" title="Negatives and trailing zeros">
+**Negative numbers are never palindromes.** The minus sign is at the front and cannot appear at the back.
+
+**Any number ending in `0` is a palindrome only if it is `0` itself.** A palindrome ending in `0` would have to start with `0`, and no multi-digit integer does.
+</Callout>
+
+### Reversing digits without strings
+
+The core loop peels digits from the right and rebuilds them on the left:
+
+```text
+x = 121,  reversed = 0
+
+x % 10 = 1  →  reversed = 0 × 10 + 1 = 1,   x = 12
+x % 10 = 2  →  reversed = 1 × 10 + 2 = 12,  x = 1
+x % 10 = 1  →  reversed = 12 × 10 + 1 = 121, x = 0
+```
+
+`x % 10` takes the last digit; `x // 10` removes it; `reversed * 10 + digit` appends on the other side.
+
+<Callout type="info" title="The key insight — reverse only half">
+Reversing the entire number risks overflow in fixed-width languages, and does more work than necessary.
+
+Instead, **stop when the reversed half becomes at least as large as what remains of `x`.** At that point you have consumed exactly half the digits, and:
+
+- Even length → `x == reversed`
+- Odd length → `x == reversed // 10` (drop the middle digit, which is shared and always matches itself)
+</Callout>
+
+### Watch it run
+
+<ArrayViz
+  title="x = 1221 — reversing only the second half"
+  showIndices={false}
+  intervalMs={1600}
+  frames={[
+    {
+      values: ["x = 1221", "rev = 0"],
+      states: ["active", "idle"],
+      note: "Not negative and does not end in 0, so the loop can proceed.",
+    },
+    {
+      values: ["x = 122", "rev = 1"],
+      states: ["compare", "compare"],
+      vars: { digit: 1 },
+      note: "Peel the last digit (1). rev = 1, x = 122. rev < x, so keep going.",
+    },
+    {
+      values: ["x = 12", "rev = 12"],
+      states: ["match", "match"],
+      vars: { digit: 2 },
+      note: "Peel the next digit (2). rev = 12, x = 12. Now rev >= x → stop, exactly half consumed.",
+    },
+    {
+      values: ["x = 12", "rev = 12"],
+      states: ["match", "match"],
+      vars: { check: "12 == 12", result: "true" },
+      note: "Even number of digits → compare directly. 12 == 12 → palindrome.",
+    },
+  ]}
+/>
+
+<ArrayViz
+  title="x = 12321 — odd length, so the middle digit is dropped"
+  showIndices={false}
+  intervalMs={1600}
+  frames={[
+    {
+      values: ["x = 1232", "rev = 1"],
+      states: ["compare", "compare"],
+      note: "Peel 1. rev = 1, x = 1232.",
+    },
+    {
+      values: ["x = 123", "rev = 12"],
+      states: ["compare", "compare"],
+      note: "Peel 2. rev = 12, x = 123. Still rev < x.",
+    },
+    {
+      values: ["x = 12", "rev = 123"],
+      states: ["match", "compare"],
+      vars: { "rev // 10": 12 },
+      note: "Peel 3. rev = 123, x = 12. rev >= x → stop. The 3 is the middle digit.",
+    },
+    {
+      values: ["x = 12", "rev // 10 = 12"],
+      states: ["match", "match"],
+      vars: { result: "true" },
+      note: "Odd length → drop the middle digit with rev // 10 = 12. 12 == 12 → palindrome.",
+    },
+  ]}
+  caption="Half the digits is enough; the middle one always matches itself."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Reject the easy cases
+
+`x < 0` → `false`. `x != 0 and x % 10 == 0` → `false`.
+</Step>
+
+<Step>
+### Peel digits until the halves meet
+
+While `x > reversed`: move the last digit of `x` onto `reversed`.
+</Step>
+
+<Step>
+### Compare, allowing for an odd middle digit
+
+Return `x == reversed or x == reversed // 10`.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def is_palindrome(x: int) -> bool:
+    """True if the integer x reads the same both ways. No string conversion."""
+    # Negatives never work; a trailing zero only works for 0 itself.
+    if x < 0 or (x != 0 and x % 10 == 0):
+        return False
+
+    reversed_half = 0
+    while x > reversed_half:
+        reversed_half = reversed_half * 10 + x % 10
+        x //= 10
+
+    # Even length: x == reversed_half.
+    # Odd length: the middle digit sits in reversed_half — drop it.
+    return x == reversed_half or x == reversed_half // 10
+```
+
+The string version, if it were allowed:
+
+```python
+def is_palindrome_string(x: int) -> bool:
+    s = str(x)
+    return s == s[::-1]
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function isPalindrome(x: number): boolean {
+  // Negatives never work; a trailing zero only works for 0 itself.
+  if (x < 0 || (x !== 0 && x % 10 === 0)) return false;
+
+  let reversedHalf = 0;
+  while (x > reversedHalf) {
+    reversedHalf = reversedHalf * 10 + (x % 10);
+    x = Math.floor(x / 10);
+  }
+
+  // Even length: x === reversedHalf.
+  // Odd length: the middle digit sits in reversedHalf — drop it.
+  return x === reversedHalf || x === Math.floor(reversedHalf / 10);
+}
+```
+
+The string version:
+
+```typescript
+function isPalindromeString(x: number): boolean {
+  const s = String(x);
+  return s === [...s].reverse().join('');
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Use integer division, not `/`">
+**Python:** `x / 10` produces a float, which breaks the digit arithmetic. Use `//`.
+
+**TypeScript:** `x / 10` produces a decimal. Since `x` is non-negative inside the loop, `Math.floor` is correct; `Math.trunc` would be equivalent here.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(log₁₀ n)" space="O(1)" />
+
+- **Time** — the loop runs once per *digit*, and a number `n` has about `log₁₀ n` digits. Even a 32-bit maximum takes only 10 iterations.
+- **Space** — two integers. The string version is also `O(log n)` time but allocates `O(log n)` space for the string and its reverse.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Negative numbers, e.g. -121">
+Rejected immediately. The minus sign cannot be mirrored.
+</Accordion>
+
+<Accordion title="Zero">
+`x = 0` passes the guard because of the `x != 0` clause. The loop condition `0 > 0` is false straight away, and `0 == 0` returns `true`.
+</Accordion>
+
+<Accordion title="Single digits, 0–9">
+The loop does not run (for example `5 > 0` is true once, then `x` becomes `0` and `reversed` becomes `5`; the condition `0 > 5` fails). `0 == 5` is false but `0 == 5 // 10 == 0` is true → `true`. Every single digit is a palindrome.
+</Accordion>
+
+<Accordion title="Numbers ending in zero, e.g. 10 or 100">
+Rejected by the guard. Without it, `10` would reverse to `01` = `1` and be wrongly accepted.
+</Accordion>
+
+<Accordion title="Why does reversing only half avoid overflow?">
+In a fixed-width language, reversing all of `2147483647` overflows a 32-bit int. The half-reversal never exceeds the square root of the original magnitude, so it always fits. Python and TypeScript do not have this limit, but the technique is why the half-reversal is the canonical answer.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Valid Palindrome](/docs/strings/valid-palindrome) — the string version, with characters to skip
+- [Reverse Linked List](/docs/linked-lists/reverse-linked-list) — reversal as a structural operation
+- [Roman to Integer](/docs/strings/roman-to-integer) — another digit-and-symbol manipulation problem

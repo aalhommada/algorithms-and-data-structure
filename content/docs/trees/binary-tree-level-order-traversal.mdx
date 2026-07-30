@@ -1,0 +1,272 @@
+---
+title: Binary Tree Level Order Traversal
+description: Visit a tree level by level with BFS, using the queue's size to know where each level ends
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="BFS (Breadth-First Search)"
+  tags={["Tree", "Binary Tree", "BFS", "Queue"]}
+  leetcode="https://leetcode.com/problems/binary-tree-level-order-traversal/"
+  problemNumber={102}
+/>
+
+## Problem Statement
+
+Given the root of a binary tree, return its **level order traversal** — the node values grouped by depth, from left to right.
+
+```text
+Input:      3
+           / \
+          9  20
+             / \
+            15  7
+
+Output: [[3], [9, 20], [15, 7]]
+
+Input:  root = []
+Output: []
+```
+
+## Intuition
+
+Depth-first traversal (the natural recursive one) dives down one branch before touching the next, so it visits `3, 9, 20, 15, 7` in an order that mixes levels together. This problem wants the opposite: everything at depth 0, then everything at depth 1, and so on.
+
+<Callout type="info" title="The key insight">
+Use a **queue** — first in, first out. Enqueue the root. Then repeatedly dequeue a node and enqueue its children.
+
+Because children are always added *behind* everything already waiting, the queue drains in exact depth order. Nodes at depth `d` are all processed before any node at depth `d + 1`.
+</Callout>
+
+That gives the right *order*, but the output has to be **grouped** by level, and a flat queue does not say where one level ends.
+
+<Callout type="info" title="The level-size trick">
+At the top of each round, record `size = len(queue)`.
+
+At that moment the queue holds **exactly one complete level** and nothing else. Processing precisely `size` nodes consumes that whole level; everything enqueued during the round belongs to the next one. No depth field, no sentinel values.
+</Callout>
+
+### Real-world analogy
+
+Handing out flyers building by building. You knock on every door on floor 1, noting the stairwells to floor 2, then do all of floor 2. You finish a floor completely before climbing.
+
+### Watch it run
+
+<TreeViz
+  title="Level order traversal"
+  intervalMs={1800}
+  frames={[
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["active"],
+      output: [],
+      vars: { queue: "[3]", size: 1 },
+      note: "Start with the root in the queue. size = 1, so this round handles exactly one node.",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["done", "compare", "compare"],
+      output: [3],
+      vars: { queue: "[9, 20]", level: "[3]" },
+      note: "Dequeue 3, record it, enqueue its children 9 and 20. Level 0 is complete: [3].",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["done", "active", "active"],
+      output: [3],
+      vars: { queue: "[9, 20]", size: 2 },
+      note: "New round. size = 2, so the queue currently holds all of level 1.",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["done", "done", "done", undefined, undefined, "compare", "compare"],
+      output: [3, 9, 20],
+      vars: { queue: "[15, 7]", level: "[9, 20]" },
+      note: "Dequeue 9 (no children), then 20 (enqueue 15 and 7). Level 1 is complete: [9, 20].",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["done", "done", "done", undefined, undefined, "match", "match"],
+      output: [3, 9, 20, 15, 7],
+      vars: { queue: "[]", level: "[15, 7]" },
+      note: "size = 2 again. Dequeue 15 and 7, neither has children. The queue is empty — done.",
+    },
+  ]}
+  caption="The queue's length at the start of a round is exactly the width of that level."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Handle the empty tree
+
+A `null` root means an empty result.
+</Step>
+
+<Step>
+### Seed the queue with the root
+</Step>
+
+<Step>
+### While the queue is non-empty
+
+Record `size = len(queue)` — the width of the current level.
+</Step>
+
+<Step>
+### Process exactly `size` nodes
+
+Dequeue each one, append its value to the current level's list, and enqueue its non-null children.
+</Step>
+
+<Step>
+### Append the completed level and repeat
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import deque
+from typing import Optional
+
+
+class TreeNode:
+    def __init__(
+        self,
+        val: int = 0,
+        left: Optional["TreeNode"] = None,
+        right: Optional["TreeNode"] = None,
+    ):
+        self.val = val
+        self.left = left
+        self.right = right
+
+
+def level_order(root: Optional[TreeNode]) -> list[list[int]]:
+    """Node values grouped by depth, left to right."""
+    if not root:
+        return []
+
+    result: list[list[int]] = []
+    queue = deque([root])
+
+    while queue:
+        size = len(queue)          # the queue holds exactly one full level
+        level: list[int] = []
+
+        for _ in range(size):
+            node = queue.popleft()
+            level.append(node.val)
+
+            if node.left:
+                queue.append(node.left)
+            if node.right:
+                queue.append(node.right)
+
+        result.append(level)
+
+    return result
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class TreeNode {
+  val: number;
+  left: TreeNode | null;
+  right: TreeNode | null;
+
+  constructor(val = 0, left: TreeNode | null = null, right: TreeNode | null = null) {
+    this.val = val;
+    this.left = left;
+    this.right = right;
+  }
+}
+
+function levelOrder(root: TreeNode | null): number[][] {
+  if (root === null) return [];
+
+  const result: number[][] = [];
+  let queue: TreeNode[] = [root];
+
+  while (queue.length > 0) {
+    const level: number[] = [];
+    const next: TreeNode[] = [];
+
+    // Swapping arrays avoids the O(n) cost of Array.prototype.shift().
+    for (const node of queue) {
+      level.push(node.val);
+      if (node.left) next.push(node.left);
+      if (node.right) next.push(node.right);
+    }
+
+    result.push(level);
+    queue = next;
+  }
+
+  return result;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Do not use a plain list as a queue">
+**Python:** `list.pop(0)` is `O(n)` because every remaining element shifts left, making the traversal `O(n²)`. `collections.deque` gives `O(1)` `popleft`.
+
+**TypeScript:** `Array.prototype.shift()` has the same problem. Either keep a read index into the array, or build a fresh `next` array per level as above — which is both fast and clearer.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — each node is enqueued once and dequeued once.
+- **Space** — the queue holds at most one level. For a perfectly balanced tree the widest level has about `n / 2` nodes, so the worst case is `O(n)`. A completely unbalanced tree (a chain) keeps the queue at size 1, using `O(1)`.
+
+## BFS vs. DFS
+
+| | BFS (queue) | DFS (stack or recursion) |
+|---|---|---|
+| Visit order | level by level | branch by branch |
+| Finds shortest path in an unweighted graph | yes | no |
+| Space | `O(width)` | `O(depth)` |
+| Best for | level grouping, minimum steps | path enumeration, subtree computations |
+
+Level order traversal *is* BFS. The same queue-plus-level-size pattern solves "minimum number of moves" problems on grids and graphs.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty tree">
+The early return gives `[]`. Without it, seeding the queue with `null` would crash on `node.val`.
+</Accordion>
+
+<Accordion title="Single node">
+One round produces `[[root.val]]`.
+</Accordion>
+
+<Accordion title="A completely skewed tree, e.g. 1 → 2 → 3 all left children">
+Every level has one node, giving `[[1], [2], [3]]`. The queue never exceeds size 1.
+</Accordion>
+
+<Accordion title="Why capture `size` before the inner loop?">
+The queue grows while you process it. Testing `while queue` in the inner loop would keep consuming nodes from the next level and merge every level into one list. Freezing `size` at the top of the round is what draws the boundary.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [N-ary Tree Preorder Traversal](/docs/trees/n-ary-tree-preorder-traversal) — DFS, the other traversal family
+- [Find the Town Judge](/docs/graphs/find-the-town-judge) — graph reasoning without traversal
+- [Valid Parentheses](/docs/stacks-queues/valid-parentheses) — a stack (LIFO) versus this queue (FIFO)

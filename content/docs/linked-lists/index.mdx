@@ -1,0 +1,86 @@
+---
+title: Linked Lists
+description: Pointer rewiring, fast and slow pointers, and the dummy-head trick
+---
+
+A linked list trades random access for cheap insertion. You cannot jump to index `k` — you must follow `k` pointers — but splicing a node in or out is `O(1)` once you are holding the right reference. Every technique below exists because of that trade.
+
+## The Three Techniques
+
+### 1. Careful pointer rewiring
+
+The defining hazard: **overwriting a `next` pointer destroys your only reference to the rest of the list.** Always save before you overwrite.
+
+- [Reverse Linked List](/docs/linked-lists/reverse-linked-list) — the canonical three-pointer dance
+
+### 2. Fast and slow pointers
+
+Two pointers moving at different rates turn several questions into a single pass.
+
+- [Middle of the Linked List](/docs/linked-lists/middle-of-the-linked-list) — one step versus two
+- [Linked List Cycle II](/docs/linked-lists/linked-list-cycle-ii) — Floyd's algorithm, with a distance proof
+
+### 3. The dummy head
+
+Create a throwaway node in front of the result. Every append becomes uniform, and the "what about the first node?" special case disappears.
+
+- [Merge Two Sorted Lists](/docs/linked-lists/merge-two-sorted-lists) — the clearest demonstration
+
+<Callout type="info" title="Two habits that prevent most linked-list bugs">
+**Check `fast` before `fast.next`.** Both languages short-circuit left to right, so `while fast and fast.next` never dereferences null. Reversing the order crashes.
+
+**Use a dummy head whenever the head might change.** Deletions at the front, merges, and insertions all get simpler.
+</Callout>
+
+## Node Definitions
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from typing import Optional
+
+
+class ListNode:
+    def __init__(self, val: int = 0, next: Optional["ListNode"] = None):
+        self.val = val
+        self.next = next
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class ListNode {
+  val: number;
+  next: ListNode | null;
+
+  constructor(val = 0, next: ListNode | null = null) {
+    this.val = val;
+    this.next = next;
+  }
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Identity vs. Value
+
+A recurring source of wrong answers: two nodes holding the same number are **not** the same node. When a problem asks where two lists intersect, or whether a list revisits a node, compare with `is` in Python and `===` in TypeScript — never `.val`.
+
+- [Intersection of Two Linked Lists](/docs/linked-lists/intersection-of-two-linked-lists) — built entirely around this distinction
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [Reverse Linked List](/docs/linked-lists/reverse-linked-list) | Easy | Pointer Rewiring |
+| [Middle of the Linked List](/docs/linked-lists/middle-of-the-linked-list) | Easy | Fast & Slow |
+| [Merge Two Sorted Lists](/docs/linked-lists/merge-two-sorted-lists) | Easy | Dummy Head |
+| [Intersection of Two Linked Lists](/docs/linked-lists/intersection-of-two-linked-lists) | Easy | Two Pointers |
+| [Linked List Cycle II](/docs/linked-lists/linked-list-cycle-ii) | Medium | Floyd's Algorithm |
+
+<Callout type="info" title="Suggested order">
+[Reverse Linked List](/docs/linked-lists/reverse-linked-list) first — it teaches the pointer discipline everything else depends on. Then [Middle of the Linked List](/docs/linked-lists/middle-of-the-linked-list), which introduces fast and slow pointers gently before [Linked List Cycle II](/docs/linked-lists/linked-list-cycle-ii) pushes them much further.
+</Callout>

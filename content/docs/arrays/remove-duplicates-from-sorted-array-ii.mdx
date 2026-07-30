@@ -1,0 +1,262 @@
+---
+title: Remove Duplicates from Sorted Array II
+description: Keep at most two copies of each value in place, using a read pointer and a write pointer
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Two Pointers (fast & slow write)"
+  tags={["Array", "Two Pointers"]}
+  leetcode="https://leetcode.com/problems/remove-duplicates-from-sorted-array-ii/"
+  problemNumber={80}
+/>
+
+## Problem Statement
+
+Given a **sorted** integer array `nums`, remove duplicates in place so that each value appears **at most twice**. Return the new length `k`; the first `k` positions of `nums` must hold the result, and anything beyond `k` is ignored.
+
+You must do this with `O(1)` extra memory.
+
+```text
+Input:  nums = [1, 1, 1, 2, 2, 3]
+Output: 5, nums = [1, 1, 2, 2, 3, _]
+
+Input:  nums = [0, 0, 1, 1, 1, 1, 2, 3, 3]
+Output: 7, nums = [0, 0, 1, 1, 2, 3, 3, _, _]
+```
+
+## Intuition
+
+Deleting from the middle of an array is expensive — every later element shifts left, giving `O(n²)`.
+
+<Callout type="info" title="The key insight">
+Do not delete. **Rewrite.**
+
+Use two pointers over the same array:
+
+- **`read`** walks every element, deciding what to keep.
+- **`write`** marks where the next kept element goes.
+
+Because `write` never outpaces `read`, you always overwrite a slot you have already consumed. The array is rebuilt in place, in one pass.
+</Callout>
+
+The remaining question is how to decide whether to keep `nums[read]`. Since the array is sorted, all copies of a value sit together, so a local check suffices:
+
+<Callout type="info" title="The at-most-two test">
+Keep `nums[read]` if `write < 2` **or** `nums[read] != nums[write - 2]`.
+
+If the value two slots back in the *output* already equals the current value, then two copies are present and this would be a third. Otherwise it is the first or second copy, so keep it.
+</Callout>
+
+This generalises perfectly: change `2` to `k` and you have "at most `k` duplicates". With `k = 1` it becomes the original Remove Duplicates problem.
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [1, 1, 1, 2, 2, 3] — keep at most two of each"
+  intervalMs={1500}
+  frames={[
+    {
+      values: [1, 1, 1, 2, 2, 3],
+      states: ["active", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [
+        { index: 0, label: "r" },
+        { index: 0, label: "w" },
+      ],
+      vars: { write: 0, rule: "write < 2 → keep" },
+      note: "read = 0. write is below 2, so the first two elements are always kept. Write 1, write becomes 1.",
+    },
+    {
+      values: [1, 1, 1, 2, 2, 3],
+      states: ["done", "active", "idle", "idle", "idle", "idle"],
+      pointers: [
+        { index: 1, label: "r" },
+        { index: 1, label: "w" },
+      ],
+      vars: { write: 1, rule: "write < 2 → keep" },
+      note: "read = 1. Still write < 2, keep it. Write 1 at position 1, write becomes 2.",
+    },
+    {
+      values: [1, 1, 1, 2, 2, 3],
+      states: ["done", "done", "discard", "idle", "idle", "idle"],
+      pointers: [
+        { index: 2, label: "r" },
+        { index: 2, label: "w" },
+      ],
+      vars: { write: 2, "nums[write-2]": 1, rule: "1 == 1 → skip" },
+      note: "read = 2, value 1. nums[write-2] = nums[0] = 1, equal → this is a third copy. Skip it; write stays 2.",
+    },
+    {
+      values: [1, 1, 2, 2, 2, 3],
+      states: ["done", "done", "match", "active", "idle", "idle"],
+      pointers: [
+        { index: 3, label: "r" },
+        { index: 2, label: "w" },
+      ],
+      vars: { write: 3, "nums[write-2]": 1, rule: "2 != 1 → keep" },
+      note: "read = 3, value 2. nums[0] = 1 ≠ 2 → keep. Write 2 into slot 2 (overwriting the skipped copy). write = 3.",
+    },
+    {
+      values: [1, 1, 2, 2, 2, 3],
+      states: ["done", "done", "done", "match", "active", "idle"],
+      pointers: [
+        { index: 4, label: "r" },
+        { index: 3, label: "w" },
+      ],
+      vars: { write: 4, "nums[write-2]": 1, rule: "2 != 1 → keep" },
+      note: "read = 4, value 2. nums[write-2] = nums[1] = 1 ≠ 2 → keep, this is only the second 2. write = 4.",
+    },
+    {
+      values: [1, 1, 2, 2, 3, 3],
+      states: ["match", "match", "match", "match", "match", "discard"],
+      pointers: [
+        { index: 5, label: "r" },
+        { index: 4, label: "w" },
+      ],
+      vars: { write: 5, answer: "k = 5" },
+      note: "read = 5, value 3. nums[2] = 2 ≠ 3 → keep. write = 5. Return 5; the first five slots hold [1,1,2,2,3].",
+    },
+  ]}
+  caption="write trails read, so overwriting is always safe."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start `write` at 0 and walk `read` across the array
+</Step>
+
+<Step>
+### Always keep the first two elements
+
+While `write < 2` there cannot be three copies yet, so the check is skipped.
+</Step>
+
+<Step>
+### Otherwise compare against `nums[write - 2]`
+
+If they differ, this is at most the second copy → keep it. If they match, it is a third or later copy → skip.
+</Step>
+
+<Step>
+### Return `write`
+
+It counts exactly how many elements were kept.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Compare against the output, not the input">
+The check must read `nums[write - 2]`, not `nums[read - 2]`. Once elements start being skipped, the two pointers drift apart and `nums[read - 2]` points into the not-yet-rewritten region. Only the output prefix reflects what has actually been kept.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def remove_duplicates(nums: list[int]) -> int:
+    """Keep at most two of each value in place; return the new length."""
+    write = 0
+
+    for value in nums:
+        # The first two slots are always safe; after that, compare with the
+        # value two positions back in the OUTPUT.
+        if write < 2 or value != nums[write - 2]:
+            nums[write] = value
+            write += 1
+
+    return write
+```
+
+Generalised to at most `k` copies — the same code with one constant changed:
+
+```python
+def remove_duplicates_k(nums: list[int], k: int = 2) -> int:
+    write = 0
+    for value in nums:
+        if write < k or value != nums[write - k]:
+            nums[write] = value
+            write += 1
+    return write
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function removeDuplicates(nums: number[]): number {
+  let write = 0;
+
+  for (const value of nums) {
+    // The first two slots are always safe; after that, compare with the
+    // value two positions back in the OUTPUT.
+    if (write < 2 || value !== nums[write - 2]) {
+      nums[write] = value;
+      write++;
+    }
+  }
+
+  return write;
+}
+```
+
+Generalised to at most `k` copies:
+
+```typescript
+function removeDuplicatesK(nums: number[], k = 2): number {
+  let write = 0;
+  for (const value of nums) {
+    if (write < k || value !== nums[write - k]) {
+      nums[write] = value;
+      write++;
+    }
+  }
+  return write;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why iterating by value is safe here">
+`for value of nums` reads `nums[read]` before any write at that index could have happened, because `write ≤ read` always holds. If you are uneasy about reading and writing the same array in one loop, write the explicit index form — it is identical in behaviour.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — one pass; each element is examined once and written at most once.
+- **Space** — two integer pointers. No temporary array, satisfying the in-place requirement.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Fewer than three elements, e.g. [1] or [1, 1]">
+The `write < 2` branch keeps both, and the answer equals the original length. Nothing can be a third copy yet.
+</Accordion>
+
+<Accordion title="All elements identical, e.g. [5, 5, 5, 5, 5]">
+The first two are kept, and every later one matches `nums[write - 2] = nums[0] = 5` and is skipped. Returns `2`.
+</Accordion>
+
+<Accordion title="No duplicates at all, e.g. [1, 2, 3]">
+Every check passes, `write` tracks `read` exactly, and the array is rewritten with the same values. Returns `3`.
+</Accordion>
+
+<Accordion title="Why does the array have to be sorted?">
+The test only looks two positions back. That is enough because sorting guarantees all copies of a value are adjacent. On unsorted input, `[1, 2, 1, 2, 1]` would slip a third `1` through — you would need a hash map of counts instead, at `O(n)` space.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — another in-place rewrite driven by a write pointer
+- [Middle of the Linked List](/docs/linked-lists/middle-of-the-linked-list) — two pointers moving at different rates
+- [Valid Palindrome](/docs/strings/valid-palindrome) — two pointers on a string

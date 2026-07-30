@@ -1,0 +1,242 @@
+---
+title: Number of Good Pairs
+description: Count pairs of equal elements by counting occurrences instead of comparing every pair
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Hash Map Counting"
+  tags={["Array", "Hash Table", "Math", "Counting"]}
+  leetcode="https://leetcode.com/problems/number-of-good-pairs/"
+  problemNumber={1512}
+/>
+
+## Problem Statement
+
+Given an array `nums`, a pair `(i, j)` is **good** if `nums[i] == nums[j]` **and** `i < j`. Return the number of good pairs.
+
+```text
+Input:  nums = [1, 2, 3, 1, 1, 3]
+Output: 4
+Why:    (0,3), (0,4), (3,4) for value 1, and (2,5) for value 3
+
+Input:  nums = [1, 1, 1, 1]
+Output: 6
+
+Input:  nums = [1, 2, 3]
+Output: 0
+```
+
+## Intuition
+
+The brute force is exactly the definition: two nested loops over `i < j`, counting matches. That is `O(n²)`.
+
+The faster route starts with a re-framing. Pairs never form between different values — only identical ones. So the array splits into independent groups, one per distinct value, and the answer is the sum over groups.
+
+<Callout type="info" title="The key insight">
+If a value appears `c` times, how many pairs does it contribute? Choose 2 of the `c` positions:
+
+`c × (c - 1) / 2`
+
+So you never need the positions at all — just the **counts**.
+</Callout>
+
+Check it against the example: `1` appears 3 times → `3 × 2 / 2 = 3` pairs. `3` appears twice → `2 × 1 / 2 = 1` pair. `2` appears once → `0`. Total `4`. ✓
+
+### Why `c × (c - 1) / 2`
+
+Each of the `c` copies can pair with the other `c - 1`, giving `c × (c - 1)` ordered pairs. But `(i, j)` and `(j, i)` are the same pair counted twice, so halve it. For `c = 4`: `4 × 3 / 2 = 6`, matching the second example.
+
+### The even slicker version
+
+There is a way to avoid the formula entirely. Walk left to right and, at each element, ask: *how many copies of this value have I already passed?* Every one of them forms a good pair with the current position, because their index is smaller.
+
+<HashMapViz
+  title="nums = [1, 2, 3, 1, 1, 3] — counting as you go"
+  label="count"
+  intervalMs={1400}
+  frames={[
+    {
+      scan: { values: [1, 2, 3, 1, 1, 3], cursor: 0 },
+      entries: [],
+      vars: { total: 0 },
+      note: "Value 1 seen 0 times before → adds 0 pairs. Now count[1] = 1.",
+    },
+    {
+      scan: { values: [1, 2, 3, 1, 1, 3], cursor: 1 },
+      entries: [{ key: 1, value: 1 }],
+      vars: { total: 0 },
+      note: "Value 2 seen 0 times before → adds 0. count[2] = 1.",
+    },
+    {
+      scan: { values: [1, 2, 3, 1, 1, 3], cursor: 2 },
+      entries: [
+        { key: 1, value: 1 },
+        { key: 2, value: 1 },
+      ],
+      vars: { total: 0 },
+      note: "Value 3 seen 0 times before → adds 0. count[3] = 1.",
+    },
+    {
+      scan: { values: [1, 2, 3, 1, 1, 3], cursor: 3 },
+      entries: [
+        { key: 1, value: 1, state: "match" },
+        { key: 2, value: 1 },
+        { key: 3, value: 1 },
+      ],
+      vars: { total: 1 },
+      note: "Value 1 seen 1 time before → adds 1 pair, namely (0,3). count[1] = 2.",
+    },
+    {
+      scan: { values: [1, 2, 3, 1, 1, 3], cursor: 4 },
+      entries: [
+        { key: 1, value: 2, state: "match" },
+        { key: 2, value: 1 },
+        { key: 3, value: 1 },
+      ],
+      vars: { total: 3 },
+      note: "Value 1 seen 2 times before → adds 2 pairs, (0,4) and (3,4). count[1] = 3.",
+    },
+    {
+      scan: { values: [1, 2, 3, 1, 1, 3], cursor: 5 },
+      entries: [
+        { key: 1, value: 3 },
+        { key: 2, value: 1 },
+        { key: 3, value: 1, state: "match" },
+      ],
+      vars: { total: 4 },
+      note: "Value 3 seen 1 time before → adds 1 pair, (2,5). Final total = 4.",
+    },
+  ]}
+  caption="Each element contributes exactly the number of earlier copies of itself."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Keep a count map
+
+`value → how many times it has appeared so far`.
+</Step>
+
+<Step>
+### For each element, add the current count to the answer
+
+Every earlier copy pairs with this position, and all of them satisfy `i < j` automatically.
+</Step>
+
+<Step>
+### Then increment the count for that value
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import defaultdict
+
+
+def num_identical_pairs(nums: list[int]) -> int:
+    """Count pairs (i, j) with i < j and nums[i] == nums[j]."""
+    seen: defaultdict[int, int] = defaultdict(int)
+    total = 0
+
+    for num in nums:
+        total += seen[num]  # every earlier copy pairs with this one
+        seen[num] += 1
+
+    return total
+```
+
+The formula version, if you prefer counting first:
+
+```python
+from collections import Counter
+
+
+def num_identical_pairs_formula(nums: list[int]) -> int:
+    return sum(c * (c - 1) // 2 for c in Counter(nums).values())
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function numIdenticalPairs(nums: number[]): number {
+  const seen = new Map<number, number>();
+  let total = 0;
+
+  for (const num of nums) {
+    const count = seen.get(num) ?? 0;
+    total += count; // every earlier copy pairs with this one
+    seen.set(num, count + 1);
+  }
+
+  return total;
+}
+```
+
+The formula version:
+
+```typescript
+function numIdenticalPairsFormula(nums: number[]): number {
+  const counts = new Map<number, number>();
+  for (const num of nums) {
+    counts.set(num, (counts.get(num) ?? 0) + 1);
+  }
+
+  let total = 0;
+  for (const c of counts.values()) {
+    total += (c * (c - 1)) / 2;
+  }
+  return total;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Integer division in Python">
+Use `//` for `c * (c - 1) // 2`. A single `/` produces a float, and the expected answer is an integer. In TypeScript `c * (c - 1)` is always even, so `/ 2` gives an exact whole number.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(k)" />
+
+- **Time** — one pass with `O(1)` map operations, versus `O(n²)` for nested loops. At `n = 10⁵` that is 100,000 steps instead of ~5 billion.
+- **Space** — `O(k)` where `k` is the number of distinct values, at worst `O(n)`.
+
+<Callout type="info" title="A constant-space variant">
+The LeetCode constraints cap values at `1 ≤ nums[i] ≤ 100`. That lets you swap the hash map for a fixed array of 101 counters, giving genuinely `O(1)` space. Reading the constraints often reveals shortcuts like this.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="All elements distinct">
+Every count is `0` when read, so the total stays `0`. Correct.
+</Accordion>
+
+<Accordion title="All elements identical, e.g. [1, 1, 1, 1]">
+Contributions are `0 + 1 + 2 + 3 = 6`, which matches `4 × 3 / 2 = 6`. The running-count method is just the formula computed incrementally.
+</Accordion>
+
+<Accordion title="Empty array or a single element">
+No pairs are possible and the loop contributes nothing, so `0` is returned.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Contains Duplicate](/docs/arrays/contains-duplicate) — presence rather than counts
+- [Valid Anagram](/docs/strings/valid-anagram) — comparing two count maps
+- [Top K Frequent Elements](/docs/arrays/top-k-frequent-elements) — ranking by count

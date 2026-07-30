@@ -1,0 +1,250 @@
+---
+title: Product of Array Except Self
+description: Compute every element's product-of-the-rest without division, using prefix and suffix passes
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Prefix & Suffix Products"
+  tags={["Array", "Prefix Sum"]}
+  leetcode="https://leetcode.com/problems/product-of-array-except-self/"
+  problemNumber={238}
+/>
+
+## Problem Statement
+
+Given an integer array `nums`, return an array `answer` where `answer[i]` is the product of **all elements except `nums[i]`**.
+
+You must solve it in `O(n)` time and **without using the division operator**.
+
+```text
+Input:  nums = [1, 2, 3, 4]
+Output: [24, 12, 8, 6]
+Why:    24 = 2×3×4,  12 = 1×3×4,  8 = 1×2×4,  6 = 1×2×3
+
+Input:  nums = [-1, 1, 0, -3, 3]
+Output: [0, 0, 9, 0, 0]
+```
+
+## Intuition
+
+The tempting shortcut is: compute the total product once, then divide it by each element. It is `O(n)` — and it is banned, for a good reason.
+
+<Callout type="warn" title="Why division fails even if it were allowed">
+A single zero makes the total product `0`, and `0 / 0` is undefined. Two zeros make **every** answer `0`. Handling this needs special cases for "no zeros", "one zero", and "two or more zeros" — fragile code that the constraint exists to steer you away from.
+</Callout>
+
+Here is the framing that works. Everything except `nums[i]` splits cleanly into two halves:
+
+```text
+answer[i] = (product of everything to the LEFT of i)
+          × (product of everything to the RIGHT of i)
+```
+
+For `nums = [1, 2, 3, 4]` at `i = 2`: left is `1 × 2 = 2`, right is `4`, so `answer[2] = 8`. ✓
+
+<Callout type="info" title="The key insight">
+Both halves are **running products**, exactly like the running sums in [Running Sum of 1d Array](/docs/arrays/running-sum-of-1d-array) — just with `×` instead of `+`.
+
+One left-to-right pass computes every prefix product. One right-to-left pass computes every suffix product. Multiply them together and you are done. No division, two passes, `O(n)`.
+</Callout>
+
+By convention the product of an empty range is `1` (the multiplicative identity), so `answer[0]`'s left product is `1` and the last element's right product is `1`.
+
+## Approach
+
+The clever part is doing this with no extra arrays beyond the output.
+
+<Steps>
+
+<Step>
+### Pass 1 — fill the output with prefix products
+
+Walk left to right carrying `left = 1`. Write `answer[i] = left`, **then** multiply `left *= nums[i]`.
+
+Writing before multiplying is what excludes `nums[i]` itself.
+</Step>
+
+<Step>
+### Pass 2 — multiply in the suffix products
+
+Walk right to left carrying `right = 1`. Do `answer[i] *= right`, **then** `right *= nums[i]`.
+
+Each cell already held its left product; now it also carries its right product.
+</Step>
+
+<Step>
+### Return `answer`
+
+Only one array was allocated, and the problem states the output array does not count toward extra space.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="Pass 1 — prefix products (left to right)"
+  intervalMs={1400}
+  frames={[
+    {
+      values: [1, 1, 1, 1],
+      states: ["active", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { left: 1, "nums": "[1,2,3,4]" },
+      note: "answer[0] = left = 1 (nothing to the left of index 0). Then left = 1 × nums[0] = 1.",
+    },
+    {
+      values: [1, 1, 1, 1],
+      states: ["done", "active", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { left: 2 },
+      note: "answer[1] = left = 1 (just nums[0]). Then left = 1 × nums[1] = 2.",
+    },
+    {
+      values: [1, 1, 2, 1],
+      states: ["done", "done", "active", "idle"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { left: 6 },
+      note: "answer[2] = 2 (that is 1 × 2). Then left = 2 × nums[2] = 6.",
+    },
+    {
+      values: [1, 1, 2, 6],
+      states: ["done", "done", "done", "match"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { left: 24 },
+      note: "answer[3] = 6 (1 × 2 × 3). Pass 1 complete: answer = [1, 1, 2, 6].",
+    },
+  ]}
+  caption="Each cell holds the product of everything strictly to its left."
+/>
+
+<ArrayViz
+  title="Pass 2 — multiply in suffix products (right to left)"
+  intervalMs={1400}
+  frames={[
+    {
+      values: [1, 1, 2, 6],
+      states: ["idle", "idle", "idle", "active"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { right: 1 },
+      note: "answer[3] = 6 × 1 = 6 (nothing to the right). Then right = 1 × nums[3] = 4.",
+    },
+    {
+      values: [1, 1, 8, 6],
+      states: ["idle", "idle", "active", "done"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { right: 4 },
+      note: "answer[2] = 2 × 4 = 8. Then right = 4 × nums[2] = 12.",
+    },
+    {
+      values: [1, 12, 8, 6],
+      states: ["idle", "active", "done", "done"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { right: 12 },
+      note: "answer[1] = 1 × 12 = 12. Then right = 12 × nums[1] = 24.",
+    },
+    {
+      values: [24, 12, 8, 6],
+      states: ["match", "match", "match", "match"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { right: 24 },
+      note: "answer[0] = 1 × 24 = 24. Final answer: [24, 12, 8, 6].",
+    },
+  ]}
+  caption="The second pass folds in everything to the right, without ever dividing."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def product_except_self(nums: list[int]) -> list[int]:
+    """answer[i] = product of every element except nums[i], no division."""
+    n = len(nums)
+    answer = [1] * n
+
+    # Pass 1: answer[i] = product of everything to the left of i.
+    left = 1
+    for i in range(n):
+        answer[i] = left        # write before multiplying — excludes nums[i]
+        left *= nums[i]
+
+    # Pass 2: fold in the product of everything to the right of i.
+    right = 1
+    for i in range(n - 1, -1, -1):
+        answer[i] *= right
+        right *= nums[i]
+
+    return answer
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function productExceptSelf(nums: number[]): number[] {
+  const n = nums.length;
+  const answer = new Array<number>(n).fill(1);
+
+  // Pass 1: answer[i] = product of everything to the left of i.
+  let left = 1;
+  for (let i = 0; i < n; i++) {
+    answer[i] = left; // write before multiplying — excludes nums[i]
+    left *= nums[i];
+  }
+
+  // Pass 2: fold in the product of everything to the right of i.
+  let right = 1;
+  for (let i = n - 1; i >= 0; i--) {
+    answer[i] *= right;
+    right *= nums[i];
+  }
+
+  return answer;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why zeros need no special handling">
+With `nums = [1, 0, 3]`: the prefix pass gives `[1, 1, 0]` and the suffix pass multiplies by `[0, 3, 1]`, yielding `[0, 3, 0]`. The zero simply propagates into every product that legitimately contains it, and is absent from `answer[1]` — the one position that excludes it. This falls out of the arithmetic with no branches at all.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — two linear passes, `2n` operations.
+- **Space** — `O(1)` extra. The output array does not count, and only two scalar accumulators are used. The more obvious version, which builds separate `prefix` and `suffix` arrays, is equally fast but uses `O(n)` extra space — this one earns the constant-space claim by reusing the output.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="One zero in the array, e.g. [1, 2, 0, 4]">
+Only the zero's own position gets a non-zero answer (`1 × 2 × 4 = 8`); everything else is `0`. Result: `[0, 0, 8, 0]`.
+</Accordion>
+
+<Accordion title="Two or more zeros, e.g. [0, 1, 0]">
+Every position's "rest of the array" still contains at least one zero, so the whole output is `[0, 0, 0]` — exactly what the two passes produce.
+</Accordion>
+
+<Accordion title="Negative numbers">
+Multiplication handles signs on its own. `[-1, 1, 0, -3, 3]` gives `[0, 0, 9, 0, 0]`, where the `9` is `(-1) × 1 × (-3) × 3`.
+</Accordion>
+
+<Accordion title="Overflow">
+LeetCode guarantees every answer fits in a 32-bit integer. Python integers are arbitrary precision, and TypeScript numbers are IEEE-754 doubles, exact up to 2⁵³ — so neither language overflows within the stated constraints.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Running Sum of 1d Array](/docs/arrays/running-sum-of-1d-array) — the same prefix idea with addition
+- [Find Pivot Index](/docs/arrays/find-pivot-index) — another "everything except me, split into two sides" problem
+- [Trapping Rain Water](/docs/arrays/trapping-rain-water) — prefix maximum from the left, suffix maximum from the right

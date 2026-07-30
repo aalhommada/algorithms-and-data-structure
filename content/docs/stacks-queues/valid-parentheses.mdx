@@ -1,0 +1,236 @@
+---
+title: Valid Parentheses
+description: Check bracket matching with a stack — the canonical example of last-in-first-out logic
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Stack"
+  tags={["String", "Stack"]}
+  leetcode="https://leetcode.com/problems/valid-parentheses/"
+  problemNumber={20}
+/>
+
+## Problem Statement
+
+Given a string containing only `(`, `)`, `{`, `}`, `[` and `]`, determine whether it is valid. A string is valid when:
+
+1. Every open bracket is closed by the **same type** of bracket.
+2. Brackets close in the **correct order**.
+3. Every close bracket has a matching open bracket.
+
+```text
+Input: "()"        → true
+Input: "()[]{}"    → true
+Input: "(]"        → false   (wrong type)
+Input: "([)]"      → false   (wrong order)
+Input: "{[]}"      → true
+Input: "("         → false   (never closed)
+```
+
+## Intuition
+
+Counting brackets is not enough. `"([)]"` has one of each and is still invalid — the order is wrong. What matters is **nesting**.
+
+<Callout type="info" title="The key insight">
+The most recently opened bracket must be the first one closed. That is exactly **last in, first out** — the definition of a stack.
+
+Push every opening bracket. On a closing bracket, look at the top of the stack: if it is the matching opener, pop it; otherwise the string is invalid.
+</Callout>
+
+Walk through `"([)]"`:
+
+```text
+'('  → push        stack: [ ( ]
+'['  → push        stack: [ (, [ ]
+')'  → top is '[', which does not match ')'  →  INVALID
+```
+
+The stack catches the ordering error that counting never would.
+
+### Real-world analogy
+
+A stack of plates. You place plates on top and take them off the top. Trying to pull out the third plate from the middle breaks the stack — just as `"([)]"` tries to close the `(` while `[` is still open.
+
+### Watch it run
+
+<StackViz
+  title='Checking "{[]}"'
+  intervalMs={1500}
+  frames={[
+    {
+      input: { values: ["{", "[", "]", "}"], cursor: 0 },
+      items: [{ value: "{", state: "active" }],
+      note: "'{' is an opener → push it.",
+    },
+    {
+      input: { values: ["{", "[", "]", "}"], cursor: 1 },
+      items: [{ value: "{" }, { value: "[", state: "active" }],
+      note: "'[' is an opener → push it. The stack top is now '['.",
+    },
+    {
+      input: { values: ["{", "[", "]", "}"], cursor: 2 },
+      items: [{ value: "{" }, { value: "[", state: "match" }],
+      note: "']' is a closer. The top is '[' — a correct match → pop it.",
+    },
+    {
+      input: { values: ["{", "[", "]", "}"], cursor: 3 },
+      items: [{ value: "{", state: "match" }],
+      note: "'}' is a closer. The top is '{' — a correct match → pop it.",
+    },
+    {
+      input: { values: ["{", "[", "]", "}"], cursor: 4 },
+      items: [],
+      vars: { result: "true" },
+      note: "The string is exhausted and the stack is empty → every bracket was matched. Valid.",
+    },
+  ]}
+  caption="An empty stack at the end is the second half of the correctness condition."
+/>
+
+<StackViz
+  title='Rejecting "([)]"'
+  intervalMs={1500}
+  frames={[
+    {
+      input: { values: ["(", "[", ")", "]"], cursor: 0 },
+      items: [{ value: "(", state: "active" }],
+      note: "Push '('.",
+    },
+    {
+      input: { values: ["(", "[", ")", "]"], cursor: 1 },
+      items: [{ value: "(" }, { value: "[", state: "active" }],
+      note: "Push '['.",
+    },
+    {
+      input: { values: ["(", "[", ")", "]"], cursor: 2 },
+      items: [{ value: "(" }, { value: "[", state: "discard" }],
+      vars: { result: "false" },
+      note: "')' expects '(' on top, but the top is '['. Mismatch → return false immediately.",
+    },
+  ]}
+  caption="The failure is detected the moment the nesting order breaks."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Build a map from closing to opening bracket
+
+`{')': '(', ']': '[', '}': '{'}`. Keying by the closer makes the lookup direct and doubles as an "is this a closer?" test.
+</Step>
+
+<Step>
+### Push every opening bracket
+</Step>
+
+<Step>
+### On a closing bracket, check the top
+
+If the stack is empty, or its top is not the matching opener, return `false`. Otherwise pop.
+</Step>
+
+<Step>
+### At the end, the stack must be empty
+
+A non-empty stack means openers were never closed — `"((("` fails here, not inside the loop.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Both failure checks are required">
+`"("` passes every check inside the loop and is still invalid. `")"` fails the empty-stack check inside the loop. You need **both** the mid-loop mismatch test and the final emptiness test — dropping either one accepts invalid strings.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def is_valid(s: str) -> bool:
+    """True if every bracket is matched and correctly nested."""
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack: list[str] = []
+
+    for char in s:
+        if char in pairs:
+            # A closing bracket: the top must be its partner.
+            if not stack or stack.pop() != pairs[char]:
+                return False
+        else:
+            stack.append(char)
+
+    return not stack  # leftovers mean unclosed brackets
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function isValid(s: string): boolean {
+  const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+  const stack: string[] = [];
+
+  for (const char of s) {
+    if (char in pairs) {
+      // A closing bracket: the top must be its partner.
+      if (stack.pop() !== pairs[char]) {
+        return false;
+      }
+    } else {
+      stack.push(char);
+    }
+  }
+
+  return stack.length === 0; // leftovers mean unclosed brackets
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why the TypeScript version needs no empty check">
+`Array.prototype.pop()` on an empty array returns `undefined`, which never equals any bracket character, so the mismatch branch fires naturally. Python's `list.pop()` raises `IndexError` instead, which is why `not stack` has to be tested first. Same logic, different language behaviour.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — one pass; each character is pushed and popped at most once.
+- **Space** — worst case `O(n)` when the string is all openers, like `"((((("`. Best case `O(1)` for something like `"()()()"` where the stack never holds more than one item.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty string">
+The loop never runs and the stack is empty, so `true` is returned. An empty string is vacuously valid.
+</Accordion>
+
+<Accordion title="Only closing brackets, e.g. ')'">
+The first character is a closer with nothing to match. Python's `not stack` guard catches it; TypeScript's `pop()` returns `undefined`. Both return `false`.
+</Accordion>
+
+<Accordion title="Only opening brackets, e.g. '((('">
+The loop completes without error, but the stack still holds three items — the final emptiness check returns `false`.
+</Accordion>
+
+<Accordion title="Correct types in the wrong order, e.g. '([)]'">
+Caught mid-loop by the type mismatch. This is the case that proves counting brackets is insufficient.
+</Accordion>
+
+<Accordion title="Deeply nested input, e.g. 10,000 nested parens">
+Works fine — the stack simply grows to 10,000 entries. No recursion means no stack-overflow risk.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Min Stack](/docs/stacks-queues/min-stack) — extending a stack with an extra invariant
+- [Evaluate Reverse Polish Notation](/docs/stacks-queues/evaluate-reverse-polish-notation) — a stack holding operands rather than symbols
+- [Simplify Path](/docs/stacks-queues/simplify-path) — a stack of path components, where `..` is a pop

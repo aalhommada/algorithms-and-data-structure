@@ -1,0 +1,236 @@
+---
+title: Gas Station
+description: Find the unique starting station for a circular route using a total check and a running tank
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Greedy"
+  tags={["Array", "Greedy"]}
+  leetcode="https://leetcode.com/problems/gas-station/"
+  problemNumber={134}
+/>
+
+## Problem Statement
+
+There are `n` gas stations arranged in a circle. Station `i` has `gas[i]` fuel, and driving from station `i` to `i + 1` costs `cost[i]` fuel.
+
+You start with an empty tank at some station. Return the index of the station from which you can complete the full circuit, or `-1` if it is impossible. The answer is **guaranteed unique** if it exists.
+
+```text
+Input:  gas  = [1, 2, 3, 4, 5]
+        cost = [3, 4, 5, 1, 2]
+Output: 3
+
+Input:  gas  = [2, 3, 4]
+        cost = [3, 4, 3]
+Output: -1
+```
+
+## Intuition
+
+Trying every start and simulating the loop is `O(n²)`. Two observations collapse it to a single pass.
+
+### Observation 1 — is a solution even possible?
+
+At each station you gain `gas[i] - cost[i]`. Over a full circle, the net change is `sum(gas) - sum(cost)`.
+
+<Callout type="info" title="Feasibility is a one-line check">
+If `sum(gas) < sum(cost)`, the circuit consumes more fuel than exists anywhere on it. **No** starting point can work — return `-1`.
+
+If `sum(gas) >= sum(cost)`, a valid start is **guaranteed to exist**. So the only remaining job is to find it.
+</Callout>
+
+### Observation 2 — failing tells you a lot
+
+Suppose you start at station `s` and run out of fuel arriving at station `f`. What can you conclude?
+
+<Callout type="info" title="The key insight">
+**Every station between `s` and `f` is also a dead end.**
+
+Consider starting at some `k` strictly between them. Getting to `k` from `s` you had a tank of at least zero, so starting fresh at `k` gives you no more fuel than you had passing through it. If the richer version of the journey failed before `f`, the poorer one fails no later.
+
+So the next candidate is `f + 1`. Skip the entire failed stretch — that is what turns `O(n²)` into `O(n)`.
+</Callout>
+
+### Real-world analogy
+
+Planning a road trip on a ring road. First, check whether the total fuel available around the loop covers the total distance — if not, no starting town helps. If it does, drive and keep an eye on the tank. The moment you strand yourself, you know every town you passed through is equally bad, so restart the plan from the town after the breakdown.
+
+### Watch it run
+
+<ArrayViz
+  title="gas = [1, 2, 3, 4, 5], cost = [3, 4, 5, 1, 2] → diff = [-2, -2, -2, 3, 3]"
+  intervalMs={1600}
+  frames={[
+    {
+      values: [-2, -2, -2, 3, 3],
+      states: ["compare", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }, { index: 0, label: "start" }],
+      vars: { total: -2, tank: -2 },
+      note: "Total of all diffs is 0 ≥ 0, so a solution exists. Start at 0: tank = -2 → already stranded.",
+    },
+    {
+      values: [-2, -2, -2, 3, 3],
+      states: ["discard", "compare", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }, { index: 1, label: "start" }],
+      vars: { total: -4, tank: -2 },
+      note: "tank went negative → station 0 cannot be the start. Reset: start = 1, tank = 0, then add -2 → -2 again.",
+    },
+    {
+      values: [-2, -2, -2, 3, 3],
+      states: ["discard", "discard", "compare", "idle", "idle"],
+      pointers: [{ index: 2, label: "i" }, { index: 2, label: "start" }],
+      vars: { total: -6, tank: -2 },
+      note: "Same again. Reset: start = 2, and station 2 also strands us immediately.",
+    },
+    {
+      values: [-2, -2, -2, 3, 3],
+      states: ["discard", "discard", "discard", "active", "idle"],
+      pointers: [{ index: 3, label: "i" }, { index: 3, label: "start" }],
+      vars: { total: -3, tank: 3 },
+      note: "Reset: start = 3. tank = 0 + 3 = 3, which is positive — keep going.",
+    },
+    {
+      values: [-2, -2, -2, 3, 3],
+      states: ["discard", "discard", "discard", "match", "match"],
+      pointers: [{ index: 4, label: "i" }, { index: 3, label: "start" }],
+      vars: { total: 0, tank: 6, answer: 3 },
+      note: "tank = 6, still positive at the end. total = 0 ≥ 0 confirms feasibility. Answer: station 3.",
+    },
+  ]}
+  caption="A negative tank invalidates the whole stretch, not just the current station."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Track three values in one pass
+
+`total` — the running sum of `gas[i] - cost[i]` over the whole array, used for the feasibility check.
+
+`tank` — the fuel since the current candidate start.
+
+`start` — the current candidate.
+</Step>
+
+<Step>
+### At each station, add `gas[i] - cost[i]` to both `total` and `tank`
+</Step>
+
+<Step>
+### If `tank` goes negative, reset
+
+Set `start = i + 1` and `tank = 0`. Everything from the old `start` through `i` is eliminated.
+</Step>
+
+<Step>
+### After the loop, return `start` if `total >= 0`, else `-1`
+
+`total` is what proves a solution exists at all.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def can_complete_circuit(gas: list[int], cost: list[int]) -> int:
+    """Index of the only valid starting station, or -1."""
+    total = 0    # net fuel over the entire circuit
+    tank = 0     # fuel accumulated since `start`
+    start = 0
+
+    for i in range(len(gas)):
+        diff = gas[i] - cost[i]
+        total += diff
+        tank += diff
+
+        if tank < 0:
+            # Stranded — every station from `start` to i is disqualified.
+            start = i + 1
+            tank = 0
+
+    return start if total >= 0 else -1
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function canCompleteCircuit(gas: number[], cost: number[]): number {
+  let total = 0; // net fuel over the entire circuit
+  let tank = 0; // fuel accumulated since `start`
+  let start = 0;
+
+  for (let i = 0; i < gas.length; i++) {
+    const diff = gas[i] - cost[i];
+    total += diff;
+    tank += diff;
+
+    if (tank < 0) {
+      // Stranded — every station from `start` to i is disqualified.
+      start = i + 1;
+      tank = 0;
+    }
+  }
+
+  return total >= 0 ? start : -1;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why the final `start` is guaranteed correct">
+Two facts combine:
+
+1. Every station before `start` was eliminated by the skipping argument.
+2. From `start` to the end of the array the tank never went negative — otherwise `start` would have moved again.
+
+The wrap-around portion (from index `0` back to `start`) has net fuel `total - tank`, and since `total >= 0` while `tank >= 0`, that stretch cannot strand you either. So `start` completes the circle. The problem's uniqueness guarantee means there is nothing else to check.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — one pass. The brute force tries all `n` starts and simulates up to `n` steps each, giving `O(n²)`.
+- **Space** — three integers.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Not enough fuel overall">
+`total < 0` and `-1` is returned regardless of what `start` ended up as. This check must come last — `start` alone carries no meaning without it.
+</Accordion>
+
+<Accordion title="Exactly enough fuel, total == 0">
+A valid start exists and is unique. `[1,2,3,4,5]` / `[3,4,5,1,2]` is exactly this case, answering `3`.
+</Accordion>
+
+<Accordion title="Station 0 works">
+`tank` never goes negative, `start` stays `0`, and `0` is returned.
+</Accordion>
+
+<Accordion title="The failure happens at the very last station">
+`start` becomes `n`, which is out of bounds — but then `total < 0` must hold (the tank went negative on the final station with nothing left to offset it), so `-1` is returned before `start` is ever used as an index.
+</Accordion>
+
+<Accordion title="A single station">
+Returns `0` if `gas[0] >= cost[0]`, else `-1`. The loop handles it without a special case.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Jump Game](/docs/greedy/jump-game) — another greedy proof about which positions can be safely discarded
+- [Best Time to Buy and Sell Stock](/docs/arrays/best-time-to-buy-and-sell-stock) — a running value reset by a condition
+- [Candy](/docs/greedy/candy) — greedy applied in two directions

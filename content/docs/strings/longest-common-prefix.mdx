@@ -1,0 +1,236 @@
+---
+title: Longest Common Prefix
+description: Find the shared leading characters across an array of strings by shrinking a candidate prefix
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Vertical Scanning"
+  tags={["String", "Trie"]}
+  leetcode="https://leetcode.com/problems/longest-common-prefix/"
+  problemNumber={14}
+/>
+
+## Problem Statement
+
+Write a function to find the longest common prefix shared by all strings in an array. If there is no common prefix, return the empty string `""`.
+
+```text
+Input:  ["flower", "flow", "flight"]
+Output: "fl"
+
+Input:  ["dog", "racecar", "car"]
+Output: ""
+```
+
+## Intuition
+
+<Callout type="info" title="The key insight">
+The common prefix can only ever **shrink**. Start with a candidate and cut it down whenever a string disagrees — it never needs to grow back.
+
+Two shapes follow from this:
+
+**Horizontal scanning** — take the first string as the candidate, then shorten it against each subsequent string.
+
+**Vertical scanning** — compare character position 0 across every string, then position 1, and so on. Stop at the first column where they disagree.
+</Callout>
+
+Vertical scanning is usually faster in practice because it stops at the first mismatched *column*, and the answer is bounded by the shortest string.
+
+### The upper bound
+
+The prefix can never be longer than the shortest string in the array. `["ab", "abcdef"]` is capped at length 2 no matter how similar the rest is. Vertical scanning gets this for free — it stops the moment any string runs out of characters.
+
+### Watch it run
+
+<ArrayViz
+  title='Vertical scanning ["flower", "flow", "flight"]'
+  showIndices={false}
+  intervalMs={1500}
+  frames={[
+    {
+      values: ["flower", "flow", "flight"],
+      states: ["compare", "compare", "compare"],
+      vars: { column: 0, chars: "f, f, f" },
+      note: "Column 0: every string has 'f'. Agreement — the prefix is at least 'f'.",
+    },
+    {
+      values: ["flower", "flow", "flight"],
+      states: ["compare", "compare", "compare"],
+      vars: { column: 1, chars: "l, l, l", prefix: "fl" },
+      note: "Column 1: all 'l'. The prefix grows to 'fl'.",
+    },
+    {
+      values: ["flower", "flow", "flight"],
+      states: ["match", "match", "discard"],
+      vars: { column: 2, chars: "o, o, i", prefix: "fl" },
+      note: "Column 2: 'o', 'o', but 'i' in \"flight\". Disagreement → stop immediately.",
+    },
+    {
+      values: ["fl", "fl", "fl"],
+      states: ["match", "match", "match"],
+      vars: { answer: "fl" },
+      note: 'The answer is the first two columns: "fl". Later columns are never examined.',
+    },
+  ]}
+  caption="Scanning by column stops at the first disagreement, whatever the string lengths."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Handle the empty input
+
+An empty array has no common prefix — return `""`.
+</Step>
+
+<Step>
+### Walk the characters of the first string by index
+
+The first string is a valid upper bound for the prefix.
+</Step>
+
+<Step>
+### For each column, check every other string
+
+Stop if any string is shorter than the current index, or if its character differs.
+</Step>
+
+<Step>
+### Return the slice up to the stopping index
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def longest_common_prefix(strs: list[str]) -> str:
+    """Longest prefix shared by every string, or '' if there is none."""
+    if not strs:
+        return ""
+
+    first = strs[0]
+
+    for i, char in enumerate(first):
+        for other in strs[1:]:
+            # Either this string ended, or it disagrees at column i.
+            if i >= len(other) or other[i] != char:
+                return first[:i]
+
+    return first   # the first string is itself the common prefix
+```
+
+The horizontal-scanning version, which some find more intuitive:
+
+```python
+def longest_common_prefix_horizontal(strs: list[str]) -> str:
+    if not strs:
+        return ""
+
+    prefix = strs[0]
+    for word in strs[1:]:
+        while not word.startswith(prefix):
+            prefix = prefix[:-1]   # chop one character off the end
+            if not prefix:
+                return ""
+
+    return prefix
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function longestCommonPrefix(strs: string[]): string {
+  if (strs.length === 0) return '';
+
+  const first = strs[0];
+
+  for (let i = 0; i < first.length; i++) {
+    const char = first[i];
+
+    for (let j = 1; j < strs.length; j++) {
+      // Either this string ended, or it disagrees at column i.
+      if (i >= strs[j].length || strs[j][i] !== char) {
+        return first.slice(0, i);
+      }
+    }
+  }
+
+  return first; // the first string is itself the common prefix
+}
+```
+
+The horizontal-scanning version:
+
+```typescript
+function longestCommonPrefixHorizontal(strs: string[]): string {
+  if (strs.length === 0) return '';
+
+  let prefix = strs[0];
+  for (const word of strs.slice(1)) {
+    while (!word.startsWith(prefix)) {
+      prefix = prefix.slice(0, -1); // chop one character off the end
+      if (prefix === '') return '';
+    }
+  }
+
+  return prefix;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="A neat sorting shortcut">
+Sort the array lexicographically and compare only the **first and last** strings. Everything in between must share whatever prefix those two extremes share, because sorting places the most dissimilar strings at the ends.
+
+It is elegant, but `O(n × m log n)` because of the sort — slower than the `O(n × m)` scan. Worth knowing as a party trick, not as the answer.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n × m)" space="O(1)" />
+
+Where `n` is the number of strings and `m` is the length of the shortest one.
+
+- **Time** — in the worst case (all strings identical) every character of every string is compared. In practice the scan usually stops after a few columns.
+- **Space** — `O(1)` extra, ignoring the returned slice.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty array">
+Returns `""` via the guard. Without it, `strs[0]` would throw.
+</Accordion>
+
+<Accordion title="A single string">
+The inner loop never runs, so the whole string is returned — it is trivially its own longest common prefix.
+</Accordion>
+
+<Accordion title="An empty string in the array, e.g. ['', 'abc']">
+The answer is `""`. Vertical scanning catches it at column 0 via the `i >= len(other)` check; if the empty string is first, the outer loop never runs and `""` is returned.
+</Accordion>
+
+<Accordion title="No common prefix at all, e.g. ['dog', 'racecar']">
+The mismatch at column 0 returns `first[:0]`, which is `""`.
+</Accordion>
+
+<Accordion title="One string is a prefix of the others, e.g. ['ab', 'abc', 'abcd']">
+The scan stops when the shortest string runs out, returning `"ab"`. The `i >= len(other)` check is what handles this.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Find the Index of the First Occurrence in a String](/docs/strings/find-the-index-of-the-first-occurrence-in-a-string) — character-by-character matching
+- [Isomorphic Strings](/docs/strings/isomorphic-strings) — comparing strings position by position
+- [Group Anagrams](/docs/arrays/group-anagrams) — grouping strings by a shared property

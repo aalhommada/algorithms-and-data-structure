@@ -1,0 +1,244 @@
+---
+title: Zigzag Conversion
+description: Write a string in a zigzag pattern and read it row by row, by simulating the bouncing direction
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Simulation"
+  tags={["String"]}
+  leetcode="https://leetcode.com/problems/zigzag-conversion/"
+  problemNumber={6}
+/>
+
+## Problem Statement
+
+Write a string in a zigzag pattern across a given number of rows, then read it **row by row**.
+
+```text
+s = "PAYPALISHIRING", numRows = 3
+
+P   A   H   N
+A P L S I I G
+Y   I   R
+
+Read row by row → "PAHNAPLSIIGYIR"
+```
+
+```text
+s = "PAYPALISHIRING", numRows = 4
+
+P     I    N
+A   L S  I G
+Y A   H R
+P     I
+
+Read row by row → "PINALSIGYAHRPI"
+```
+
+## Intuition
+
+The picture suggests building a 2-D grid, but you never need one — only which **row** each character lands on.
+
+<Callout type="info" title="The key insight">
+Walk the string once, appending each character to a bucket for its current row. Track the row index and a direction:
+
+- Move **down**: row increases by 1
+- Move **up**: row decreases by 1
+- **Flip direction** at the top row (`0`) and the bottom row (`numRows - 1`)
+
+At the end, concatenate the buckets top to bottom.
+</Callout>
+
+The zigzag is just a bouncing counter. Columns, spacing and the visual layout are irrelevant — reading row by row discards all of that anyway.
+
+### Real-world analogy
+
+A typewriter that reverses direction at each margin. You do not need to know the page layout to say which line a character lands on — you only need to know which way the carriage is currently moving.
+
+### Watch it run
+
+<ArrayViz
+  title='"PAYPALISHIRING" with numRows = 3 — row index bounces 0,1,2,1,0,1,2,…'
+  showIndices={false}
+  intervalMs={1400}
+  frames={[
+    {
+      values: ["P", "", ""],
+      states: ["active", "idle", "idle"],
+      vars: { char: "P", row: 0, direction: "down" },
+      note: "'P' goes to row 0. At the top row, the direction is set to down.",
+    },
+    {
+      values: ["P", "A", ""],
+      states: ["done", "active", "idle"],
+      vars: { char: "A", row: 1, direction: "down" },
+      note: "'A' → row 1, still moving down.",
+    },
+    {
+      values: ["P", "A", "Y"],
+      states: ["done", "done", "active"],
+      vars: { char: "Y", row: 2, direction: "flip to up" },
+      note: "'Y' → row 2, the bottom row → flip direction to up.",
+    },
+    {
+      values: ["P", "AP", "Y"],
+      states: ["done", "active", "done"],
+      vars: { char: "P", row: 1, direction: "up" },
+      note: "'P' → row 1, now moving up.",
+    },
+    {
+      values: ["PA", "AP", "Y"],
+      states: ["active", "done", "done"],
+      vars: { char: "A", row: 0, direction: "flip to down" },
+      note: "'A' → row 0, the top row → flip back to down. The bounce is complete.",
+    },
+    {
+      values: ["PAHN", "APLSIIG", "YIR"],
+      states: ["match", "match", "match"],
+      vars: { result: "PAHNAPLSIIGYIR" },
+      note: "After the whole string, concatenate the rows top to bottom.",
+    },
+  ]}
+  caption="Only the row index matters — no grid is ever allocated."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Handle `numRows == 1`
+
+There is no zigzag with one row — return the string unchanged. Without this guard the direction never flips and the row index runs out of bounds.
+</Step>
+
+<Step>
+### Create `numRows` empty buckets
+</Step>
+
+<Step>
+### Walk the string
+
+Append each character to `rows[current]`, then move `current` by the step.
+</Step>
+
+<Step>
+### Flip the step at either boundary
+
+When `current` is `0` or `numRows - 1`, negate the step.
+</Step>
+
+<Step>
+### Join the buckets in order
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def convert(s: str, num_rows: int) -> str:
+    """Write s in a zigzag across num_rows rows, then read row by row."""
+    if num_rows == 1 or num_rows >= len(s):
+        return s   # no zigzag happens — nothing to rearrange
+
+    rows = [[] for _ in range(num_rows)]
+    current = 0
+    step = 1       # +1 moving down, -1 moving up
+
+    for char in s:
+        rows[current].append(char)
+
+        # Flip direction at the top and bottom rows.
+        if current == 0:
+            step = 1
+        elif current == num_rows - 1:
+            step = -1
+
+        current += step
+
+    return "".join("".join(row) for row in rows)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function convert(s: string, numRows: number): string {
+  if (numRows === 1 || numRows >= s.length) {
+    return s; // no zigzag happens — nothing to rearrange
+  }
+
+  const rows: string[][] = Array.from({ length: numRows }, () => []);
+  let current = 0;
+  let step = 1; // +1 moving down, -1 moving up
+
+  for (const char of s) {
+    rows[current].push(char);
+
+    // Flip direction at the top and bottom rows.
+    if (current === 0) step = 1;
+    else if (current === numRows - 1) step = -1;
+
+    current += step;
+  }
+
+  return rows.map((row) => row.join('')).join('');
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Set the direction before moving, not after">
+Checking the boundary *after* incrementing lets `current` briefly go out of range. Deciding the step while standing on the boundary row keeps every index valid.
+
+Also note the order of the two branches: with `numRows = 2`, row `0` and row `numRows - 1 = 1` are both boundaries, and testing `current == 0` first gives the correct downward bias.
+</Callout>
+
+<Callout type="info" title="The closed-form alternative">
+There is a formula-based solution that computes each row's characters directly using a cycle length of `2 × numRows - 2`. It avoids the buckets, but the index arithmetic — especially for the diagonal characters in the middle rows — is fiddly and easy to get wrong. The simulation is the same `O(n)` and far easier to defend in an interview.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — each character is placed once and read once.
+- **Space** — the buckets together hold exactly `n` characters, plus the output string.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="numRows = 1">
+No zigzag exists — the string is returned unchanged. Without the guard, `step` would never flip and `current` would run past the single row.
+</Accordion>
+
+<Accordion title="numRows >= len(s)">
+Every character gets its own row and the vertical order equals the original order, so the string is unchanged. The early return skips pointless work.
+</Accordion>
+
+<Accordion title="numRows = 2">
+The pattern degenerates to alternating rows: even indices on row 0, odd on row 1. The bounce logic handles it, since both rows are boundaries.
+</Accordion>
+
+<Accordion title="Empty string">
+`num_rows >= len(s)` is true for any positive `num_rows`, so `""` is returned immediately.
+</Accordion>
+
+<Accordion title="Why join a list instead of using += on a string?">
+Repeated string concatenation allocates a new string each time, which is `O(n²)` overall. Collecting pieces and joining once is `O(n)`.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Text Justification](/docs/strings/text-justification) — another layout-simulation problem, with harder rules
+- [Reverse Words in a String](/docs/strings/reverse-words-in-a-string) — rearranging string content
+- [Simplify Path](/docs/stacks-queues/simplify-path) — string processing driven by simple state

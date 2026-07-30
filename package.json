@@ -1,33 +1,46 @@
 {
-  "name": "javascript-algorithms-and-data-structure",
-  "version": "0.0.1",
-  "description": "Nextra docs template",
+  "name": "algorithms-and-data-structure",
+  "version": "1.0.0",
+  "description": "Algorithms and Data Structure solutions in TypeScript and Python",
+  "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "lint": "next lint"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aalhommada/javascript-algorithms-and-data-structure.git"
+    "url": "git+https://github.com/aalhommada/algorithms-and-data-structure.git"
   },
-  "author": "Shu Ding <g@shud.in>",
+  "author": "Abdullah Al Hommada <aalhommada@gmail.com>",
+  "homepage": "https://aalhommada.com",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/shuding/javascript-algorithms-and-data-structure/issues"
+    "url": "https://github.com/aalhommada/algorithms-and-data-structure/issues"
   },
-  "homepage": "https://github.com/shuding/javascript-algorithms-and-data-structure#readme",
   "dependencies": {
-    "next": "^13.4.10",
-    "nextjs-google-analytics": "^2.3.3",
-    "nextra": "2.10.0",
-    "nextra-theme-docs": "2.10.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-icons": "^4.7.1"
+    "clsx": "^2.1.1",
+    "fumadocs-core": "^16.13.0",
+    "fumadocs-mdx": "^15.2.0",
+    "fumadocs-ui": "^16.4.5",
+    "lucide-react": "^0.474.0",
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.6.0"
+  },
+  "overrides": {
+    "postcss": "^8.5.24",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
-    "@types/node": "18.11.10",
-    "typescript": "^4.9.3"
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.2"
   }
 }

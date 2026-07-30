@@ -1,0 +1,233 @@
+---
+title: Reverse Words in a String
+description: Reverse word order while normalising whitespace, with a two-reversal in-place technique
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Two Pointers / Double Reversal"
+  tags={["String", "Two Pointers"]}
+  leetcode="https://leetcode.com/problems/reverse-words-in-a-string/"
+  problemNumber={151}
+/>
+
+## Problem Statement
+
+Given a string `s`, reverse the order of its **words**. A word is a maximal run of non-space characters.
+
+The result must have words separated by a **single** space, with no leading or trailing spaces.
+
+```text
+Input:  "the sky is blue"
+Output: "blue is sky the"
+
+Input:  "  hello world  "
+Output: "world hello"        (leading/trailing spaces removed)
+
+Input:  "a good   example"
+Output: "example good a"     (multiple spaces collapsed)
+```
+
+<Callout type="info" title="Two jobs in one problem">
+**Reverse the word order** — the headline task.
+
+**Normalise whitespace** — trim the ends and collapse runs of spaces to one. Most wrong answers get the first part right and the second part wrong.
+</Callout>
+
+## Intuition
+
+### The direct approach
+
+Split on whitespace, reverse the resulting list, join with single spaces. Both languages' split functions can be made to drop empty pieces, which handles the normalisation for free.
+
+This is `O(n)` time and `O(n)` space, and it is a perfectly good answer.
+
+### The in-place approach
+
+The classic follow-up asks for `O(1)` extra space, which is possible in languages with mutable strings (C++, Java's `char[]`). It relies on a neat identity.
+
+<Callout type="info" title="The key insight — reverse twice">
+1. **Reverse the entire string.** Now the words are in the right order, but each word's letters are backwards.
+2. **Reverse each word individually.** The letters come out right, and the word order stays correct.
+
+```text
+"the sky is blue"
+→ reverse everything      → "eulb si yks eht"
+→ reverse each word       → "blue is sky the"
+```
+
+Reversing twice at different granularities cancels out at the character level while leaving the word-level reordering intact.
+</Callout>
+
+Python and TypeScript have immutable strings, so a true `O(1)` version is not achievable — but the technique is worth understanding, and it is what interviewers are probing for.
+
+### Watch it run
+
+<ArrayViz
+  title='The double-reversal technique on "the sky is blue"'
+  showIndices={false}
+  intervalMs={1700}
+  frames={[
+    {
+      values: ["the", "sky", "is", "blue"],
+      states: ["idle", "idle", "idle", "idle"],
+      note: "Original word order.",
+    },
+    {
+      values: ["eulb", "si", "yks", "eht"],
+      states: ["compare", "compare", "compare", "compare"],
+      note: "Step 1: reverse the whole string. Word ORDER is now correct, but each word's letters are backwards.",
+    },
+    {
+      values: ["blue", "si", "yks", "eht"],
+      states: ["match", "compare", "compare", "compare"],
+      note: "Step 2: reverse each word in place. Starting with 'eulb' → 'blue'.",
+    },
+    {
+      values: ["blue", "is", "sky", "the"],
+      states: ["match", "match", "match", "match"],
+      note: "All words reversed back. Final: 'blue is sky the'.",
+    },
+  ]}
+  caption="Two reversals at different scales produce a word-level reordering."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Split on runs of whitespace
+
+Dropping empty pieces handles leading, trailing and repeated spaces in one step.
+</Step>
+
+<Step>
+### Reverse the list of words
+</Step>
+
+<Step>
+### Join with a single space
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def reverse_words(s: str) -> str:
+    """Reverse word order, collapsing whitespace to single spaces."""
+    # split() with no argument splits on runs of whitespace and drops empties.
+    words = s.split()
+    return " ".join(reversed(words))
+```
+
+The manual version, which shows the whitespace handling explicitly:
+
+```python
+def reverse_words_manual(s: str) -> str:
+    words: list[str] = []
+    i = len(s) - 1
+
+    while i >= 0:
+        # Skip spaces between words.
+        while i >= 0 and s[i] == " ":
+            i -= 1
+        if i < 0:
+            break
+
+        # Collect one word, scanning right to left.
+        end = i
+        while i >= 0 and s[i] != " ":
+            i -= 1
+        words.append(s[i + 1 : end + 1])
+
+    return " ".join(words)
+```
+
+Scanning from the right collects words in reversed order directly, so no separate reversal is needed.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function reverseWords(s: string): string {
+  // trim() removes leading/trailing spaces; /\s+/ collapses runs.
+  return s.trim().split(/\s+/).reverse().join(' ');
+}
+```
+
+The manual version:
+
+```typescript
+function reverseWordsManual(s: string): string {
+  const words: string[] = [];
+  let i = s.length - 1;
+
+  while (i >= 0) {
+    // Skip spaces between words.
+    while (i >= 0 && s[i] === ' ') i--;
+    if (i < 0) break;
+
+    // Collect one word, scanning right to left.
+    const end = i;
+    while (i >= 0 && s[i] !== ' ') i--;
+    words.push(s.slice(i + 1, end + 1));
+  }
+
+  return words.join(' ');
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="`split(' ')` is not the same as `split()`">
+**Python:** `"a  b".split(" ")` gives `["a", "", "b"]` — the empty string between the two spaces survives, and joining would produce a double space. `"a  b".split()` with no argument gives `["a", "b"]`.
+
+**TypeScript:** `"a  b".split(' ')` has the same problem. Use `.trim().split(/\s+/)`, which both removes the ends and collapses the middle.
+
+Forgetting `trim()` before the regex split is also a bug: `"  a b".split(/\s+/)` starts with an empty string.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — one pass to split, one to reverse, one to join.
+- **Space** — `O(n)` for the word list and the output. In a language with mutable strings, the double-reversal approach achieves `O(1)` extra space.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Leading and trailing spaces">
+Dropped by `split()` in Python and by `trim()` in TypeScript. The output never has them.
+</Accordion>
+
+<Accordion title="Multiple spaces between words">
+Collapsed to a single space by joining a clean word list.
+</Accordion>
+
+<Accordion title="A single word">
+Reversing a one-element list is a no-op, and the word is returned trimmed.
+</Accordion>
+
+<Accordion title="A string of only spaces">
+`split()` returns an empty list and joining gives `""`. LeetCode guarantees at least one word, but this degrades gracefully.
+</Accordion>
+
+<Accordion title="Why does the manual version scan right to left?">
+Because it collects words in the order they should appear in the output, avoiding a separate reversal step. Scanning left to right and reversing afterwards is equally valid — just one more operation.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Length of Last Word](/docs/strings/length-of-last-word) — the same skip-then-collect whitespace scanning
+- [Reverse Linked List](/docs/linked-lists/reverse-linked-list) — reversal on a different structure
+- [Valid Palindrome](/docs/strings/valid-palindrome) — two-pointer string traversal

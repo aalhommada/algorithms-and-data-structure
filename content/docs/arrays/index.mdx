@@ -1,0 +1,82 @@
+---
+title: Arrays
+description: Two pointers, sliding windows, prefix sums and hash maps — the patterns behind most array problems
+---
+
+Arrays are where almost every algorithm interview starts, and for good reason: they force you to think about **access patterns**. An array gives you `O(1)` random access but `O(n)` insertion and deletion, and nearly every technique below is a way of exploiting the first to avoid paying the second.
+
+## The Four Patterns
+
+Almost every array problem here is one of these.
+
+### 1. Hash map — turn searching into looking up
+
+When you find yourself writing a nested loop to find "the other half" of something, a hash map usually collapses it to one pass. The cost is `O(n)` memory.
+
+- [Two Sum](/docs/arrays/two-sum) — the archetype
+- [Contains Duplicate](/docs/arrays/contains-duplicate) — presence only, so a set suffices
+- [Group Anagrams](/docs/arrays/group-anagrams) — keyed by a computed signature
+- [Top K Frequent Elements](/docs/arrays/top-k-frequent-elements) — counting, then ranking
+
+### 2. Two pointers — let a sorted (or symmetric) structure guide you
+
+Two indices moving under a rule that provably discards possibilities. The hard part is always the proof that what you skip could not have been the answer.
+
+- [Container With Most Water](/docs/arrays/container-with-most-water) — converging from both ends
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — filling from the back to avoid shifting
+- [Remove Duplicates from Sorted Array II](/docs/arrays/remove-duplicates-from-sorted-array-ii) — a read pointer and a write pointer
+- [Trapping Rain Water](/docs/arrays/trapping-rain-water) — two pointers plus running maximums
+
+### 3. Prefix sums — precompute so range queries become subtraction
+
+Build cumulative totals once, and any range question becomes `O(1)` arithmetic.
+
+- [Running Sum of 1d Array](/docs/arrays/running-sum-of-1d-array) — the building block
+- [Find Pivot Index](/docs/arrays/find-pivot-index) — total minus left gives right, for free
+- [Product of Array Except Self](/docs/arrays/product-of-array-except-self) — prefix and suffix, with multiplication
+
+### 4. Single-pass running state — carry the answer as you go
+
+Keep one or two variables that summarise everything seen so far. Often a dynamic-programming table collapsed down to scalars.
+
+- [Best Time to Buy and Sell Stock](/docs/arrays/best-time-to-buy-and-sell-stock) — a running minimum
+- [Maximum Average Subarray I](/docs/arrays/maximum-average-subarray-i) — a fixed-size sliding window
+
+## How to Recognise Which One
+
+| The problem says… | Reach for |
+|---|---|
+| "find a pair / has this appeared before" | Hash map or set |
+| "the array is sorted" | Two pointers or binary search |
+| "sum of a subarray / range" | Prefix sums |
+| "subarray of size `k`" | Fixed sliding window |
+| "longest / shortest subarray such that…" | Variable sliding window |
+| "in place, `O(1)` extra space" | Read and write pointers |
+| "`k` most frequent / largest" | Counting, then bucket sort or a heap |
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [Two Sum](/docs/arrays/two-sum) | Easy | Hash Map |
+| [Contains Duplicate](/docs/arrays/contains-duplicate) | Easy | Hash Set |
+| [Best Time to Buy and Sell Stock](/docs/arrays/best-time-to-buy-and-sell-stock) | Easy | Running Minimum |
+| [Running Sum of 1d Array](/docs/arrays/running-sum-of-1d-array) | Easy | Prefix Sum |
+| [Find Pivot Index](/docs/arrays/find-pivot-index) | Easy | Prefix Sum |
+| [Maximum Average Subarray I](/docs/arrays/maximum-average-subarray-i) | Easy | Sliding Window |
+| [Merge Sorted Array](/docs/arrays/merge-sorted-array) | Easy | Two Pointers |
+| [Number of Good Pairs](/docs/arrays/number-of-good-pairs) | Easy | Counting |
+| [Minimum Index Sum of Two Lists](/docs/arrays/minimum-index-sum-of-two-lists) | Easy | Hash Map |
+| [Sort the People](/docs/arrays/sort-the-people) | Easy | Custom Sort |
+| [Final Value of Variable](/docs/arrays/final-value-of-variable-after-performing-operations) | Easy | Simulation |
+| [Container With Most Water](/docs/arrays/container-with-most-water) | Medium | Two Pointers |
+| [Product of Array Except Self](/docs/arrays/product-of-array-except-self) | Medium | Prefix & Suffix |
+| [Group Anagrams](/docs/arrays/group-anagrams) | Medium | Hash Map |
+| [Top K Frequent Elements](/docs/arrays/top-k-frequent-elements) | Medium | Bucket Sort |
+| [H-Index](/docs/arrays/h-index) | Medium | Sorting |
+| [Remove Duplicates from Sorted Array II](/docs/arrays/remove-duplicates-from-sorted-array-ii) | Medium | Two Pointers |
+| [Trapping Rain Water](/docs/arrays/trapping-rain-water) | Hard | Two Pointers |
+
+<Callout type="info" title="Where to start">
+If you are new to these, work through [Two Sum](/docs/arrays/two-sum), then [Best Time to Buy and Sell Stock](/docs/arrays/best-time-to-buy-and-sell-stock), then [Container With Most Water](/docs/arrays/container-with-most-water). Those three cover hash maps, running state and two pointers — and everything else builds on them.
+</Callout>

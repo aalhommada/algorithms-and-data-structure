@@ -1,0 +1,332 @@
+---
+title: Find the Index of the First Occurrence in a String
+description: Locate a substring by sliding a comparison window, and meet the KMP idea that makes it linear
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="String Matching"
+  tags={["String", "Two Pointers", "String Matching"]}
+  leetcode="https://leetcode.com/problems/find-the-index-of-the-first-occurrence-in-a-string/"
+  problemNumber={28}
+/>
+
+## Problem Statement
+
+Given two strings `haystack` and `needle`, return the index of the **first occurrence** of `needle` in `haystack`, or `-1` if it does not occur.
+
+```text
+Input:  haystack = "sadbutsad", needle = "sad"
+Output: 0      (also occurs at index 6, but 0 is first)
+
+Input:  haystack = "leetcode", needle = "leeto"
+Output: -1
+```
+
+## Intuition
+
+The direct approach: try every starting position in `haystack` and check whether `needle` matches there.
+
+<Callout type="info" title="The key insight — bound the starting positions">
+If `haystack` has length `n` and `needle` has length `m`, a match starting at index `i` needs `m` characters available. So `i` can only run from `0` to `n - m`.
+
+Starting anywhere later guarantees running off the end, so those positions need not be tried at all.
+</Callout>
+
+At each candidate start, compare the `m` characters. A mismatch abandons that position immediately and moves to the next.
+
+### Real-world analogy
+
+Sliding a stencil with a cut-out word along a printed page. At each position you check whether the visible letters spell the word. If not, you shift one place right. You stop shifting when the stencil would hang off the page edge.
+
+### Watch it run
+
+<ArrayViz
+  title='haystack = "sadbutsad", needle = "sad"'
+  showIndices={false}
+  intervalMs={1500}
+  frames={[
+    {
+      values: ["s", "a", "d", "b", "u", "t", "s", "a", "d"],
+      states: ["compare", "compare", "compare", "idle", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "start" }],
+      vars: { window: '"sad"', needle: '"sad"' },
+      note: "Try start = 0. The window is 'sad', which matches the needle exactly.",
+    },
+    {
+      values: ["s", "a", "d", "b", "u", "t", "s", "a", "d"],
+      states: ["match", "match", "match", "idle", "idle", "idle", "idle", "idle", "idle"],
+      vars: { answer: 0 },
+      note: "Match found at index 0. Return immediately — later occurrences do not matter.",
+    },
+  ]}
+/>
+
+<ArrayViz
+  title='A case with mismatches: haystack = "mississippi", needle = "issip"'
+  showIndices={false}
+  intervalMs={1400}
+  frames={[
+    {
+      values: ["m", "i", "s", "s", "i", "s", "s", "i", "p", "p", "i"],
+      states: ["discard", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "start" }],
+      note: "start = 0: 'm' ≠ 'i' → mismatch on the first character. Move on.",
+    },
+    {
+      values: ["m", "i", "s", "s", "i", "s", "s", "i", "p", "p", "i"],
+      states: ["done", "compare", "compare", "compare", "compare", "discard", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "start" }],
+      vars: { window: '"issis"', needle: '"issip"' },
+      note: "start = 1: 'issi' matches, but the fifth character is 's' not 'p'. Four comparisons wasted.",
+    },
+    {
+      values: ["m", "i", "s", "s", "i", "s", "s", "i", "p", "p", "i"],
+      states: ["done", "done", "done", "done", "match", "match", "match", "match", "match", "idle", "idle"],
+      pointers: [{ index: 4, label: "start" }],
+      vars: { window: '"issip"', answer: 4 },
+      note: "start = 4: 'issip' matches. Return 4.",
+    },
+  ]}
+  caption="Partial matches are what make the naive scan quadratic in the worst case."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Handle the empty needle
+
+By convention it matches at index `0`.
+</Step>
+
+<Step>
+### Loop `start` from 0 to `n - m` inclusive
+</Step>
+
+<Step>
+### Compare the window against the needle
+
+On a full match, return `start`. On any mismatch, move to the next start.
+</Step>
+
+<Step>
+### Return `-1` if no start matched
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def str_str(haystack: str, needle: str) -> int:
+    """Index of the first occurrence of needle in haystack, or -1."""
+    n, m = len(haystack), len(needle)
+
+    if m == 0:
+        return 0
+
+    # Only starts with m characters remaining can possibly match.
+    for start in range(n - m + 1):
+        if haystack[start : start + m] == needle:
+            return start
+
+    return -1
+```
+
+The explicit character-by-character version, which avoids allocating slices:
+
+```python
+def str_str_manual(haystack: str, needle: str) -> int:
+    n, m = len(haystack), len(needle)
+    if m == 0:
+        return 0
+
+    for start in range(n - m + 1):
+        k = 0
+        while k < m and haystack[start + k] == needle[k]:
+            k += 1
+        if k == m:
+            return start
+
+    return -1
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function strStr(haystack: string, needle: string): number {
+  const n = haystack.length;
+  const m = needle.length;
+
+  if (m === 0) return 0;
+
+  // Only starts with m characters remaining can possibly match.
+  for (let start = 0; start <= n - m; start++) {
+    let k = 0;
+    while (k < m && haystack[start + k] === needle[k]) {
+      k++;
+    }
+    if (k === m) return start;
+  }
+
+  return -1;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="The loop bound is `n - m`, inclusive">
+Python's `range(n - m + 1)` and TypeScript's `start <= n - m` both include the final valid start. Using `range(n - m)` or `start < n - m` misses a match that sits exactly at the end — for example `"abc"` inside `"xabc"`.
+</Callout>
+
+## Doing Better: the KMP Idea
+
+The naive scan is `O(n × m)` in the worst case — inputs like `haystack = "aaaaaaaab"`, `needle = "aaab"` force it to re-compare almost the entire needle at every position.
+
+<Callout type="info" title="What KMP notices">
+When `"issip"` fails against `"issis"` at the last character, the naive version restarts at `start + 1` and re-reads characters it has **already seen and already knows**.
+
+The Knuth–Morris–Pratt algorithm precomputes, for each prefix of the needle, the length of the longest proper prefix that is also a suffix. On a mismatch, that table says exactly how far the needle can shift without missing a match — and the haystack pointer **never moves backwards**.
+
+The result is `O(n + m)`: `O(m)` to build the table, `O(n)` to scan.
+</Callout>
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def str_str_kmp(haystack: str, needle: str) -> int:
+    """O(n + m) substring search using the KMP failure table."""
+    n, m = len(haystack), len(needle)
+    if m == 0:
+        return 0
+
+    # lps[i] = length of the longest proper prefix of needle[:i+1]
+    #          that is also a suffix of it.
+    lps = [0] * m
+    length = 0
+    i = 1
+    while i < m:
+        if needle[i] == needle[length]:
+            length += 1
+            lps[i] = length
+            i += 1
+        elif length > 0:
+            length = lps[length - 1]   # fall back, do not restart
+        else:
+            lps[i] = 0
+            i += 1
+
+    # Scan the haystack without ever moving its pointer backwards.
+    i = j = 0
+    while i < n:
+        if haystack[i] == needle[j]:
+            i += 1
+            j += 1
+            if j == m:
+                return i - m
+        elif j > 0:
+            j = lps[j - 1]             # shift the needle, keep i where it is
+        else:
+            i += 1
+
+    return -1
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function strStrKMP(haystack: string, needle: string): number {
+  const n = haystack.length;
+  const m = needle.length;
+  if (m === 0) return 0;
+
+  // lps[i] = length of the longest proper prefix of needle[0..i]
+  //          that is also a suffix of it.
+  const lps = new Array<number>(m).fill(0);
+  let length = 0;
+  let i = 1;
+  while (i < m) {
+    if (needle[i] === needle[length]) {
+      lps[i] = ++length;
+      i++;
+    } else if (length > 0) {
+      length = lps[length - 1]; // fall back, do not restart
+    } else {
+      lps[i] = 0;
+      i++;
+    }
+  }
+
+  // Scan the haystack without ever moving its pointer backwards.
+  let h = 0;
+  let k = 0;
+  while (h < n) {
+    if (haystack[h] === needle[k]) {
+      h++;
+      k++;
+      if (k === m) return h - m;
+    } else if (k > 0) {
+      k = lps[k - 1]; // shift the needle, keep h where it is
+    } else {
+      h++;
+    }
+  }
+
+  return -1;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n × m)" space="O(1)" />
+
+| Approach | Time | Space |
+|---|---|---|
+| Naive sliding window | `O(n × m)` | `O(1)` |
+| **KMP** | **`O(n + m)`** | `O(m)` |
+
+In practice the naive version is fine for interview-sized inputs and is what most interviewers expect first. Knowing that KMP exists — and *why* the failure table removes the redundancy — is the mark of a stronger answer.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty needle">
+Returns `0` by convention. Without the guard, the loop bound `n - m + 1` would still behave, but being explicit documents the intent.
+</Accordion>
+
+<Accordion title="Needle longer than haystack">
+`n - m` is negative, so the loop never runs and `-1` is returned.
+</Accordion>
+
+<Accordion title="Needle equals haystack">
+The single start `0` matches fully. Returns `0`.
+</Accordion>
+
+<Accordion title="Multiple occurrences">
+The first match returns immediately, which is what "first occurrence" requires.
+</Accordion>
+
+<Accordion title="Repetitive input, e.g. 'aaaaab' and 'aaab'">
+The naive version re-compares almost the whole needle at every position — this is the worst case that motivates KMP.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Is Subsequence](/docs/strings/is-subsequence) — the non-contiguous cousin of substring search
+- [Longest Common Prefix](/docs/strings/longest-common-prefix) — character-level comparison across strings
+- [Binary Search](/docs/searching/binary-search) — another algorithm defined by what it can safely skip

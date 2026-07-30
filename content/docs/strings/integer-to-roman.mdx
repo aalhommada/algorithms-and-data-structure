@@ -1,0 +1,229 @@
+---
+title: Integer to Roman
+description: Convert an integer to a Roman numeral greedily, by putting the subtractive pairs into the value table
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Greedy"
+  tags={["String", "Hash Table", "Math", "Greedy"]}
+  leetcode="https://leetcode.com/problems/integer-to-roman/"
+  problemNumber={12}
+/>
+
+## Problem Statement
+
+Convert an integer (1 to 3999) into a Roman numeral.
+
+```text
+Input:  3     → "III"
+Input:  58    → "LVIII"     (50 + 5 + 3)
+Input:  1994  → "MCMXCIV"   (1000 + 900 + 90 + 4)
+```
+
+## Intuition
+
+Roman numerals are written largest-value-first, so the natural approach is greedy: repeatedly subtract the largest value that still fits, appending its symbol each time.
+
+The complication is subtractive notation — `4` is `IV`, not `IIII`, and `900` is `CM`, not `DCCCC`. Handling those as exceptions after the fact means a pile of special cases.
+
+<Callout type="info" title="The key insight">
+Treat the subtractive pairs as **values in their own right**.
+
+Instead of seven symbols, use thirteen entries, sorted descending:
+
+```text
+1000 → M     900 → CM
+ 500 → D     400 → CD
+ 100 → C      90 → XC
+  50 → L      40 → XL
+  10 → X       9 → IX
+   5 → V       4 → IV
+   1 → I
+```
+
+Now plain greedy subtraction produces correct numerals with **no special cases at all**. `CM` is simply the symbol whose value is 900.
+</Callout>
+
+That is the whole trick: move the complexity from the algorithm into the data.
+
+### Why greedy is correct here
+
+Because the table includes the subtractive pairs, the gap between consecutive values is never large enough for a greedy choice to strand you. Taking the largest fitting value always leaves a remainder that the smaller values can express — and it uses the fewest symbols, which is the canonical form.
+
+### Watch it run
+
+<ArrayViz
+  title="Converting 1994"
+  showIndices={false}
+  intervalMs={1500}
+  frames={[
+    {
+      values: ["1000 M", "900 CM", "90 XC", "4 IV"],
+      states: ["compare", "idle", "idle", "idle"],
+      vars: { remaining: 1994, result: '""' },
+      note: "1000 fits into 1994 → append 'M', subtract 1000. Remaining: 994.",
+    },
+    {
+      values: ["1000 M", "900 CM", "90 XC", "4 IV"],
+      states: ["done", "compare", "idle", "idle"],
+      vars: { remaining: 994, result: '"M"' },
+      note: "1000 no longer fits. 900 does → append 'CM'. Remaining: 94. This is where the pair entry earns its place.",
+    },
+    {
+      values: ["1000 M", "900 CM", "90 XC", "4 IV"],
+      states: ["done", "done", "compare", "idle"],
+      vars: { remaining: 94, result: '"MCM"' },
+      note: "Skip 500, 400, 100. 90 fits → append 'XC'. Remaining: 4.",
+    },
+    {
+      values: ["1000 M", "900 CM", "90 XC", "4 IV"],
+      states: ["done", "done", "done", "match"],
+      vars: { remaining: 0, result: '"MCMXCIV"' },
+      note: "Skip down to 4 → append 'IV'. Remaining: 0. Done.",
+    },
+  ]}
+  caption="Pure greedy subtraction, with the subtractive pairs baked into the table."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Build a descending list of (value, symbol) pairs
+
+Include the six subtractive combinations alongside the seven basic symbols.
+</Step>
+
+<Step>
+### For each entry, while it fits into the remainder
+
+Append the symbol and subtract the value. A `while` rather than an `if` handles repeats such as `III`.
+</Step>
+
+<Step>
+### Stop when the remainder reaches zero
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def int_to_roman(num: int) -> str:
+    """Convert an integer (1–3999) to its Roman numeral form."""
+    # Subtractive pairs are included so greedy needs no special cases.
+    table = [
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+    ]
+
+    parts: list[str] = []
+
+    for value, symbol in table:
+        if num == 0:
+            break
+        count, num = divmod(num, value)   # how many of this symbol fit
+        parts.append(symbol * count)
+
+    return "".join(parts)
+```
+
+The explicit-loop form, which shows the greedy subtraction more literally:
+
+```python
+def int_to_roman_loop(num: int) -> str:
+    table = [
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+    ]
+
+    result = ""
+    for value, symbol in table:
+        while num >= value:
+            result += symbol
+            num -= value
+
+    return result
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function intToRoman(num: number): string {
+  // Subtractive pairs are included so greedy needs no special cases.
+  const table: Array<[number, string]> = [
+    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+    [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+  ];
+
+  const parts: string[] = [];
+
+  for (const [value, symbol] of table) {
+    if (num === 0) break;
+    const count = Math.floor(num / value); // how many of this symbol fit
+    if (count > 0) {
+      parts.push(symbol.repeat(count));
+      num -= count * value;
+    }
+  }
+
+  return parts.join('');
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="The table must stay sorted descending">
+Greedy relies on trying the largest value first. Reorder the entries and the output silently becomes wrong — `4` would render as `IIII` if `1` were tried before `4`.
+
+Equally, dropping a subtractive pair does not cause an error; it produces a valid-looking but non-canonical numeral. Both failure modes are silent, so the table deserves a careful read.
+</Callout>
+
+<Callout type="info" title="Building strings efficiently">
+Both solutions collect pieces in a list and join once. Repeated `result += symbol` inside a loop creates a new string each time — `O(n²)` in the worst case. For a numeral of at most 15 characters it makes no practical difference here, but the habit matters on larger inputs.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(1)" space="O(1)" />
+
+- **Time** — the table has a fixed 13 entries, and the result is at most 15 characters (`3888` = `MMMDCCCLXXXVIII`). The work is bounded by a constant regardless of the input value.
+- **Space** — the output string, itself bounded by 15 characters.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="The smallest input, 1">
+Only the final entry fits. Returns `"I"`.
+</Accordion>
+
+<Accordion title="The largest input, 3999">
+`3999` = `MMM` + `CM` + `XC` + `IX` = `"MMMCMXCIX"`. Note that 3999 is the maximum expressible without overline notation, which is why the problem caps there.
+</Accordion>
+
+<Accordion title="Values needing repeated symbols, e.g. 3">
+The `while` loop (or the `count` from division) emits `"III"`. Roman numerals never repeat a symbol more than three times, and the subtractive entries guarantee that never happens.
+</Accordion>
+
+<Accordion title="Exact table values, e.g. 900">
+Matched directly by the `CM` entry, leaving a remainder of `0`, and the loop breaks. Returns `"CM"`.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Roman to Integer](/docs/strings/roman-to-integer) — the inverse, which compares neighbours instead of subtracting greedily
+- [Jump Game](/docs/greedy/jump-game) — greedy choices with a correctness argument
+- [Candy](/docs/greedy/candy) — greedy applied in more than one direction

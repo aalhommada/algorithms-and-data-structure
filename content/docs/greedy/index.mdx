@@ -1,0 +1,61 @@
+---
+title: Greedy
+description: Making the locally best choice — and proving that it is also globally best
+---
+
+A greedy algorithm takes the best-looking option at each step and never reconsiders. When it works, it is usually the simplest and fastest solution available. When it does not, it produces confidently wrong answers.
+
+**The proof is the problem.** Writing greedy code is easy; knowing you are allowed to is the hard part.
+
+## When Is Greedy Safe?
+
+<Callout type="info" title="The exchange argument">
+Greedy is correct when you can show that any optimal solution can be transformed into the greedy one **without getting worse**.
+
+Equivalently: taking the greedy choice now never closes off a better option later.
+</Callout>
+
+That is the shape of every proof in this section:
+
+- [Jump Game](/docs/greedy/jump-game) — reachability is *monotone*: if you can reach index `k`, you can reach everything below it. So a further reach is never worse.
+- [Jump Game II](/docs/greedy/jump-game-ii) — within one "level", every position costs the same number of jumps, so only the furthest reach matters.
+- [Gas Station](/docs/greedy/gas-station) — if you strand yourself travelling from `s` to `f`, every station in between strands you too. So skipping the whole stretch loses nothing.
+- [Candy](/docs/greedy/candy) — each child's count is the max of two independent hard lower bounds, so it is simultaneously valid and minimal.
+
+## When Does Greedy Fail?
+
+The classic counterexample is coin change with an awkward denomination set:
+
+```text
+coins = [1, 3, 4],  target = 6
+
+Greedy:   4 + 1 + 1  = 3 coins
+Optimal:  3 + 3      = 2 coins
+```
+
+Taking the largest coin first blocks the better pairing. There is no exchange argument, because the greedy choice genuinely destroys the optimum — so coin change needs [dynamic programming](/docs/dynamic-programming).
+
+<Callout type="warn" title="A greedy solution that passes the examples may still be wrong">
+Greedy failures are often invisible on small inputs. If you cannot articulate *why* the local choice is safe, treat that as a signal to reach for DP instead — or at least to say so out loud in an interview.
+</Callout>
+
+## The Two Recurring Shapes
+
+**Track a running extreme.** One number summarises everything decided so far — the furthest reach, the running total, the best profit. [Jump Game](/docs/greedy/jump-game) and [Gas Station](/docs/greedy/gas-station) both work this way.
+
+**Sweep in two directions.** When a constraint pulls from both sides, satisfy each direction in its own pass and combine with `max`. [Candy](/docs/greedy/candy) is the clearest example, and [Trapping Rain Water](/docs/arrays/trapping-rain-water) uses the same structure.
+
+## All Problems
+
+| Problem | Difficulty | Greedy choice |
+|---|---|---|
+| [Jump Game](/docs/greedy/jump-game) | Medium | Always extend the reach |
+| [Jump Game II](/docs/greedy/jump-game-ii) | Medium | Exhaust a level before counting a jump |
+| [Gas Station](/docs/greedy/gas-station) | Medium | Restart after any failure |
+| [Candy](/docs/greedy/candy) | Hard | Satisfy each direction separately |
+
+## Related Elsewhere
+
+- [Integer to Roman](/docs/strings/integer-to-roman) — greedy subtraction, made safe by the value table
+- [Best Time to Buy and Sell Stock](/docs/arrays/best-time-to-buy-and-sell-stock) — a greedy running minimum
+- [Top K Frequent Elements](/docs/arrays/top-k-frequent-elements) — greedy collection from the highest bucket down

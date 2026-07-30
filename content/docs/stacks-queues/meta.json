@@ -1,0 +1,13 @@
+{
+  "title": "Stacks & Queues",
+  "icon": "Layers",
+  "pages": [
+    "index",
+    "---Easy---",
+    "valid-parentheses",
+    "---Medium---",
+    "min-stack",
+    "evaluate-reverse-polish-notation",
+    "simplify-path"
+  ]
+}

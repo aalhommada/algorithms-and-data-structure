@@ -1,0 +1,288 @@
+---
+title: Intersection of Two Linked Lists
+description: Find where two lists merge by switching pointers between them to cancel out the length difference
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Two Pointers (path switching)"
+  tags={["Linked List", "Hash Table", "Two Pointers"]}
+  leetcode="https://leetcode.com/problems/intersection-of-two-linked-lists/"
+  problemNumber={160}
+/>
+
+## Problem Statement
+
+Given the heads of two singly linked lists, return the node at which they **intersect**. If they never intersect, return `null`.
+
+Intersection means the two lists share the *same node object* from some point onward — not merely equal values.
+
+```text
+listA: 4 → 1 ↘
+              8 → 4 → 5
+listB: 5 → 6 → 1 ↗
+
+Output: the node with value 8
+```
+
+<Callout type="warn" title="Identity, not equality">
+Two nodes both holding the value `1` are **not** an intersection. The lists must converge on one and the same node. Compare with `is` in Python and `===` in TypeScript — never by value.
+
+Once the lists meet, they share everything after that point, because each node has a single `next` pointer.
+</Callout>
+
+## Intuition
+
+The obstacle is that the lists can have different lengths. If you walk both from their heads in lockstep, the pointers are misaligned — the longer list still has extra nodes to burn through when the shorter one reaches the junction.
+
+There are two clean fixes.
+
+### Fix 1 — the hash set (easy to reason about)
+
+Put every node of list A into a set, then walk list B and return the first node already in the set. `O(n + m)` time, but `O(n)` memory.
+
+### Fix 2 — pointer switching (the elegant one)
+
+<Callout type="info" title="The key insight">
+Let the lists be `a + c` and `b + c` long, where `c` is the shared tail.
+
+Run pointer `pA` along list A and pointer `pB` along list B. When either reaches the end, **send it to the head of the other list**.
+
+- `pA` travels `a + c`, then `b` → total `a + c + b`
+- `pB` travels `b + c`, then `a` → total `b + c + a`
+
+The totals are identical. Both pointers arrive at the junction **at the same moment**, having each walked every node in both lists exactly once. The length difference cancels itself out without ever being measured.
+</Callout>
+
+### Real-world analogy
+
+Two people walking each other's routes to work. Route A is 3 km then a shared 2 km; route B is 5 km then the same shared 2 km. If each walks their own route and then immediately starts the other person's, both have walked exactly 10 km — so they arrive at the shared stretch's start together, no matter how unequal the first legs were.
+
+### Watch it run
+
+<ArrayViz
+  title="listA = [4, 1, 8, 4, 5], listB = [5, 6, 1, 8, 4, 5] — shared tail starts at 8"
+  showIndices={false}
+  intervalMs={1600}
+  frames={[
+    {
+      values: ["A: 4→1→8→4→5", "B: 5→6→1→8→4→5"],
+      note: "Lengths 5 and 6. The shared tail 8 → 4 → 5 is the same three node objects in both lists.",
+    },
+    {
+      values: ["pA at 4 (A[0])", "pB at 5 (B[0])"],
+      states: ["active", "active"],
+      vars: { steps: 0 },
+      note: "Both pointers start at their own head. They are misaligned by 1 node.",
+    },
+    {
+      values: ["pA at 5 (A[4], last)", "pB at 8 (B[3])"],
+      states: ["compare", "compare"],
+      vars: { steps: 4 },
+      note: "After 4 steps, pA is at A's last node. Different nodes so far.",
+    },
+    {
+      values: ["pA → head of B", "pB at 4 (B[4])"],
+      states: ["active", "compare"],
+      vars: { steps: 5 },
+      note: "pA hits the end of A and jumps to B's head. This is the switch that erases the length difference.",
+    },
+    {
+      values: ["pA at 1 (B[2])", "pB → head of A"],
+      states: ["compare", "active"],
+      vars: { steps: 8 },
+      note: "pB finishes B and jumps to A's head. Both have now walked 6 and 5 nodes of their first list respectively.",
+    },
+    {
+      values: ["pA at 8 (shared)", "pB at 8 (shared)"],
+      states: ["match", "match"],
+      vars: { steps: 11, answer: "node 8" },
+      note: "Both land on the SAME node object at the same step. Return it.",
+    },
+  ]}
+  caption="Each pointer walks a + b + c nodes, so they synchronise at the junction."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start `pA` at `headA` and `pB` at `headB`
+</Step>
+
+<Step>
+### Loop while they are different nodes
+
+Compare by identity, not by value.
+</Step>
+
+<Step>
+### Advance each pointer, redirecting at the end
+
+`pA = pA.next if pA else headB`, and symmetrically for `pB`.
+
+Redirecting when the pointer *is* `null` (rather than when `next` is `null`) is what makes the non-intersecting case terminate.
+</Step>
+
+<Step>
+### Return the meeting point
+
+Either the shared node, or `null`.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Why redirect on `null`, not on `next == null`">
+If the lists never intersect, both pointers must eventually be `null` **at the same time** so the loop can exit. Letting each pointer become `null` once — after `a + b + c` steps for both — makes `pA == pB == null` true simultaneously.
+
+Redirect one step early (`if pA.next is None`) and the pointers never both hit `null`, producing an infinite loop on non-intersecting input.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from typing import Optional
+
+
+class ListNode:
+    def __init__(self, val: int = 0, next: Optional["ListNode"] = None):
+        self.val = val
+        self.next = next
+
+
+def get_intersection_node(
+    head_a: Optional[ListNode], head_b: Optional[ListNode]
+) -> Optional[ListNode]:
+    """Return the shared node, or None. O(1) space."""
+    if not head_a or not head_b:
+        return None
+
+    p_a, p_b = head_a, head_b
+
+    # Identity comparison: the same node object, not the same value.
+    while p_a is not p_b:
+        # Switch lists at the end so both walk a + b + c nodes.
+        p_a = p_a.next if p_a else head_b
+        p_b = p_b.next if p_b else head_a
+
+    return p_a  # the junction, or None if they never meet
+```
+
+The hash-set version, if you prefer something more obvious:
+
+```python
+def get_intersection_node_set(
+    head_a: Optional[ListNode], head_b: Optional[ListNode]
+) -> Optional[ListNode]:
+    seen = set()
+
+    node = head_a
+    while node:
+        seen.add(id(node))   # identity, not value
+        node = node.next
+
+    node = head_b
+    while node:
+        if id(node) in seen:
+            return node
+        node = node.next
+
+    return None
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class ListNode {
+  val: number;
+  next: ListNode | null;
+
+  constructor(val = 0, next: ListNode | null = null) {
+    this.val = val;
+    this.next = next;
+  }
+}
+
+function getIntersectionNode(
+  headA: ListNode | null,
+  headB: ListNode | null,
+): ListNode | null {
+  if (headA === null || headB === null) return null;
+
+  let pA: ListNode | null = headA;
+  let pB: ListNode | null = headB;
+
+  // Reference comparison: the same node object, not the same value.
+  while (pA !== pB) {
+    // Switch lists at the end so both walk a + b + c nodes.
+    pA = pA === null ? headB : pA.next;
+    pB = pB === null ? headA : pB.next;
+  }
+
+  return pA; // the junction, or null if they never meet
+}
+```
+
+The hash-set version:
+
+```typescript
+function getIntersectionNodeSet(
+  headA: ListNode | null,
+  headB: ListNode | null,
+): ListNode | null {
+  const seen = new Set<ListNode>();
+
+  for (let node = headA; node !== null; node = node.next) {
+    seen.add(node); // Sets compare objects by reference
+  }
+
+  for (let node = headB; node !== null; node = node.next) {
+    if (seen.has(node)) return node;
+  }
+
+  return null;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n + m)" space="O(1)" />
+
+- **Time** — each pointer walks at most `n + m` nodes before meeting or reaching `null` together.
+- **Space** — two references. The hash-set version is the same time but `O(n)` space, which is exactly what the pointer-switching trick eliminates.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="The lists never intersect">
+Both pointers become `null` after `n + m` steps, `null !== null` is false, the loop exits, and `null` is returned. This is precisely why the redirect must happen on `null` rather than one step earlier.
+</Accordion>
+
+<Accordion title="Either list is empty">
+The early guard returns `null`. Without it, a `null` head would immediately equal the other `null` pointer and could produce a misleading answer.
+</Accordion>
+
+<Accordion title="The lists are identical (same head)">
+`pA === pB` is true before the first iteration, so the head is returned. The whole list is the intersection, and its first node is the junction.
+</Accordion>
+
+<Accordion title="Nodes with equal values but no shared node">
+Returns `null`, correctly. This is why the comparison must be `is` / `===`. Using `pA.val === pB.val` would report a false intersection.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Linked List Cycle II](/docs/linked-lists/linked-list-cycle-ii) — another problem solved by pointers that meet at a computed offset
+- [Middle of the Linked List](/docs/linked-lists/middle-of-the-linked-list) — two pointers at different speeds
+- [Merge Two Sorted Lists](/docs/linked-lists/merge-two-sorted-lists) — walking two lists in step

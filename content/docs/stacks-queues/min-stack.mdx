@@ -1,0 +1,282 @@
+---
+title: Min Stack
+description: Design a stack that reports its minimum in O(1) by storing the minimum alongside every value
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Stack with Auxiliary State"
+  tags={["Stack", "Design"]}
+  leetcode="https://leetcode.com/problems/min-stack/"
+  problemNumber={155}
+/>
+
+## Problem Statement
+
+Design a stack supporting `push`, `pop`, `top` and `getMin`, where **every operation runs in `O(1)` time**.
+
+```text
+push(-2)  → stack: [-2]              getMin() = -2
+push(0)   → stack: [-2, 0]           getMin() = -2
+push(-3)  → stack: [-2, 0, -3]       getMin() = -3
+getMin()  → -3
+pop()     → stack: [-2, 0]
+top()     → 0
+getMin()  → -2      ← the minimum went back UP after the pop
+```
+
+## Intuition
+
+`push`, `pop` and `top` are trivial on any stack. `getMin` is the whole problem.
+
+Scanning the stack on each call is `O(n)`. Caching a single `min` variable is `O(1)` for `push` — but breaks on `pop`.
+
+<Callout type="warn" title="Why one cached minimum is not enough">
+Push `-2`, `0`, `-3`. The cached minimum is `-3`. Now pop.
+
+The minimum must revert to `-2` — but that value is gone from the cache and you would have to rescan the stack to recover it. **A single variable cannot remember history, and `pop` moves backwards through history.**
+</Callout>
+
+<Callout type="info" title="The key insight">
+Store, alongside each value, **the minimum of the stack at the moment that value was pushed**.
+
+Every entry then carries its own answer. `pop` discards a value and its minimum together, and the entry underneath already holds the correct minimum for the new state. Nothing needs recomputing, ever.
+</Callout>
+
+### Real-world analogy
+
+A ledger where each row records both the transaction and the running balance after it. Undoing the last transaction does not require recalculating anything — the previous row already shows the correct balance.
+
+### Watch it run
+
+<StackViz
+  title="Each slot stores value (top) and the min at push time (bottom)"
+  intervalMs={1600}
+  frames={[
+    {
+      items: [],
+      vars: { getMin: "—" },
+      note: "Empty stack.",
+    },
+    {
+      items: [{ value: -2, hint: "min -2", state: "active" }],
+      vars: { getMin: -2 },
+      note: "push(-2). The stack was empty, so the minimum is -2 itself.",
+    },
+    {
+      items: [
+        { value: -2, hint: "min -2" },
+        { value: 0, hint: "min -2", state: "active" },
+      ],
+      vars: { getMin: -2 },
+      note: "push(0). min(0, current min -2) = -2. Store that with the 0.",
+    },
+    {
+      items: [
+        { value: -2, hint: "min -2" },
+        { value: 0, hint: "min -2" },
+        { value: -3, hint: "min -3", state: "match" },
+      ],
+      vars: { getMin: -3 },
+      note: "push(-3). min(-3, -2) = -3. getMin just reads the top's stored minimum — O(1).",
+    },
+    {
+      items: [
+        { value: -2, hint: "min -2" },
+        { value: 0, hint: "min -2", state: "match" },
+      ],
+      vars: { getMin: -2, top: 0 },
+      note: "pop() removes -3 and its stored minimum together. The new top already knows the minimum is -2. Nothing recomputed.",
+    },
+  ]}
+  caption="Every entry carries the answer for the stack state it created."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Store pairs, not bare values
+
+Each stack entry is `(value, min_so_far)`.
+</Step>
+
+<Step>
+### On push
+
+`new_min = min(value, current_min)` where `current_min` is the top entry's minimum, or the value itself if the stack is empty. Push `(value, new_min)`.
+</Step>
+
+<Step>
+### On pop
+
+Remove the top entry. The minimum for the remaining stack is already stored in the new top.
+</Step>
+
+<Step>
+### `top` returns the value part; `getMin` returns the minimum part
+
+Both are single array reads.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+class MinStack:
+    """A stack where every operation, including getMin, is O(1)."""
+
+    def __init__(self) -> None:
+        # Each entry is (value, minimum of the stack at push time).
+        self._stack: list[tuple[int, int]] = []
+
+    def push(self, val: int) -> None:
+        current_min = self._stack[-1][1] if self._stack else val
+        self._stack.append((val, min(val, current_min)))
+
+    def pop(self) -> None:
+        self._stack.pop()
+
+    def top(self) -> int:
+        return self._stack[-1][0]
+
+    def getMin(self) -> int:
+        return self._stack[-1][1]
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class MinStack {
+  // Each entry is [value, minimum of the stack at push time].
+  private stack: Array<[number, number]> = [];
+
+  push(val: number): void {
+    const currentMin =
+      this.stack.length > 0 ? this.stack[this.stack.length - 1][1] : val;
+    this.stack.push([val, Math.min(val, currentMin)]);
+  }
+
+  pop(): void {
+    this.stack.pop();
+  }
+
+  top(): number {
+    return this.stack[this.stack.length - 1][0];
+  }
+
+  getMin(): number {
+    return this.stack[this.stack.length - 1][1];
+  }
+}
+```
+
+</Tab>
+</CodeTabs>
+
+### The two-stack variant
+
+The same idea split across two stacks — one for values, one for minimums. Behaviourally identical, and some find it easier to reason about:
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+class MinStackTwoStacks:
+    def __init__(self) -> None:
+        self._values: list[int] = []
+        self._mins: list[int] = []   # _mins[i] = min of _values[0..i]
+
+    def push(self, val: int) -> None:
+        self._values.append(val)
+        self._mins.append(min(val, self._mins[-1]) if self._mins else val)
+
+    def pop(self) -> None:
+        self._values.pop()
+        self._mins.pop()   # must stay the same height as _values
+
+    def top(self) -> int:
+        return self._values[-1]
+
+    def getMin(self) -> int:
+        return self._mins[-1]
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class MinStackTwoStacks {
+  private values: number[] = [];
+  private mins: number[] = []; // mins[i] = min of values[0..i]
+
+  push(val: number): void {
+    this.values.push(val);
+    const currentMin = this.mins.length > 0 ? this.mins[this.mins.length - 1] : val;
+    this.mins.push(Math.min(val, currentMin));
+  }
+
+  pop(): void {
+    this.values.pop();
+    this.mins.pop(); // must stay the same height as values
+  }
+
+  top(): number {
+    return this.values[this.values.length - 1];
+  }
+
+  getMin(): number {
+    return this.mins[this.mins.length - 1];
+  }
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="A tempting optimisation that goes wrong">
+A common refinement is to push onto the min-stack **only when the new value is strictly smaller**, saving memory. It works — but only if `pop` also pops the min-stack only when the popped value equals the current minimum.
+
+With `push(0)`, `push(0)`, the strict version stores one minimum. The first `pop` removes it, and `getMin` now reports the wrong answer for a stack that still contains a `0`. The fix is to push on `<=` rather than `<`. Storing a minimum for every entry, as above, sidesteps the whole hazard for a constant factor of memory.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(1)" space="O(n)" />
+
+- **Time** — every operation is a single array push, pop or index read. No loops anywhere.
+- **Space** — `O(n)` for the values plus `O(n)` for the minimums. Doubling memory to turn an `O(n)` query into `O(1)` is a deliberate trade, and the point of the exercise.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="getMin on an empty stack">
+LeetCode guarantees calls are only made on a non-empty stack. Defensively, you would raise an error or return a sentinel — worth saying aloud in an interview.
+</Accordion>
+
+<Accordion title="Duplicate minimums, e.g. push(0), push(0)">
+Each entry stores its own minimum of `0`, so popping one leaves the other's `0` intact. This is exactly the case that breaks the "push only on strictly smaller" optimisation.
+</Accordion>
+
+<Accordion title="Values pushed in increasing order, e.g. 1, 2, 3">
+Every entry stores the minimum `1`. `getMin` keeps returning `1` until that first entry is popped.
+</Accordion>
+
+<Accordion title="Could getMax be added the same way?">
+Yes — store a third component, or a parallel max-stack. The technique generalises to any statistic that can be updated in `O(1)` from the previous state and the new value.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Valid Parentheses](/docs/stacks-queues/valid-parentheses) — the plain stack, without extra state
+- [Insert Delete GetRandom O(1)](/docs/design/insert-delete-getrandom-o1) — another design problem where auxiliary structures buy `O(1)` operations
+- [Trapping Rain Water](/docs/arrays/trapping-rain-water) — carrying a running extreme alongside a traversal

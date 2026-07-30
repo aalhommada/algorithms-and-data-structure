@@ -1,0 +1,13 @@
+{
+  "title": "Greedy",
+  "icon": "Zap",
+  "pages": [
+    "index",
+    "---Medium---",
+    "jump-game",
+    "jump-game-ii",
+    "gas-station",
+    "---Hard---",
+    "candy"
+  ]
+}

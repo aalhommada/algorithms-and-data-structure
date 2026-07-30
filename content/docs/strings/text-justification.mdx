@@ -1,0 +1,282 @@
+---
+title: Text Justification
+description: Format text into fully justified lines by greedily packing words and distributing spaces
+---
+
+<ProblemMeta
+  difficulty="hard"
+  pattern="Greedy + Careful Simulation"
+  tags={["Array", "String", "Simulation"]}
+  leetcode="https://leetcode.com/problems/text-justification/"
+  problemNumber={68}
+/>
+
+## Problem Statement
+
+Given an array of `words` and a width `maxWidth`, format the text so that each line is **exactly** `maxWidth` characters and **fully justified** (flush on both sides).
+
+Pack as many words per line as possible, separated by at least one space. Distribute extra spaces as evenly as possible; if they do not divide evenly, the **left** gaps get more than the right ones.
+
+The **last line** is left-justified: single spaces between words, padded on the right.
+
+```text
+Input:  words = ["This", "is", "an", "example", "of", "text", "justification."]
+        maxWidth = 16
+
+Output: [
+  "This    is    an",
+  "example  of text",
+  "justification.  "
+]
+```
+
+## Intuition
+
+This problem is not algorithmically deep — it is a **specification problem**. The difficulty is holding three separate rules straight without letting them interfere.
+
+<Callout type="info" title="The three rules">
+**1. Greedy packing.** Fit as many words on a line as possible. Greedy is correct here because the problem *defines* it that way — you are not minimising anything, just filling.
+
+**2. Space distribution.** With `k` words there are `k - 1` gaps. Extra spaces go to the leftmost gaps first.
+
+**3. Two exceptions.** The last line, and any line holding a single word, are left-justified with single spaces and right padding.
+</Callout>
+
+### The packing arithmetic
+
+A line holding words `w₁ … wₖ` needs at least `sum(lengths) + (k - 1)` characters — the words plus one space per gap. Add a word only while that total stays within `maxWidth`.
+
+### The space arithmetic
+
+Once the words are chosen, let `slots = k - 1` and `spaces = maxWidth - sum(lengths)`.
+
+```text
+base  = spaces // slots     ← every gap gets at least this many
+extra = spaces %  slots     ← the first `extra` gaps get one more
+```
+
+For `["example", "of", "text"]` with `maxWidth = 16`:
+
+```text
+sum(lengths) = 7 + 2 + 4 = 13,  slots = 2,  spaces = 16 - 13 = 3
+base = 3 // 2 = 1,  extra = 3 % 2 = 1
+
+gap 1 gets 1 + 1 = 2 spaces   (it is within the first `extra` gaps)
+gap 2 gets 1     = 1 space
+
+"example" + "  " + "of" + " " + "text"  →  "example  of text"  ✓ 16 characters
+```
+
+### Watch it run
+
+<ArrayViz
+  title='Packing ["This", "is", "an", "example", ...] with maxWidth = 16'
+  showIndices={false}
+  intervalMs={1700}
+  frames={[
+    {
+      values: ["This", "is", "an", "example"],
+      states: ["match", "match", "match", "discard"],
+      vars: { lengths: "4+2+2 = 8", "with gaps": "8+2 = 10", next: "+1+7 = 18 > 16" },
+      note: 'Greedily pack: "This is an" needs 10 characters. Adding "example" would need 18 → stop.',
+    },
+    {
+      values: ["This", "    ", "is", "    ", "an"],
+      states: ["match", "active", "match", "active", "match"],
+      vars: { spaces: "16 - 8 = 8", slots: 2, base: 4, extra: 0 },
+      note: "8 spaces across 2 gaps → 4 each, no remainder. Result: 'This    is    an'.",
+    },
+    {
+      values: ["example", "of", "text", "justification."],
+      states: ["match", "match", "match", "discard"],
+      vars: { lengths: "7+2+4 = 13", "with gaps": "13+2 = 15" },
+      note: 'Next line packs "example of text" (15 characters). The long word does not fit.',
+    },
+    {
+      values: ["example", "  ", "of", " ", "text"],
+      states: ["match", "active", "match", "compare", "match"],
+      vars: { spaces: 3, slots: 2, base: 1, extra: 1 },
+      note: "3 spaces across 2 gaps → base 1 each, and the 1 extra goes to the LEFT gap. 'example  of text'.",
+    },
+    {
+      values: ["justification.", " ", " "],
+      states: ["match", "active", "active"],
+      vars: { rule: "last line → left-justified" },
+      note: "The final line is left-justified and right-padded: 'justification.  '.",
+    },
+  ]}
+  caption="Extra spaces always favour the left gaps."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Greedily collect words for one line
+
+Keep adding while `current_length + len(word) + number_of_words <= maxWidth`. The `number_of_words` term accounts for the minimum single space before each added word.
+</Step>
+
+<Step>
+### Detect the two special cases
+
+If this is the last line, or the line has exactly one word → join with single spaces and pad on the right.
+</Step>
+
+<Step>
+### Otherwise distribute spaces
+
+Compute `base` and `extra`, then build the line gap by gap, giving the first `extra` gaps one additional space.
+</Step>
+
+<Step>
+### Repeat until every word is placed
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def full_justify(words: list[str], max_width: int) -> list[str]:
+    """Format words into fully justified lines of exactly max_width."""
+    lines: list[str] = []
+    line: list[str] = []      # words on the current line
+    letters = 0               # total characters of those words, no spaces
+
+    for word in words:
+        # +len(line) accounts for one space before each existing word.
+        if letters + len(word) + len(line) > max_width:
+            lines.append(_justify(line, letters, max_width))
+            line, letters = [], 0
+
+        line.append(word)
+        letters += len(word)
+
+    # The last line is left-justified, not fully justified.
+    lines.append(" ".join(line).ljust(max_width))
+    return lines
+
+
+def _justify(line: list[str], letters: int, max_width: int) -> str:
+    """Fully justify one line of words."""
+    if len(line) == 1:
+        return line[0].ljust(max_width)   # a single word is left-justified
+
+    slots = len(line) - 1
+    spaces = max_width - letters
+    base, extra = divmod(spaces, slots)
+
+    parts: list[str] = []
+    for i, word in enumerate(line[:-1]):
+        # The first `extra` gaps get one additional space.
+        parts.append(word + " " * (base + (1 if i < extra else 0)))
+    parts.append(line[-1])
+
+    return "".join(parts)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function fullJustify(words: string[], maxWidth: number): string[] {
+  const lines: string[] = [];
+  let line: string[] = []; // words on the current line
+  let letters = 0; // total characters of those words, no spaces
+
+  const padRight = (text: string): string => text.padEnd(maxWidth, ' ');
+
+  const justify = (group: string[], groupLetters: number): string => {
+    if (group.length === 1) {
+      return padRight(group[0]); // a single word is left-justified
+    }
+
+    const slots = group.length - 1;
+    const spaces = maxWidth - groupLetters;
+    const base = Math.floor(spaces / slots);
+    const extra = spaces % slots;
+
+    let result = '';
+    for (let i = 0; i < slots; i++) {
+      // The first `extra` gaps get one additional space.
+      result += group[i] + ' '.repeat(base + (i < extra ? 1 : 0));
+    }
+    return result + group[group.length - 1];
+  };
+
+  for (const word of words) {
+    // + line.length accounts for one space before each existing word.
+    if (letters + word.length + line.length > maxWidth) {
+      lines.push(justify(line, letters));
+      line = [];
+      letters = 0;
+    }
+
+    line.push(word);
+    letters += word.length;
+  }
+
+  // The last line is left-justified, not fully justified.
+  lines.push(padRight(line.join(' ')));
+  return lines;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="The three mistakes this problem is built around">
+**1. Fully justifying the last line.** It must be left-justified. Handle it *after* the loop, never inside.
+
+**2. Dividing by zero on a single-word line.** `slots = k - 1` is `0`, so the division must be guarded by the single-word special case.
+
+**3. Distributing extra spaces to the right.** The rule is explicitly left-biased. `i < extra` gives the leftmost gaps the surplus.
+</Callout>
+
+<Callout type="info" title="Why `letters + len(word) + len(line)` is the right test">
+`letters` is the words' characters with no spaces. `len(line)` is the number of words currently on the line, which equals the number of gaps that would exist after adding one more word. So the expression is exactly the minimum width of the line with the new word included.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n × maxWidth)" space="O(n)" />
+
+- **Time** — each word is examined once during packing, and building each line costs work proportional to `maxWidth`.
+- **Space** — the output lines, plus the small buffer holding the current line's words.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A single word exactly maxWidth long">
+It occupies its own line with no padding needed. The single-word branch left-justifies it, and `ljust` adds nothing.
+</Accordion>
+
+<Accordion title="A line with only one word but not the last line">
+Left-justified and right-padded — the same treatment as the last line. This is the case that would otherwise divide by zero.
+</Accordion>
+
+<Accordion title="Words that exactly fill a line">
+`spaces` equals `slots`, so `base = 1` and `extra = 0`: single spaces everywhere. No special case needed.
+</Accordion>
+
+<Accordion title="The last line has several words">
+Joined with single spaces and padded on the right. `"justification."` alone, or `"a b c"` followed by padding — both go through the same final `ljust`.
+</Accordion>
+
+<Accordion title="A single word in the whole input">
+The loop places it on `line`, the loop ends, and the post-loop statement emits it left-justified. Correct.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Zigzag Conversion](/docs/strings/zigzag-conversion) — another layout-simulation problem
+- [Reverse Words in a String](/docs/strings/reverse-words-in-a-string) — whitespace normalisation
+- [Candy](/docs/greedy/candy) — a greedy rule applied carefully in stages

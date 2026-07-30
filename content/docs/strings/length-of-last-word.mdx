@@ -1,0 +1,223 @@
+---
+title: Length of Last Word
+description: Measure the final word by scanning backwards, skipping trailing spaces first
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Reverse Scan"
+  tags={["String"]}
+  leetcode="https://leetcode.com/problems/length-of-last-word/"
+  problemNumber={58}
+/>
+
+## Problem Statement
+
+Given a string `s` consisting of words separated by spaces, return the length of the **last** word. A word is a maximal run of non-space characters.
+
+```text
+Input:  "Hello World"
+Output: 5
+
+Input:  "   fly me   to   the moon  "
+Output: 4      ("moon")
+
+Input:  "luffy is still joyboy"
+Output: 6      ("joyboy")
+```
+
+## Intuition
+
+The one-liner is tempting: split on spaces, take the last piece, return its length. It works — but it builds a list of every word when you only need one, and it has to handle the empty strings that trailing spaces produce.
+
+<Callout type="info" title="The key insight">
+The last word is at the **end**, so start there.
+
+1. Walk backwards past any trailing spaces.
+2. Then count non-space characters until you hit a space or the start of the string.
+
+You touch only the trailing spaces plus the last word — never the rest of the string.
+</Callout>
+
+The two phases must be separate. Trying to count and skip in one loop is what produces the classic bug on inputs like `"hello  "`, where a naive scan reports `0`.
+
+### Watch it run
+
+<ArrayViz
+  title='"the moon  " — two phases, right to left'
+  showIndices={false}
+  intervalMs={1400}
+  frames={[
+    {
+      values: ["t", "h", "e", " ", "m", "o", "o", "n", " ", " "],
+      states: ["idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "compare"],
+      pointers: [{ index: 9, label: "i" }],
+      vars: { phase: "skip spaces", length: 0 },
+      note: "Start at the last index. It is a space → skip it.",
+    },
+    {
+      values: ["t", "h", "e", " ", "m", "o", "o", "n", " ", " "],
+      states: ["idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "compare", "discard"],
+      pointers: [{ index: 8, label: "i" }],
+      vars: { phase: "skip spaces", length: 0 },
+      note: "Another space → skip. This phase is exactly what a naive single-loop solution forgets.",
+    },
+    {
+      values: ["t", "h", "e", " ", "m", "o", "o", "n", " ", " "],
+      states: ["idle", "idle", "idle", "idle", "idle", "idle", "idle", "active", "discard", "discard"],
+      pointers: [{ index: 7, label: "i" }],
+      vars: { phase: "count", length: 1 },
+      note: "'n' is not a space → phase 2 begins. length = 1.",
+    },
+    {
+      values: ["t", "h", "e", " ", "m", "o", "o", "n", " ", " "],
+      states: ["idle", "idle", "idle", "idle", "active", "active", "active", "active", "discard", "discard"],
+      pointers: [{ index: 4, label: "i" }],
+      vars: { phase: "count", length: 4 },
+      note: "Counting backwards through 'o', 'o', 'm'. length = 4.",
+    },
+    {
+      values: ["t", "h", "e", " ", "m", "o", "o", "n", " ", " "],
+      states: ["discard", "discard", "discard", "compare", "match", "match", "match", "match", "discard", "discard"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { answer: 4 },
+      note: "A space is reached → the word is complete. Return 4. 'the' was never examined.",
+    },
+  ]}
+  caption="Two distinct phases: skip, then count."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start at the last index
+</Step>
+
+<Step>
+### Phase 1 — skip trailing spaces
+
+Decrement while the current character is a space.
+</Step>
+
+<Step>
+### Phase 2 — count the word
+
+Decrement while the current character is not a space, incrementing a counter.
+</Step>
+
+<Step>
+### Return the counter
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def length_of_last_word(s: str) -> int:
+    """Length of the final word in s."""
+    i = len(s) - 1
+
+    # Phase 1: skip trailing spaces.
+    while i >= 0 and s[i] == " ":
+        i -= 1
+
+    # Phase 2: count the word's characters.
+    length = 0
+    while i >= 0 and s[i] != " ":
+        length += 1
+        i -= 1
+
+    return length
+```
+
+The built-in version, which is perfectly acceptable and very readable:
+
+```python
+def length_of_last_word_split(s: str) -> int:
+    words = s.split()      # split() with no argument drops empty pieces
+    return len(words[-1]) if words else 0
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function lengthOfLastWord(s: string): number {
+  let i = s.length - 1;
+
+  // Phase 1: skip trailing spaces.
+  while (i >= 0 && s[i] === ' ') i--;
+
+  // Phase 2: count the word's characters.
+  let length = 0;
+  while (i >= 0 && s[i] !== ' ') {
+    length++;
+    i--;
+  }
+
+  return length;
+}
+```
+
+The built-in version:
+
+```typescript
+function lengthOfLastWordSplit(s: string): number {
+  const words = s.trim().split(/\s+/);
+  return words[0] === '' ? 0 : words[words.length - 1].length;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="A split trap in JavaScript">
+`"a b  ".split(' ')` returns `["a", "b", "", ""]` — the trailing spaces produce empty strings, so `words[words.length - 1]` is `""` and the answer would be `0`.
+
+Python's `"a b  ".split()` (no argument) collapses whitespace and drops empties, returning `["a", "b"]`. The two languages behave differently here, which is why the TypeScript version needs `.trim()` and a regex.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — worst case `O(n)` when the string is one long word or mostly trailing spaces. Typically far less, since only the tail is examined.
+- **Space** — two integers. The split versions allocate `O(n)` for the word list, which is the practical reason to prefer the backwards scan.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Trailing spaces, e.g. 'hello  '">
+Phase 1 skips them, then phase 2 counts `hello`. Returns `5`. A solution without phase 1 returns `0`.
+</Accordion>
+
+<Accordion title="Leading spaces, e.g. '   hello'">
+Irrelevant — the scan starts from the right and stops at the word boundary. Leading spaces are never reached.
+</Accordion>
+
+<Accordion title="Multiple spaces between words, e.g. 'a   b'">
+Only the last word matters. Counting stops at the first space encountered going left, so the gaps never affect the result.
+</Accordion>
+
+<Accordion title="A single word with no spaces, e.g. 'day'">
+Phase 2 runs to `i = -1` and the guard stops it. Returns `3`.
+</Accordion>
+
+<Accordion title="A string of only spaces">
+LeetCode guarantees at least one word exists. If it did not, phase 1 would take `i` to `-1`, phase 2 would never run, and `0` would be returned — a sensible answer.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Reverse Words in a String](/docs/strings/reverse-words-in-a-string) — the same whitespace handling, applied to every word
+- [Valid Palindrome](/docs/strings/valid-palindrome) — scanning a string from both ends
+- [Longest Common Prefix](/docs/strings/longest-common-prefix) — character-level string scanning

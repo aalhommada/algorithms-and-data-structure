@@ -1,0 +1,106 @@
+---
+title: Trees
+description: Depth-first and breadth-first traversal, and choosing between recursion and an explicit stack
+---
+
+A tree is a graph with no cycles and exactly one path between any two nodes. That guarantee is what makes tree algorithms simple: you never need a "visited" set, because you can never arrive somewhere twice.
+
+## Two Ways to Walk a Tree
+
+### Depth-first search (DFS) — a stack
+
+Follow one branch to its end before backtracking. Natural to express recursively, since the call stack does the bookkeeping.
+
+The three orders differ only in **when the node itself is recorded**:
+
+```text
+        1
+       / \
+      2   3
+     / \
+    4   5
+
+Preorder  (node, left, right):  1, 2, 4, 5, 3
+Inorder   (left, node, right):  4, 2, 5, 1, 3
+Postorder (left, right, node):  4, 5, 2, 3, 1
+```
+
+- [N-ary Tree Preorder Traversal](/docs/trees/n-ary-tree-preorder-traversal) — recursive and iterative versions
+
+<Callout type="info" title="Inorder on a binary search tree gives sorted output">
+That single fact solves a surprising number of BST problems: validation, finding the `k`-th smallest, and converting to a sorted list all reduce to "do an inorder walk and check something".
+</Callout>
+
+### Breadth-first search (BFS) — a queue
+
+Visit every node at depth `d` before any node at depth `d + 1`.
+
+- [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — including the level-size trick for grouping
+
+## Choosing Between Them
+
+| | DFS | BFS |
+|---|---|---|
+| Structure | stack / recursion | queue |
+| Space | `O(height)` | `O(width)` |
+| Best for | subtree computations, path enumeration | level grouping, minimum depth |
+| Deep skewed tree | risks stack overflow | uses `O(1)` space |
+| Wide balanced tree | uses `O(log n)` space | holds up to `n/2` nodes |
+
+The space trade-off is real: DFS is cheap on wide trees, BFS is cheap on deep ones.
+
+## Node Definitions
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from typing import Optional
+
+
+class TreeNode:
+    def __init__(
+        self,
+        val: int = 0,
+        left: Optional["TreeNode"] = None,
+        right: Optional["TreeNode"] = None,
+    ):
+        self.val = val
+        self.left = left
+        self.right = right
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class TreeNode {
+  val: number;
+  left: TreeNode | null;
+  right: TreeNode | null;
+
+  constructor(
+    val = 0,
+    left: TreeNode | null = null,
+    right: TreeNode | null = null,
+  ) {
+    this.val = val;
+    this.left = left;
+    this.right = right;
+  }
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Recursion depth limits">
+Python raises `RecursionError` at around 1,000 frames by default; JavaScript engines throw `RangeError` at a similar depth. A balanced tree of a million nodes is only ~20 deep and is perfectly safe — but a degenerate chain of 10,000 nodes will crash a recursive solution. That is when the explicit-stack version earns its extra lines.
+</Callout>
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [N-ary Tree Preorder Traversal](/docs/trees/n-ary-tree-preorder-traversal) | Easy | DFS |
+| [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) | Medium | BFS |

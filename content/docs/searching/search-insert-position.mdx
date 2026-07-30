@@ -1,0 +1,253 @@
+---
+title: Search Insert Position
+description: Find where a target is, or where it would belong — the binary search that returns a boundary
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Binary Search (lower bound)"
+  tags={["Array", "Binary Search"]}
+  leetcode="https://leetcode.com/problems/search-insert-position/"
+  problemNumber={35}
+/>
+
+## Problem Statement
+
+Given a **sorted** array of distinct integers and a `target`, return the index where the target is found. If it is not present, return the index where it **would be inserted** to keep the array sorted.
+
+You must write an `O(log n)` algorithm.
+
+```text
+Input:  nums = [1, 3, 5, 6], target = 5
+Output: 2      (found at index 2)
+
+Input:  nums = [1, 3, 5, 6], target = 2
+Output: 1      (2 belongs between 1 and 3)
+
+Input:  nums = [1, 3, 5, 6], target = 7
+Output: 4      (7 belongs past the end)
+```
+
+## Intuition
+
+This is [Binary Search](/docs/searching/binary-search) with a better failure mode. Instead of returning `-1` when the target is absent, it returns the position where it belongs.
+
+<Callout type="info" title="The key insight">
+When a standard binary search finishes without a match, `lo` has landed on exactly the right answer.
+
+The loop's invariant is: everything left of `lo` is `< target`, and everything right of `hi` is `> target`. When `lo > hi` the range is empty, and `lo` sits precisely at the first element that is **not less than** the target — which is where an insertion goes.
+</Callout>
+
+So the code is the same loop; only the final `return` changes. That is the whole problem.
+
+### The insertion point is a boundary
+
+Reframe the array as a yes/no question — *"is this element `>= target`?"*:
+
+```text
+nums   = [1, 3, 5, 6],  target = 2
+
+>= 2 ?   no  yes yes yes
+          0   1   2   3
+              ↑
+        first "yes" — the answer
+```
+
+Because the array is sorted, the answers are always a run of `no`s followed by a run of `yes`es. Binary search finds that flip point. This is the **lower bound** pattern, and it is the single most reusable form of binary search.
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [1, 3, 5, 6], target = 2 — not present"
+  intervalMs={1600}
+  frames={[
+    {
+      values: [1, 3, 5, 6],
+      states: ["idle", "compare", "idle", "idle"],
+      pointers: [
+        { index: 0, label: "lo" },
+        { index: 1, label: "mid" },
+        { index: 3, label: "hi" },
+      ],
+      vars: { mid: 1, "nums[mid]": 3, target: 2 },
+      note: "mid = 1. nums[1] = 3 > 2 → the target belongs to the left. hi = 0.",
+    },
+    {
+      values: [1, 3, 5, 6],
+      states: ["compare", "discard", "discard", "discard"],
+      pointers: [
+        { index: 0, label: "lo/mid/hi" },
+      ],
+      vars: { mid: 0, "nums[mid]": 1, target: 2 },
+      note: "Range is just [0, 0]. nums[0] = 1 < 2 → the target belongs to the right. lo = 1.",
+    },
+    {
+      values: [1, 3, 5, 6],
+      states: ["discard", "match", "idle", "idle"],
+      pointers: [{ index: 1, label: "lo" }],
+      vars: { lo: 1, hi: 0, answer: 1 },
+      note: "lo (1) has passed hi (0), so the range is empty. Return lo = 1 — insert 2 before the 3.",
+    },
+  ]}
+  caption="lo converges on the first element not less than the target."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Run the standard binary search
+
+`lo = 0`, `hi = n - 1`, loop while `lo <= hi`.
+</Step>
+
+<Step>
+### Return `mid` on an exact match
+</Step>
+
+<Step>
+### Shrink as usual
+
+`nums[mid] < target` → `lo = mid + 1`. Otherwise `hi = mid - 1`.
+</Step>
+
+<Step>
+### Return `lo` after the loop
+
+Not `-1`. `lo` is the insertion point.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def search_insert(nums: list[int], target: int) -> int:
+    """Index of target, or the index where it would be inserted."""
+    lo, hi = 0, len(nums) - 1
+
+    while lo <= hi:
+        mid = lo + (hi - lo) // 2
+
+        if nums[mid] == target:
+            return mid
+        if nums[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    return lo  # the loop ends with lo at the insertion point
+```
+
+The pure lower-bound form, which drops the equality check entirely:
+
+```python
+def search_insert_lower_bound(nums: list[int], target: int) -> int:
+    lo, hi = 0, len(nums)          # hi is EXCLUSIVE here
+
+    while lo < hi:                 # note: < , not <=
+        mid = lo + (hi - lo) // 2
+        if nums[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid               # keep mid as a candidate
+
+    return lo
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function searchInsert(nums: number[], target: number): number {
+  let lo = 0;
+  let hi = nums.length - 1;
+
+  while (lo <= hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+
+    if (nums[mid] === target) {
+      return mid;
+    }
+    if (nums[mid] < target) {
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  return lo; // the loop ends with lo at the insertion point
+}
+```
+
+The pure lower-bound form:
+
+```typescript
+function searchInsertLowerBound(nums: number[], target: number): number {
+  let lo = 0;
+  let hi = nums.length; // hi is EXCLUSIVE here
+
+  while (lo < hi) {
+    // note: < , not <=
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (nums[mid] < target) {
+      lo = mid + 1;
+    } else {
+      hi = mid; // keep mid as a candidate
+    }
+  }
+
+  return lo;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Inclusive and exclusive templates do not mix">
+The two versions above use different conventions and each is internally consistent:
+
+- **Inclusive `hi = n - 1`** pairs with `while lo <= hi` and `hi = mid - 1`.
+- **Exclusive `hi = n`** pairs with `while lo < hi` and `hi = mid`.
+
+Borrowing one line from the other template is how infinite loops and off-by-ones appear. Pick one and keep every line consistent with it.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(log n)" space="O(1)" />
+
+- **Time** — the search space halves every iteration.
+- **Space** — a handful of integers.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Target smaller than everything, e.g. target = 0 in [1, 3, 5, 6]">
+`hi` keeps shrinking until it reaches `-1` while `lo` stays `0`. Returns `0` — insert at the front.
+</Accordion>
+
+<Accordion title="Target larger than everything, e.g. target = 7 in [1, 3, 5, 6]">
+`lo` keeps advancing past the last index. Returns `4`, which equals `n` — insert at the end. Note that this index is deliberately *out of bounds* for the current array, and that is correct for an insertion position.
+</Accordion>
+
+<Accordion title="Empty array">
+`hi = -1`, the loop never runs, and `lo = 0` is returned. Inserting into an empty array puts the element at index `0`.
+</Accordion>
+
+<Accordion title="Duplicate values">
+The problem guarantees distinct values. With duplicates, the first template returns an arbitrary matching index, while the lower-bound template reliably returns the **leftmost** one — another reason to prefer it.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Binary Search](/docs/searching/binary-search) — the same loop returning `-1` on a miss
+- [First Bad Version](/docs/searching/first-bad-version) — the same boundary search, without an array
+- [H-Index](/docs/arrays/h-index) — sorted data where a boundary defines the answer

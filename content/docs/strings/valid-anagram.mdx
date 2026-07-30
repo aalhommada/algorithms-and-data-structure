@@ -1,0 +1,250 @@
+---
+title: Valid Anagram
+description: Decide whether two strings use exactly the same letters, by counting rather than sorting
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Hash Map Counting"
+  tags={["String", "Hash Table", "Sorting"]}
+  leetcode="https://leetcode.com/problems/valid-anagram/"
+  problemNumber={242}
+/>
+
+## Problem Statement
+
+Given two strings `s` and `t`, return `true` if `t` is an **anagram** of `s` — that is, if `t` uses exactly the same letters with exactly the same multiplicities.
+
+```text
+Input:  s = "anagram", t = "nagaram"
+Output: true
+
+Input:  s = "rat", t = "car"
+Output: false
+```
+
+## Intuition
+
+Anagrams are strings that differ only in the *order* of their characters. So any comparison that ignores order will do.
+
+<Callout type="info" title="Two canonical forms">
+**Sort both strings** — `"anagram"` and `"nagaram"` both sort to `"aaagmnr"`. If the sorted forms are equal, they are anagrams. Simple, `O(n log n)`.
+
+**Count the characters** — build `{a: 3, n: 1, g: 1, r: 1, m: 1}` for each string and compare the maps. `O(n)`, which is strictly better.
+</Callout>
+
+The counting version has one more refinement worth knowing: instead of building two maps and comparing them, build **one** map by incrementing for `s` and decrementing for `t`. If the strings are anagrams, every count cancels to zero.
+
+### The single-map trick
+
+```text
+s = "rat", t = "car"
+
++ 'r' → {r: 1}
++ 'a' → {r: 1, a: 1}
++ 't' → {r: 1, a: 1, t: 1}
+- 'c' → {r: 1, a: 1, t: 1, c: -1}
+- 'a' → {r: 1, a: 0, t: 1, c: -1}
+- 'r' → {r: 0, a: 0, t: 1, c: -1}
+
+Not all zero → not anagrams.
+```
+
+### Watch it run
+
+<HashMapViz
+  title='s = "rat", t = "car" — increment for s, decrement for t'
+  label="letter → balance"
+  intervalMs={1400}
+  frames={[
+    {
+      scan: { values: ["r", "a", "t"], cursor: 0 },
+      entries: [{ key: "r", value: 1, state: "active" }],
+      note: "Counting s: 'r' → +1.",
+    },
+    {
+      scan: { values: ["r", "a", "t"], cursor: 2 },
+      entries: [
+        { key: "r", value: 1 },
+        { key: "a", value: 1 },
+        { key: "t", value: 1, state: "active" },
+      ],
+      note: "s is fully counted: every letter appears once.",
+    },
+    {
+      scan: { values: ["c", "a", "r"], cursor: 0 },
+      entries: [
+        { key: "r", value: 1 },
+        { key: "a", value: 1 },
+        { key: "t", value: 1 },
+        { key: "c", value: -1, state: "discard" },
+      ],
+      note: "Counting t: 'c' → -1. A negative count already proves t has a letter s does not.",
+    },
+    {
+      scan: { values: ["c", "a", "r"], cursor: 2 },
+      entries: [
+        { key: "r", value: 0 },
+        { key: "a", value: 0 },
+        { key: "t", value: 1, state: "discard" },
+        { key: "c", value: -1, state: "discard" },
+      ],
+      vars: { result: "false" },
+      note: "'t' and 'c' never cancel. Not all balances are zero → not anagrams.",
+    },
+  ]}
+  caption="Anagrams cancel to a map of all zeros."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Compare lengths first
+
+Different lengths can never be anagrams, and this `O(1)` check saves the whole count.
+</Step>
+
+<Step>
+### Count characters of `s`, incrementing
+</Step>
+
+<Step>
+### Count characters of `t`, decrementing
+
+Returning `false` the moment a count goes negative gives an early exit.
+</Step>
+
+<Step>
+### Return `true` if every count is zero
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import Counter
+
+
+def is_anagram(s: str, t: str) -> bool:
+    """True if t uses exactly the same letters as s."""
+    if len(s) != len(t):
+        return False
+
+    counts: dict[str, int] = {}
+
+    for char in s:
+        counts[char] = counts.get(char, 0) + 1
+
+    for char in t:
+        if char not in counts:
+            return False
+        counts[char] -= 1
+        if counts[char] < 0:
+            return False   # t has more of this letter than s
+
+    return True
+```
+
+Using the standard library, which does the same thing:
+
+```python
+def is_anagram_counter(s: str, t: str) -> bool:
+    return Counter(s) == Counter(t)
+
+
+def is_anagram_sorted(s: str, t: str) -> bool:
+    return sorted(s) == sorted(t)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function isAnagram(s: string, t: string): boolean {
+  if (s.length !== t.length) return false;
+
+  const counts = new Map<string, number>();
+
+  for (const char of s) {
+    counts.set(char, (counts.get(char) ?? 0) + 1);
+  }
+
+  for (const char of t) {
+    const count = counts.get(char);
+    if (count === undefined || count === 0) {
+      return false; // t has more of this letter than s
+    }
+    counts.set(char, count - 1);
+  }
+
+  return true;
+}
+```
+
+The sorting version:
+
+```typescript
+function isAnagramSorted(s: string, t: string): boolean {
+  if (s.length !== t.length) return false;
+  const normalise = (str: string) => [...str].sort().join('');
+  return normalise(s) === normalise(t);
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why the length check makes the final scan unnecessary">
+If the lengths are equal and no count ever goes negative, then no count can be left positive either — the total increments and decrements are the same number. So the second loop finishing without a negative *is* the proof, and there is no need to iterate the map at the end.
+
+Without the length check, `s = "aab"`, `t = "ab"` would pass the loop with a leftover `{a: 1}` and wrongly return `true`.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(k)" />
+
+- **Time** — two passes over strings of length `n`, with `O(1)` map operations. The sorting version is `O(n log n)`.
+- **Space** — `O(k)` where `k` is the alphabet size. For lowercase English that is at most 26, effectively `O(1)`.
+
+<Callout type="info" title="The fixed-array variant">
+When the input is guaranteed lowercase `a`–`z`, a 26-element integer array replaces the hash map and is measurably faster — array indexing beats hashing. The follow-up question "what if the input contains Unicode?" is exactly why the hash map version is the more general answer.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Different lengths">
+Caught by the first check in `O(1)`.
+</Accordion>
+
+<Accordion title="Both strings empty">
+Lengths match, both loops are skipped, and `true` is returned. Two empty strings are anagrams.
+</Accordion>
+
+<Accordion title="Identical strings, e.g. 'abc' and 'abc'">
+Every count cancels perfectly. Returns `true` — a string is an anagram of itself.
+</Accordion>
+
+<Accordion title="Repeated letters, e.g. 'aacc' and 'ccac'">
+Counts are `{a: 2, c: 2}` versus `{a: 1, c: 3}`. The decrement on the third `c` drives its count negative, so `false`. This is why counting beats a set — sets lose multiplicity.
+</Accordion>
+
+<Accordion title="Unicode input">
+Both languages iterate strings by code point with `for … of` / `for … in`, so the hash-map version handles most Unicode correctly. Characters built from combining marks or surrogate pairs need normalisation first — worth mentioning as a follow-up.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Group Anagrams](/docs/arrays/group-anagrams) — the many-strings version of the same canonical-form idea
+- [Isomorphic Strings](/docs/strings/isomorphic-strings) — structure matching rather than multiset matching
+- [Number of Good Pairs](/docs/arrays/number-of-good-pairs) — another problem solved purely by counting

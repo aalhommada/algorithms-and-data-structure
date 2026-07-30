@@ -1,0 +1,85 @@
+---
+title: Graphs
+description: Representing graphs, traversing them, and recognising when no traversal is needed at all
+---
+
+A graph is nodes connected by edges. Trees are a special case — a graph with no cycles and one path between any two nodes — so everything here generalises what you already know about trees, with one addition: **you must track visited nodes**, because a graph can lead you in circles.
+
+## Representing a Graph
+
+| Representation | Space | "Is there an edge `u→v`?" | "List `u`'s neighbours" |
+|---|---|---|---|
+| Adjacency list | `O(V + E)` | `O(degree)` | `O(degree)` |
+| Adjacency matrix | `O(V²)` | `O(1)` | `O(V)` |
+| Edge list | `O(E)` | `O(E)` | `O(E)` |
+
+The adjacency list is the default. Matrices only pay off on dense graphs or when you constantly ask about specific pairs.
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import defaultdict
+
+
+def build_graph(n: int, edges: list[list[int]]) -> dict[int, list[int]]:
+    """Adjacency list for an undirected graph with nodes 0..n-1."""
+    graph: defaultdict[int, list[int]] = defaultdict(list)
+
+    for u, v in edges:
+        graph[u].append(v)
+        graph[v].append(u)   # drop this line for a directed graph
+
+    return graph
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function buildGraph(n: number, edges: number[][]): Map<number, number[]> {
+  const graph = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) graph.set(i, []);
+
+  for (const [u, v] of edges) {
+    graph.get(u)!.push(v);
+    graph.get(v)!.push(u); // drop this line for a directed graph
+  }
+
+  return graph;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Traversal
+
+Both DFS and BFS work exactly as they do on trees, plus a `visited` set.
+
+<Callout type="warn" title="Mark nodes visited when you enqueue, not when you dequeue">
+In BFS, a node can be reached by several neighbours before it is processed. Marking it only on dequeue lets it enter the queue multiple times, which wastes work and can blow up exponentially on dense graphs. Mark it the moment you add it.
+</Callout>
+
+- **BFS** finds the shortest path in an **unweighted** graph, because it explores in order of distance
+- **DFS** is the tool for connectivity, cycle detection and topological ordering
+
+## Not Every Graph Problem Needs a Traversal
+
+Some problems are stated in graph language but answered by counting **degrees** — how many edges enter or leave each node.
+
+- [Find the Town Judge](/docs/graphs/find-the-town-judge) — the judge is the unique node with in-degree `n-1` and out-degree `0`, found by one pass over the edges
+
+Recognising this saves you from writing a traversal you did not need. When a problem describes a property in terms of "everyone trusts…", "nobody points to…", or "exactly one node has…", check whether degree counting settles it first.
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [Find the Town Judge](/docs/graphs/find-the-town-judge) | Easy | Degree Counting |
+
+## Related Elsewhere
+
+- [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — BFS in its simplest setting
+- [N-ary Tree Preorder Traversal](/docs/trees/n-ary-tree-preorder-traversal) — DFS, recursive and iterative
+- [Jump Game II](/docs/greedy/jump-game-ii) — BFS levels computed implicitly, with no queue at all

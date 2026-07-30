@@ -1,0 +1,205 @@
+---
+title: Find Pivot Index
+description: Locate the index where the sum to its left equals the sum to its right, using a running sum and the total
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Prefix Sum"
+  tags={["Array", "Prefix Sum"]}
+  leetcode="https://leetcode.com/problems/find-pivot-index/"
+  problemNumber={724}
+/>
+
+## Problem Statement
+
+Given an array `nums`, find the leftmost **pivot index** — the index where the sum of all numbers strictly to its left equals the sum of all numbers strictly to its right.
+
+The pivot element itself belongs to neither side. If no such index exists, return `-1`.
+
+```text
+Input:  nums = [1, 7, 3, 6, 5, 6]
+Output: 3
+Why:    left  = 1 + 7 + 3 = 11
+        right = 5 + 6     = 11
+
+Input:  nums = [1, 2, 3]
+Output: -1
+
+Input:  nums = [2, 1, -1]
+Output: 0
+Why:    left  = nothing = 0
+        right = 1 + (-1) = 0
+```
+
+## Intuition
+
+The direct approach is: for each index, sum everything on the left, sum everything on the right, compare. Two inner loops per index makes it `O(n²)`.
+
+<Callout type="info" title="The key insight">
+You do not need to compute the right side at all. If you know the **total** of the whole array and the running **left** sum, then:
+
+`right = total - left - nums[i]`
+
+Both `total` and `left` are things you can maintain for free, so every index is checked in constant time.
+</Callout>
+
+### Real-world analogy
+
+Picture the array as weights on a seesaw and the pivot as the fulcrum. Rather than weighing both sides separately, weigh everything once. Then, as you slide the fulcrum right, whatever leaves the right side lands on the left side — the total never changes, so one measurement plus a running tally tells you both sides.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Compute the total sum once
+
+That single `O(n)` pass replaces every future right-hand scan.
+</Step>
+
+<Step>
+### Walk left to right with `left = 0`
+
+`left` holds the sum of everything *before* the current index.
+</Step>
+
+<Step>
+### Test each index
+
+`right = total - left - nums[i]`. If `left == right`, return `i` — the first match is the leftmost pivot, which is what the problem asks for.
+</Step>
+
+<Step>
+### Then move the current element into `left`
+
+`left += nums[i]` prepares the invariant for index `i + 1`. Adding *after* the test is essential, because the pivot element counts for neither side.
+</Step>
+
+<Step>
+### Return `-1` if the loop finishes
+
+No index balanced the two sides.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [1, 7, 3, 6, 5, 6], total = 28"
+  intervalMs={1500}
+  frames={[
+    {
+      values: [1, 7, 3, 6, 5, 6],
+      states: ["compare", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { left: 0, right: 27 },
+      note: "i = 0. left = 0, right = 28 - 0 - 1 = 27. Not equal. Now left becomes 1.",
+    },
+    {
+      values: [1, 7, 3, 6, 5, 6],
+      states: ["done", "compare", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { left: 1, right: 20 },
+      note: "i = 1. left = 1, right = 28 - 1 - 7 = 20. Not equal. left becomes 8.",
+    },
+    {
+      values: [1, 7, 3, 6, 5, 6],
+      states: ["done", "done", "compare", "idle", "idle", "idle"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { left: 8, right: 17 },
+      note: "i = 2. left = 8, right = 28 - 8 - 3 = 17. Not equal. left becomes 11.",
+    },
+    {
+      values: [1, 7, 3, 6, 5, 6],
+      states: ["done", "done", "done", "match", "idle", "idle"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { left: 11, right: 11 },
+      note: "i = 3. left = 11, right = 28 - 11 - 6 = 11. Balanced — return 3.",
+    },
+  ]}
+  caption="The right-hand sum is derived by arithmetic, never by scanning."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def pivot_index(nums: list[int]) -> int:
+    """Return the leftmost index where the left and right sums match, else -1."""
+    total = sum(nums)
+    left = 0
+
+    for i, num in enumerate(nums):
+        right = total - left - num
+        if left == right:
+            return i
+        left += num  # only after testing — the pivot belongs to neither side
+
+    return -1
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function pivotIndex(nums: number[]): number {
+  const total = nums.reduce((sum, num) => sum + num, 0);
+  let left = 0;
+
+  for (let i = 0; i < nums.length; i++) {
+    const right = total - left - nums[i];
+    if (left === right) {
+      return i;
+    }
+    left += nums[i]; // only after testing — the pivot belongs to neither side
+  }
+
+  return -1;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="An equivalent formulation you will see">
+`left == total - left - nums[i]` rearranges to `2 * left + nums[i] == total`. Some solutions test that form directly. It is the same condition with one fewer subtraction — use whichever reads more clearly to you.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — one pass to total the array plus one pass to scan it: `2n`, which is `O(n)`.
+- **Space** — two integers, regardless of input size.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="The pivot is index 0, e.g. [2, 1, -1]">
+The left sum of an empty range is `0` by convention, and the code gets this right because `left` starts at `0`. Here `total = 2 + 1 + (-1) = 2`, so at `i = 0`: `right = 2 - 0 - 2 = 0`. Both sides are `0`, so index `0` is returned.
+</Accordion>
+
+<Accordion title="The pivot is the last index">
+Same logic mirrored: the right side is an empty range summing to `0`. `[-1, -1, -1, -1, -1, 0]` returns `2`, and arrays like `[1, -1, 0]` show the last-index case directly.
+</Accordion>
+
+<Accordion title="Negative numbers">
+They cause no trouble — the arithmetic is plain addition and subtraction. Note that negatives are exactly why you cannot use a sliding-window or two-pointer shortcut here: the running sum is not monotonic.
+</Accordion>
+
+<Accordion title="Multiple valid pivots">
+The problem asks for the **leftmost** one, and returning on the first match gives exactly that.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Running Sum of 1d Array](/docs/arrays/running-sum-of-1d-array) — the prefix-sum building block this problem consumes
+- [Product of Array Except Self](/docs/arrays/product-of-array-except-self) — the same "everything except me" idea, with products
+- [Maximum Average Subarray I](/docs/arrays/maximum-average-subarray-i) — maintaining a running sum without rescanning

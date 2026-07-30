@@ -1,0 +1,255 @@
+---
+title: Longest Palindrome
+description: Compute the longest palindrome buildable from a multiset of letters using pair counting
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Counting"
+  tags={["String", "Hash Table", "Greedy"]}
+  leetcode="https://leetcode.com/problems/longest-palindrome/"
+  problemNumber={409}
+/>
+
+## Problem Statement
+
+Given a string of lowercase and uppercase letters, return the **length** of the longest palindrome that can be built by rearranging its characters. Letters are case-sensitive: `"Aa"` is not a palindrome.
+
+```text
+Input:  "abccccdd"
+Output: 7
+Why:    "dccaccd" (or similar) — uses cccc, dd, and one a
+
+Input:  "a"
+Output: 1
+
+Input:  "bb"
+Output: 2
+```
+
+<Callout type="info" title="You do not have to build the palindrome">
+Only the **length** is required. That is what makes counting sufficient — the actual arrangement never has to be constructed.
+</Callout>
+
+## Intuition
+
+Think about the structure of a palindrome rather than about strings.
+
+<Callout type="info" title="The key insight">
+A palindrome reads the same both ways, so every character must appear in a **mirrored pair** — one on the left, one on the right — with a single possible exception: **one** character may sit alone in the exact centre.
+
+So the answer depends only on how many *pairs* you can form:
+
+`length = 2 × (total pairs) + (1 if any letter is left over, else 0)`
+</Callout>
+
+Concretely: a letter appearing `c` times contributes `c // 2` pairs, and leaves one spare if `c` is odd. All the spares are wasted except at most one, which becomes the centre.
+
+Check it on `"abccccdd"`:
+
+```text
+a: 1  →  0 pairs, 1 left over
+b: 1  →  0 pairs, 1 left over
+c: 4  →  2 pairs, 0 left over
+d: 2  →  1 pair,  0 left over
+
+pairs = 3 → 6 characters
+odd counts exist → +1 for the centre
+answer = 7
+```
+
+### Real-world analogy
+
+Building a symmetric wall from coloured bricks. Every brick you place on the left needs an identical one on the right, so bricks are useful only in pairs. A single odd brick can be placed at the exact centre — but only one, because the centre has room for just one.
+
+### Watch it run
+
+<HashMapViz
+  title='"abccccdd" — counting pairs'
+  label="letter → count"
+  intervalMs={1500}
+  frames={[
+    {
+      scan: { values: ["a", "b", "c", "c", "c", "c", "d", "d"], cursor: 7 },
+      entries: [
+        { key: "a", value: 1 },
+        { key: "b", value: 1 },
+        { key: "c", value: 4 },
+        { key: "d", value: 2 },
+      ],
+      note: "Count every letter in one pass.",
+    },
+    {
+      scan: { values: ["a", "b", "c", "c", "c", "c", "d", "d"], cursor: -1 },
+      entries: [
+        { key: "a", value: "1 → 0 pairs", state: "discard" },
+        { key: "b", value: "1 → 0 pairs", state: "discard" },
+        { key: "c", value: "4 → 2 pairs", state: "match" },
+        { key: "d", value: "2 → 1 pair", state: "match" },
+      ],
+      vars: { pairs: 3, length: 6 },
+      note: "Each count contributes count // 2 pairs. 0 + 0 + 2 + 1 = 3 pairs = 6 characters.",
+    },
+    {
+      scan: { values: ["a", "b", "c", "c", "c", "c", "d", "d"], cursor: -1 },
+      entries: [
+        { key: "a", value: "odd — can be the centre", state: "active" },
+        { key: "b", value: "odd — wasted", state: "discard" },
+        { key: "c", value: "even", state: "match" },
+        { key: "d", value: "even", state: "match" },
+      ],
+      vars: { pairs: 3, centre: 1, answer: 7 },
+      note: "Two letters have odd counts, but only ONE spare can occupy the centre. 6 + 1 = 7.",
+    },
+  ]}
+  caption="Only the counts matter — the arrangement is never built."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Count every character
+</Step>
+
+<Step>
+### Sum the pairs
+
+Add `count // 2 * 2` per letter — the number of characters usable in mirrored positions.
+</Step>
+
+<Step>
+### Add one if any count was odd
+
+At most one leftover can be placed in the centre.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import Counter
+
+
+def longest_palindrome(s: str) -> int:
+    """Length of the longest palindrome buildable from s's characters."""
+    counts = Counter(s)
+
+    length = 0
+    has_odd = False
+
+    for count in counts.values():
+        length += (count // 2) * 2   # only complete pairs are usable
+        if count % 2 == 1:
+            has_odd = True
+
+    return length + 1 if has_odd else length
+```
+
+The set-based version, which tracks parity instead of full counts:
+
+```python
+def longest_palindrome_set(s: str) -> int:
+    unpaired: set[str] = set()
+
+    for char in s:
+        if char in unpaired:
+            unpaired.remove(char)   # completed a pair
+        else:
+            unpaired.add(char)
+
+    # len(s) - len(unpaired) is the number of paired characters.
+    return len(s) - len(unpaired) + (1 if unpaired else 0)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function longestPalindrome(s: string): number {
+  const counts = new Map<string, number>();
+  for (const char of s) {
+    counts.set(char, (counts.get(char) ?? 0) + 1);
+  }
+
+  let length = 0;
+  let hasOdd = false;
+
+  for (const count of counts.values()) {
+    length += Math.floor(count / 2) * 2; // only complete pairs are usable
+    if (count % 2 === 1) hasOdd = true;
+  }
+
+  return hasOdd ? length + 1 : length;
+}
+```
+
+The set-based version:
+
+```typescript
+function longestPalindromeSet(s: string): number {
+  const unpaired = new Set<string>();
+
+  for (const char of s) {
+    if (unpaired.has(char)) unpaired.delete(char); // completed a pair
+    else unpaired.add(char);
+  }
+
+  return s.length - unpaired.size + (unpaired.size > 0 ? 1 : 0);
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="`(count // 2) * 2` is not the same as `count`">
+For `count = 5` it gives `4`, deliberately discarding the fifth character. Writing `length += count` would count every character including the unusable spares — the single most common mistake on this problem.
+</Callout>
+
+<Callout type="warn" title="Case sensitivity">
+`'A'` and `'a'` are different characters here. `"Aa"` has two letters with count 1 each, so the answer is `1`, not `2`. Lowercasing the input would be wrong.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(k)" />
+
+- **Time** — one pass to count, one pass over the distinct letters.
+- **Space** — `O(k)` where `k` is the alphabet size, at most 52 for mixed-case English letters — effectively constant.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A single character">
+`count = 1` contributes 0 pairs but sets `has_odd`, so the answer is `1`. A single character is a palindrome.
+</Accordion>
+
+<Accordion title="All characters distinct, e.g. 'abcdef'">
+No pairs at all, but odd counts exist → `1`. Only one character can be used.
+</Accordion>
+
+<Accordion title="All counts even, e.g. 'aabb'">
+Every character is usable and `has_odd` stays false → `4`. No centre is needed.
+</Accordion>
+
+<Accordion title="Several odd counts, e.g. 'aaabbb'">
+Both letters give 1 pair each (4 characters) plus one centre → `5`. The second spare is wasted, since the centre holds only one character.
+</Accordion>
+
+<Accordion title="Empty string">
+No counts, no odds → `0`.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Valid Palindrome](/docs/strings/valid-palindrome) — testing a palindrome rather than constructing one
+- [Valid Anagram](/docs/strings/valid-anagram) — another problem reduced to character counts
+- [Number of Good Pairs](/docs/arrays/number-of-good-pairs) — pair counting with the same `c × (c-1) / 2` flavour of reasoning

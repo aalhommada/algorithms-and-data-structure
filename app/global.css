@@ -1,0 +1,51 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/style.css';
+
+/* Poppins for prose and UI. Code keeps its monospace stack (--font-mono).
+   fumadocs-ui ships a pre-compiled Tailwind bundle that sets --font-sans inside
+   `@layer theme`; this rule is deliberately unlayered so it wins the cascade
+   regardless of import order. */
+:root {
+  --font-sans:
+    var(--font-poppins), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --default-font-family: var(--font-sans);
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* Poppins has a tall x-height and wide letterforms; a touch of negative
+   tracking on headings keeps them from looking loose. */
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.015em;
+}
+
+:root {
+  --color-easy: #22c55e;
+  --color-medium: #f59e0b;
+  --color-hard: #ef4444;
+  --color-tag: #3b82f6;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--fd-background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--fd-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fd-muted-foreground);
+}

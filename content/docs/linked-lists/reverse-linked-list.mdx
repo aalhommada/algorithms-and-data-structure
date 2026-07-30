@@ -1,0 +1,283 @@
+---
+title: Reverse Linked List
+description: Flip every pointer in a linked list using three references, and understand why the order of assignments matters
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Pointer Manipulation"
+  tags={["Linked List", "Recursion"]}
+  leetcode="https://leetcode.com/problems/reverse-linked-list/"
+  problemNumber={206}
+/>
+
+## Problem Statement
+
+Given the head of a singly linked list, reverse it and return the new head.
+
+```text
+Input:  1 → 2 → 3 → 4 → 5 → null
+Output: 5 → 4 → 3 → 2 → 1 → null
+
+Input:  1 → 2 → null
+Output: 2 → 1 → null
+
+Input:  null
+Output: null
+```
+
+## Intuition
+
+You cannot reverse a linked list by moving values around cheaply — the point is to **re-point the arrows**. Node `1` currently points at `2`; afterwards `2` must point at `1`.
+
+Here is the trap that makes this problem instructive:
+
+<Callout type="warn" title="The moment you flip a pointer, you lose the rest of the list">
+Set `node1.next = None` to start the reversal, and `2 → 3 → 4 → 5` is now unreachable. Nothing else refers to node `2`. In a garbage-collected language it simply vanishes.
+
+**You must save the next node before overwriting the pointer.**
+</Callout>
+
+<Callout type="info" title="The key insight">
+Walk the list carrying three references:
+
+- **`prev`** — the part already reversed (starts as `null`, which becomes the new tail's `next`)
+- **`curr`** — the node being processed
+- **`next`** — a temporary hold on `curr.next`, saved *before* it is destroyed
+
+Each step does exactly one thing: point `curr` backwards at `prev`, then shift all three references one position right.
+</Callout>
+
+### Real-world analogy
+
+Reversing a line of people who each have a hand on the shoulder of the person ahead. You cannot ask someone to turn around until you have noted who was in front of them — otherwise the rest of the line has no way back.
+
+### Watch it run
+
+<LinkedListViz
+  title="Reversing 1 → 2 → 3"
+  intervalMs={1800}
+  frames={[
+    {
+      nodes: [
+        { value: 1, pointers: ["curr"] },
+        { value: 2, pointers: ["next"] },
+        { value: 3 },
+      ],
+      vars: { prev: "null" },
+      note: "Start: prev = null, curr = node 1. Save next = node 2 before touching any pointer.",
+    },
+    {
+      nodes: [
+        { value: 1, state: "done" },
+        { value: 2, state: "active", pointers: ["curr"] },
+        { value: 3, pointers: ["next"] },
+      ],
+      vars: { prev: "1", reversed: "1 → null" },
+      note: "node 1 now points to null. prev = 1, curr = 2. The reversed part is 1 → null.",
+    },
+    {
+      nodes: [
+        { value: 2, state: "done" },
+        { value: 1, state: "done" },
+        { value: 3, state: "active", pointers: ["curr"] },
+      ],
+      vars: { prev: "2", next: "null", reversed: "2 → 1 → null" },
+      note: "node 2 now points to node 1. prev = 2, curr = 3, next = null.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "match", pointers: ["prev / new head"] },
+        { value: 2, state: "match" },
+        { value: 1, state: "match" },
+      ],
+      vars: { curr: "null" },
+      note: "node 3 points to node 2. curr is now null, so the loop ends. Return prev — the new head is 3.",
+    },
+  ]}
+  caption="prev grows into the reversed list while curr consumes the original."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Initialise `prev = null` and `curr = head`
+
+`prev` starts as `null` because the old head becomes the new tail, and a tail points to `null`.
+</Step>
+
+<Step>
+### While `curr` is not null, do four things in order
+
+1. `next = curr.next` — save it before destroying it
+2. `curr.next = prev` — flip the arrow
+3. `prev = curr` — the reversed portion grows
+4. `curr = next` — advance
+
+The order is not negotiable. Any other sequence loses a reference.
+</Step>
+
+<Step>
+### Return `prev`
+
+When the loop ends, `curr` is `null` and `prev` points at the last node processed — the new head.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from typing import Optional
+
+
+class ListNode:
+    def __init__(self, val: int = 0, next: Optional["ListNode"] = None):
+        self.val = val
+        self.next = next
+
+
+def reverse_list(head: Optional[ListNode]) -> Optional[ListNode]:
+    """Reverse a singly linked list and return the new head."""
+    prev: Optional[ListNode] = None
+    curr = head
+
+    while curr:
+        next_node = curr.next   # 1. save before overwriting
+        curr.next = prev        # 2. flip the arrow
+        prev = curr             # 3. reversed part grows
+        curr = next_node        # 4. advance
+
+    return prev                 # curr is None; prev is the new head
+```
+
+Python allows the four assignments as one tuple statement, which some find clearer:
+
+```python
+def reverse_list_compact(head: Optional[ListNode]) -> Optional[ListNode]:
+    prev, curr = None, head
+    while curr:
+        curr.next, prev, curr = prev, curr, curr.next
+    return prev
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class ListNode {
+  val: number;
+  next: ListNode | null;
+
+  constructor(val = 0, next: ListNode | null = null) {
+    this.val = val;
+    this.next = next;
+  }
+}
+
+function reverseList(head: ListNode | null): ListNode | null {
+  let prev: ListNode | null = null;
+  let curr = head;
+
+  while (curr !== null) {
+    const next = curr.next; // 1. save before overwriting
+    curr.next = prev; // 2. flip the arrow
+    prev = curr; // 3. reversed part grows
+    curr = next; // 4. advance
+  }
+
+  return prev; // curr is null; prev is the new head
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Why the compact Python version works">
+`curr.next, prev, curr = prev, curr, curr.next` evaluates the **entire right-hand side first**, then assigns left to right. So `curr.next` on the right still refers to the original next node even though `curr.next` on the left is about to change. Writing the same thing as three separate statements in that order would be a bug.
+</Callout>
+
+### The recursive version
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def reverse_list_recursive(head: Optional[ListNode]) -> Optional[ListNode]:
+    # Base case: empty list, or a single node which is already reversed.
+    if head is None or head.next is None:
+        return head
+
+    # Reverse everything after head; new_head is the final node of the list.
+    new_head = reverse_list_recursive(head.next)
+
+    # head.next is still the node just after head. Make it point back.
+    head.next.next = head
+    head.next = None
+
+    return new_head
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function reverseListRecursive(head: ListNode | null): ListNode | null {
+  // Base case: empty list, or a single node which is already reversed.
+  if (head === null || head.next === null) return head;
+
+  // Reverse everything after head; newHead is the final node of the list.
+  const newHead = reverseListRecursive(head.next);
+
+  // head.next is still the node just after head. Make it point back.
+  head.next.next = head;
+  head.next = null;
+
+  return newHead;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+The recursion reaches the end of the list first, then flips pointers on the way back up. `head.next.next = head` reads oddly but says something simple: *the node after me should point at me*. Setting `head.next = null` afterwards prevents a two-node cycle.
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — each node is visited exactly once.
+- **Space** — the iterative version uses three references. The recursive version uses `O(n)` stack frames and will overflow on very long lists, which is why the iterative form is preferred in practice.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty list (head is null)">
+The loop never runs and `prev` — still `null` — is returned. Correct.
+</Accordion>
+
+<Accordion title="Single node">
+One iteration sets `node.next = null` (it already was) and returns that node. Unchanged, as expected.
+</Accordion>
+
+<Accordion title="What happens if you forget `head.next = null` in the recursive version?">
+The last two nodes point at each other, creating an infinite cycle. Printing the list would never terminate. This is the classic bug in the recursive solution.
+</Accordion>
+
+<Accordion title="Does the old head still work as a reference?">
+It becomes the **tail** of the reversed list. Any variable still holding it now sees a single node followed by `null`, which surprises callers that assumed it was the head.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Middle of the Linked List](/docs/linked-lists/middle-of-the-linked-list) — traversal with two pointers at different speeds
+- [Merge Two Sorted Lists](/docs/linked-lists/merge-two-sorted-lists) — rewiring pointers to weave two lists together
+- [Linked List Cycle II](/docs/linked-lists/linked-list-cycle-ii) — pointer manipulation where the list has no end

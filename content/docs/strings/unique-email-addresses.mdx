@@ -1,0 +1,208 @@
+---
+title: Unique Email Addresses
+description: Count distinct inboxes by normalising each address, then storing the results in a set
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="String Normalisation + Set"
+  tags={["Array", "Hash Table", "String"]}
+  leetcode="https://leetcode.com/problems/unique-email-addresses/"
+  problemNumber={929}
+/>
+
+## Problem Statement
+
+Every email address consists of a **local name** and a **domain name**, separated by `@`. Two rules apply to the local name only:
+
+1. **Dots are ignored.** `"alice.z@leetcode.com"` and `"alicez@leetcode.com"` are the same inbox.
+2. **Everything from the first `+` onward is ignored.** `"m.y+name@a.com"` forwards to `"my@a.com"`.
+
+Return the number of distinct addresses that actually receive mail.
+
+```text
+Input:  ["test.email+alex@leetcode.com",
+         "test.e.mail+bob.cathy@leetcode.com",
+         "testemail+david@lee.tcode.com"]
+Output: 2
+Why:    the first two both normalise to "testemail@leetcode.com"
+        the third has a DIFFERENT domain: "testemail@lee.tcode.com"
+```
+
+## Intuition
+
+Two things are happening: a **normalisation** step, and a **de-duplication** step.
+
+<Callout type="info" title="The key insight">
+Convert each address into a canonical form, then put the canonical forms in a **set**. The set's size is the answer.
+
+This is the same "canonical key" idea as [Group Anagrams](/docs/arrays/group-anagrams) — turn "are these equivalent?" into "are these identical after normalisation?"
+</Callout>
+
+<Callout type="warn" title="The rules apply to the local name only">
+The domain must be left completely untouched. `"lee.tcode.com"` is a different domain from `"leetcode.com"` — stripping dots there would merge two genuinely distinct addresses and give the wrong answer.
+
+Splitting on `@` **before** doing anything else is what keeps the two halves separate.
+</Callout>
+
+### Order of operations
+
+Strip the `+` suffix first, then remove dots. Doing it the other way also works here, but plus-first is safer: it means dots after the `+` are discarded along with everything else, rather than being processed and then thrown away.
+
+### Watch it run
+
+<ArrayViz
+  title='Normalising "test.e.mail+bob.cathy@leetcode.com"'
+  showIndices={false}
+  intervalMs={1600}
+  frames={[
+    {
+      values: ["test.e.mail+bob.cathy", "@", "leetcode.com"],
+      states: ["active", "idle", "idle"],
+      note: "Split on the first @. The local name is on the left; the domain on the right stays untouched.",
+    },
+    {
+      values: ["test.e.mail", "+bob.cathy", "@leetcode.com"],
+      states: ["active", "discard", "idle"],
+      note: 'Rule 2: discard everything from the first "+" onward.',
+    },
+    {
+      values: ["testemail", "", "@leetcode.com"],
+      states: ["match", "discard", "idle"],
+      note: "Rule 1: remove every dot from the local name.",
+    },
+    {
+      values: ["testemail@leetcode.com"],
+      states: ["match"],
+      vars: { set: "{testemail@leetcode.com}" },
+      note: "Rejoin and add to the set. The first address normalises to exactly the same string, so the set stays size 1.",
+    },
+  ]}
+  caption="Normalise, then let a set do the counting."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Split each address on `@`
+
+Split only on the first `@` — the local name is guaranteed not to contain one, but being explicit avoids surprises.
+</Step>
+
+<Step>
+### In the local name, cut at the first `+`
+</Step>
+
+<Step>
+### Remove all dots from what remains
+</Step>
+
+<Step>
+### Rejoin with the untouched domain and add to a set
+</Step>
+
+<Step>
+### Return the set's size
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def num_unique_emails(emails: list[str]) -> int:
+    """Count how many distinct inboxes the addresses resolve to."""
+    seen: set[str] = set()
+
+    for email in emails:
+        local, domain = email.split("@", 1)   # split on the FIRST @ only
+
+        local = local.split("+", 1)[0]        # drop everything after the first +
+        local = local.replace(".", "")        # dots in the local name mean nothing
+
+        seen.add(f"{local}@{domain}")         # the domain is never modified
+
+    return len(seen)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function numUniqueEmails(emails: string[]): number {
+  const seen = new Set<string>();
+
+  for (const email of emails) {
+    const at = email.indexOf('@'); // the FIRST @ only
+    let local = email.slice(0, at);
+    const domain = email.slice(at); // includes the @ itself
+
+    const plus = local.indexOf('+');
+    if (plus !== -1) {
+      local = local.slice(0, plus); // drop everything after the first +
+    }
+    local = local.split('.').join(''); // dots in the local name mean nothing
+
+    seen.add(local + domain); // the domain is never modified
+  }
+
+  return seen.size;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="`split('@')` without a limit is risky">
+`"a@b@c".split("@")` gives three parts, and unpacking into two variables raises an error in Python. Passing `maxsplit=1` (or using `indexOf` in TypeScript) splits on the first `@` only and puts everything else in the domain — the behaviour real email parsing expects.
+</Callout>
+
+<Callout type="info" title="Why a set and not sorting">
+Sorting the normalised addresses and counting adjacent differences also works, at `O(n log n)`. A hash set answers the same question in `O(n)` and expresses the intent directly: you care about distinctness, not order.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n × L)" space="O(n × L)" />
+
+Where `n` is the number of addresses and `L` is the average address length.
+
+- **Time** — each address is scanned a constant number of times during normalisation.
+- **Space** — the set holds up to `n` normalised strings.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="No dots and no plus, e.g. 'a@b.com'">
+Normalisation leaves it unchanged. Handled without a special case.
+</Accordion>
+
+<Accordion title="A plus at the very start, e.g. '+alex@a.com'">
+The local name becomes empty, giving `"@a.com"`. Unusual, but consistent — and the problem's constraints guarantee a non-empty local name before any `+`.
+</Accordion>
+
+<Accordion title="Dots in the domain, e.g. 'a@lee.tcode.com'">
+Left untouched, which is why the third example in the problem statement counts separately. Stripping domain dots is the classic wrong answer here.
+</Accordion>
+
+<Accordion title="Dots after the plus, e.g. 'a+b.c@d.com'">
+Everything after `+` is discarded before dots are considered, so those dots never matter. This is why plus-first ordering is cleaner.
+</Accordion>
+
+<Accordion title="All addresses identical">
+The set collapses them to one entry and returns `1`.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Group Anagrams](/docs/arrays/group-anagrams) — the same canonical-form technique for grouping
+- [Contains Duplicate](/docs/arrays/contains-duplicate) — sets used for distinctness
+- [Simplify Path](/docs/stacks-queues/simplify-path) — another string canonicalisation problem

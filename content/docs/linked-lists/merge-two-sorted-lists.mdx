@@ -1,0 +1,317 @@
+---
+title: Merge Two Sorted Lists
+description: Weave two sorted linked lists into one by splicing nodes, using a dummy head to avoid special cases
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Two Pointers / Dummy Head"
+  tags={["Linked List", "Recursion"]}
+  leetcode="https://leetcode.com/problems/merge-two-sorted-lists/"
+  problemNumber={21}
+/>
+
+## Problem Statement
+
+You are given the heads of two **sorted** linked lists. Splice them together into one sorted list and return its head. The result should be made by reusing the existing nodes.
+
+```text
+Input:  list1 = 1 → 2 → 4
+        list2 = 1 → 3 → 4
+Output: 1 → 1 → 2 → 3 → 4 → 4
+
+Input:  list1 = null, list2 = null
+Output: null
+
+Input:  list1 = null, list2 = 0
+Output: 0
+```
+
+## Intuition
+
+Both lists are already sorted, so the smallest remaining value is always at the front of one list or the other. Compare the two heads, take the smaller, advance that list, repeat. This is the merge step of merge sort, and it is why merge sort is `O(n log n)`.
+
+Unlike [Merge Sorted Array](/docs/arrays/merge-sorted-array), there is no overwrite hazard here — appending to a new list never damages the sources. So the natural front-to-back direction works.
+
+<Callout type="info" title="The key insight — use a dummy head">
+The awkward part is the very first node: is it from `list1` or `list2`? Handling that separately means branching before the loop and again inside it.
+
+Instead, create a throwaway node and build behind it. Every append is then `tail.next = node`, with no "is this the first one?" question anywhere. At the end, the real head is `dummy.next`.
+</Callout>
+
+The dummy node is one of the highest-value tricks in linked-list problems. It removes an entire class of null-handling bugs for the cost of one allocation.
+
+### Real-world analogy
+
+Two sorted stacks of numbered cards being merged into one pile. You look only at the top card of each stack, take the lower, and place it face-down on the new pile. The new pile stays sorted automatically.
+
+### Watch it run
+
+<LinkedListViz
+  title="Merging 1 → 2 → 4 with 1 → 3 → 4"
+  intervalMs={1700}
+  frames={[
+    {
+      nodes: [{ value: "dummy", state: "done", pointers: ["tail"] }],
+      vars: { "list1": "1 → 2 → 4", "list2": "1 → 3 → 4" },
+      note: "Start with a dummy node. tail always points at the last node of the result so far.",
+    },
+    {
+      nodes: [
+        { value: "dummy", state: "done" },
+        { value: 1, state: "active", pointers: ["tail"] },
+      ],
+      vars: { "list1": "2 → 4", "list2": "1 → 3 → 4" },
+      note: "Compare 1 and 1. They tie — take from list1 (keeps the merge stable). Append it.",
+    },
+    {
+      nodes: [
+        { value: "dummy", state: "done" },
+        { value: 1, state: "done" },
+        { value: 1, state: "active", pointers: ["tail"] },
+      ],
+      vars: { "list1": "2 → 4", "list2": "3 → 4" },
+      note: "Compare 2 and 1. list2 wins. Append its 1.",
+    },
+    {
+      nodes: [
+        { value: "dummy", state: "done" },
+        { value: 1, state: "done" },
+        { value: 1, state: "done" },
+        { value: 2, state: "active", pointers: ["tail"] },
+      ],
+      vars: { "list1": "4", "list2": "3 → 4" },
+      note: "Compare 2 and 3. list1 wins. Append 2.",
+    },
+    {
+      nodes: [
+        { value: "dummy", state: "done" },
+        { value: 1, state: "done" },
+        { value: 1, state: "done" },
+        { value: 2, state: "done" },
+        { value: 3, state: "active", pointers: ["tail"] },
+      ],
+      vars: { "list1": "4", "list2": "4" },
+      note: "Compare 4 and 3. list2 wins. Append 3.",
+    },
+    {
+      nodes: [
+        { value: "dummy", state: "done" },
+        { value: 1, state: "done" },
+        { value: 1, state: "done" },
+        { value: 2, state: "done" },
+        { value: 3, state: "done" },
+        { value: 4, state: "active", pointers: ["tail"] },
+      ],
+      vars: { "list1": "(empty)", "list2": "4" },
+      note: "Compare 4 and 4. Tie → take from list1. list1 is now empty, so the loop ends.",
+    },
+    {
+      nodes: [
+        { value: 1, state: "match" },
+        { value: 1, state: "match" },
+        { value: 2, state: "match" },
+        { value: 3, state: "match" },
+        { value: 4, state: "match" },
+        { value: 4, state: "match" },
+      ],
+      note: "Attach the leftover 4 from list2 in one move — no loop needed, it is already sorted. Return dummy.next.",
+    },
+  ]}
+  caption="The dummy node absorbs the 'first append' special case entirely."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Create a dummy node and point `tail` at it
+</Step>
+
+<Step>
+### While both lists have nodes
+
+Compare the two head values. Splice the smaller node onto `tail.next`, advance that list, and move `tail` forward.
+</Step>
+
+<Step>
+### Attach the remainder in one step
+
+When one list empties, the other is already sorted and already linked. `tail.next = list1 or list2` finishes the job with a single assignment — no loop.
+</Step>
+
+<Step>
+### Return `dummy.next`
+
+The dummy itself is discarded.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from typing import Optional
+
+
+class ListNode:
+    def __init__(self, val: int = 0, next: Optional["ListNode"] = None):
+        self.val = val
+        self.next = next
+
+
+def merge_two_lists(
+    list1: Optional[ListNode], list2: Optional[ListNode]
+) -> Optional[ListNode]:
+    """Merge two sorted lists by splicing their nodes together."""
+    dummy = ListNode()   # placeholder so there is no "first node" special case
+    tail = dummy
+
+    while list1 and list2:
+        if list1.val <= list2.val:   # <= keeps the merge stable
+            tail.next = list1
+            list1 = list1.next
+        else:
+            tail.next = list2
+            list2 = list2.next
+        tail = tail.next
+
+    # Exactly one list may have nodes left; it is already sorted.
+    tail.next = list1 if list1 else list2
+
+    return dummy.next
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class ListNode {
+  val: number;
+  next: ListNode | null;
+
+  constructor(val = 0, next: ListNode | null = null) {
+    this.val = val;
+    this.next = next;
+  }
+}
+
+function mergeTwoLists(
+  list1: ListNode | null,
+  list2: ListNode | null,
+): ListNode | null {
+  const dummy = new ListNode(); // placeholder — no "first node" special case
+  let tail = dummy;
+
+  while (list1 !== null && list2 !== null) {
+    if (list1.val <= list2.val) {
+      // <= keeps the merge stable
+      tail.next = list1;
+      list1 = list1.next;
+    } else {
+      tail.next = list2;
+      list2 = list2.next;
+    }
+    tail = tail.next;
+  }
+
+  // Exactly one list may have nodes left; it is already sorted.
+  tail.next = list1 ?? list2;
+
+  return dummy.next;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why the leftover needs no loop">
+This is the advantage of linked lists over arrays. In [Merge Sorted Array](/docs/arrays/merge-sorted-array) the remaining elements have to be copied one at a time. Here, the remaining nodes are already chained together — a single pointer assignment adopts the whole tail at once.
+</Callout>
+
+### The recursive version
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def merge_two_lists_recursive(
+    list1: Optional[ListNode], list2: Optional[ListNode]
+) -> Optional[ListNode]:
+    if not list1:
+        return list2
+    if not list2:
+        return list1
+
+    if list1.val <= list2.val:
+        list1.next = merge_two_lists_recursive(list1.next, list2)
+        return list1
+
+    list2.next = merge_two_lists_recursive(list1, list2.next)
+    return list2
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function mergeTwoListsRecursive(
+  list1: ListNode | null,
+  list2: ListNode | null,
+): ListNode | null {
+  if (list1 === null) return list2;
+  if (list2 === null) return list1;
+
+  if (list1.val <= list2.val) {
+    list1.next = mergeTwoListsRecursive(list1.next, list2);
+    return list1;
+  }
+
+  list2.next = mergeTwoListsRecursive(list1, list2.next);
+  return list2;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+It reads beautifully — *"the smaller head, followed by the merge of what remains"* — but it uses `O(n + m)` stack frames and can overflow on long lists.
+
+## Complexity Analysis
+
+<Complexity time="O(n + m)" space="O(1)" />
+
+- **Time** — every node from both lists is visited and spliced exactly once.
+- **Space** — the iterative version allocates only the dummy node. No new list is built; the existing nodes are rewired. The recursive version uses `O(n + m)` stack space.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Both lists empty">
+The loop never runs, `tail.next` is set to `null`, and `dummy.next` — still `null` — is returned.
+</Accordion>
+
+<Accordion title="One list empty">
+The loop is skipped and the non-empty list is attached wholesale to the dummy. Returned unchanged.
+</Accordion>
+
+<Accordion title="Equal values across the lists">
+Using `<=` takes from `list1` on a tie, which makes the merge **stable** — nodes from `list1` precede equal nodes from `list2`. Either choice produces a correctly sorted list, but stability matters when nodes carry extra data.
+</Accordion>
+
+<Accordion title="Lists of very different lengths">
+No problem. The loop ends as soon as the shorter list empties, and the long remainder is attached in one assignment.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — the same merge on arrays, where the in-place constraint forces a back-to-front pass
+- [Reverse Linked List](/docs/linked-lists/reverse-linked-list) — the other fundamental pointer-rewiring exercise
+- [Intersection of Two Linked Lists](/docs/linked-lists/intersection-of-two-linked-lists) — traversing two lists in step

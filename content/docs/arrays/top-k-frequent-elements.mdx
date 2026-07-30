@@ -1,0 +1,274 @@
+---
+title: Top K Frequent Elements
+description: Find the k most common values using bucket sort by frequency, in linear time
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Bucket Sort / Heap"
+  tags={["Array", "Hash Table", "Heap", "Bucket Sort", "Counting"]}
+  leetcode="https://leetcode.com/problems/top-k-frequent-elements/"
+  problemNumber={347}
+/>
+
+## Problem Statement
+
+Given an integer array `nums` and an integer `k`, return the `k` most frequent elements. The answer may be returned in any order.
+
+```text
+Input:  nums = [1, 1, 1, 2, 2, 3], k = 2
+Output: [1, 2]
+Why:    1 appears 3 times, 2 appears twice, 3 appears once
+
+Input:  nums = [1], k = 1
+Output: [1]
+```
+
+## Intuition
+
+Step one is unavoidable: count how often each value occurs, with a hash map. That is `O(n)`.
+
+The interesting question is step two — how to pick the `k` largest counts. There are three answers, and they form a nice ladder.
+
+<Callout type="info" title="Three ways to rank by frequency">
+**Sort the counts** — `O(n log n)`. Simple, correct, and often good enough.
+
+**A min-heap of size `k`** — `O(n log k)`. Push each `(count, value)` pair and pop whenever the heap exceeds `k`, so only the top `k` survive. Better when `k` is much smaller than `n`.
+
+**Bucket sort** — `O(n)`. The winner, and it relies on a constraint that is easy to miss.
+</Callout>
+
+### The bucket-sort insight
+
+A frequency cannot be arbitrary. If the array has `n` elements, **no value can appear more than `n` times**. So counts live in the bounded range `1 … n`.
+
+Whenever a key is a small bounded integer, you can use it as an **array index** instead of sorting.
+
+Build `n + 1` buckets, where `buckets[f]` holds every value that appears exactly `f` times. Then walk the buckets from the highest frequency downward, collecting until you have `k` values.
+
+```text
+nums = [1, 1, 1, 2, 2, 3]     counts: {1: 3, 2: 2, 3: 1}
+
+bucket index:  0    1    2    3    4    5    6
+contents:     []   [3]  [2]  [1]  []   []   []
+                              ↑
+                    walk from the right, collect 1 then 2 → [1, 2]
+```
+
+### Real-world analogy
+
+Sorting exam papers by score when scores run 0–100. You do not compare papers pairwise — you set out 101 trays and drop each paper into its tray. Reading the trays from the top gives a sorted order without a single comparison.
+
+### Watch it run
+
+<ArrayViz
+  title="Buckets for nums = [1, 1, 1, 2, 2, 3] — index = frequency"
+  showIndices={true}
+  intervalMs={1500}
+  frames={[
+    {
+      values: ["·", "·", "·", "·", "·", "·", "·"],
+      note: "Create n + 1 = 7 empty buckets. Bucket index f will hold values occurring exactly f times.",
+    },
+    {
+      values: ["·", "3", "·", "·", "·", "·", "·"],
+      states: ["idle", "active", "idle", "idle", "idle", "idle", "idle"],
+      note: "Value 3 occurs once → drop it into bucket 1.",
+    },
+    {
+      values: ["·", "3", "2", "·", "·", "·", "·"],
+      states: ["idle", "done", "active", "idle", "idle", "idle", "idle"],
+      note: "Value 2 occurs twice → bucket 2.",
+    },
+    {
+      values: ["·", "3", "2", "1", "·", "·", "·"],
+      states: ["idle", "done", "done", "active", "idle", "idle", "idle"],
+      note: "Value 1 occurs three times → bucket 3. All values placed in O(n).",
+    },
+    {
+      values: ["·", "3", "2", "1", "·", "·", "·"],
+      states: ["idle", "idle", "idle", "match", "discard", "discard", "discard"],
+      pointers: [{ index: 3, label: "scan" }],
+      vars: { result: "[1]" },
+      note: "Walk from the highest index down. Buckets 6, 5, 4 are empty. Bucket 3 gives value 1.",
+    },
+    {
+      values: ["·", "3", "2", "1", "·", "·", "·"],
+      states: ["idle", "idle", "match", "match", "discard", "discard", "discard"],
+      pointers: [{ index: 2, label: "scan" }],
+      vars: { result: "[1, 2]" },
+      note: "Bucket 2 gives value 2. That is k = 2 values — stop. Answer: [1, 2].",
+    },
+  ]}
+  caption="Frequencies are bounded by n, so they can index an array instead of being sorted."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Count frequencies
+
+One pass into a hash map: `value → count`.
+</Step>
+
+<Step>
+### Create `n + 1` empty buckets
+
+Index `f` is reserved for values with frequency `f`. Index `0` is never used but keeps the indexing natural.
+</Step>
+
+<Step>
+### Place each value into `buckets[count]`
+</Step>
+
+<Step>
+### Walk buckets from `n` down to `1`
+
+Collect every value you find until the result holds `k` of them, then stop.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import Counter
+
+
+def top_k_frequent(nums: list[int], k: int) -> list[int]:
+    """The k most frequent values, in O(n) time via bucket sort."""
+    counts = Counter(nums)
+
+    # buckets[f] = list of values that appear exactly f times.
+    buckets: list[list[int]] = [[] for _ in range(len(nums) + 1)]
+    for value, count in counts.items():
+        buckets[count].append(value)
+
+    result: list[int] = []
+    for frequency in range(len(buckets) - 1, 0, -1):
+        for value in buckets[frequency]:
+            result.append(value)
+            if len(result) == k:
+                return result
+
+    return result
+```
+
+The heap version, for when you want `O(n log k)` and less memory:
+
+```python
+import heapq
+from collections import Counter
+
+
+def top_k_frequent_heap(nums: list[int], k: int) -> list[int]:
+    counts = Counter(nums)
+    return [value for value, _ in counts.most_common(k)]
+
+
+def top_k_frequent_manual_heap(nums: list[int], k: int) -> list[int]:
+    counts = Counter(nums)
+    heap: list[tuple[int, int]] = []
+
+    for value, count in counts.items():
+        heapq.heappush(heap, (count, value))
+        if len(heap) > k:
+            heapq.heappop(heap)  # evict the smallest count
+
+    return [value for _, value in heap]
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function topKFrequent(nums: number[], k: number): number[] {
+  const counts = new Map<number, number>();
+  for (const num of nums) {
+    counts.set(num, (counts.get(num) ?? 0) + 1);
+  }
+
+  // buckets[f] = values that appear exactly f times.
+  const buckets: number[][] = Array.from({ length: nums.length + 1 }, () => []);
+  for (const [value, count] of counts) {
+    buckets[count].push(value);
+  }
+
+  const result: number[] = [];
+  for (let frequency = buckets.length - 1; frequency > 0; frequency--) {
+    for (const value of buckets[frequency]) {
+      result.push(value);
+      if (result.length === k) return result;
+    }
+  }
+
+  return result;
+}
+```
+
+The sorting version, when clarity matters more than the last factor of `log n`:
+
+```typescript
+function topKFrequentSorted(nums: number[], k: number): number[] {
+  const counts = new Map<number, number>();
+  for (const num of nums) {
+    counts.set(num, (counts.get(num) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1]) // descending by count
+    .slice(0, k)
+    .map(([value]) => value);
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Do not build buckets with `Array(n).fill([])`">
+`fill([])` puts the **same** array object into every slot, so pushing into one bucket pushes into all of them. Use `Array.from({ length: n }, () => [])`, which calls the factory once per slot. Python's `[[] for _ in range(n)]` has the same requirement — `[[]] * n` is the broken equivalent.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — `O(n)` to count, `O(d)` to fill buckets where `d ≤ n` is the number of distinct values, and `O(n)` to walk the buckets. Linear overall, beating the `O(n log n)` sort and the `O(n log k)` heap.
+- **Space** — `O(n)` for the count map plus `O(n)` for the buckets.
+
+<Callout type="info" title="When is the heap still the right choice?">
+Bucket sort needs `O(n)` buckets up front. If `n` is enormous and `k` is tiny — say the top 10 of a billion-element stream — a size-`k` heap uses `O(k)` memory and can process data it never has to hold all at once. Different constraints, different winner.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="k equals the number of distinct values">
+Every distinct value is returned. The bucket walk collects them all before running out.
+</Accordion>
+
+<Accordion title="All elements identical, e.g. [7, 7, 7], k = 1">
+`7` lands in bucket 3 and is the only value. The scan finds it immediately.
+</Accordion>
+
+<Accordion title="Ties in frequency">
+The problem guarantees the answer is unique, but if several values tied for the `k`-th spot, the bucket walk would return whichever appears first in that bucket. Any of them would be an acceptable answer under a looser statement.
+</Accordion>
+
+<Accordion title="Negative numbers">
+Values are only ever used as hash-map keys and bucket *contents* — never as bucket indices. Only the frequencies index the buckets, and frequencies are always positive.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Number of Good Pairs](/docs/arrays/number-of-good-pairs) — the counting half of this problem
+- [Group Anagrams](/docs/arrays/group-anagrams) — hash maps that group rather than rank
+- [Sort the People](/docs/arrays/sort-the-people) — ordering by a derived key

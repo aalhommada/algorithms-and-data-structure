@@ -1,0 +1,262 @@
+---
+title: N-ary Tree Preorder Traversal
+description: Traverse a tree whose nodes have any number of children, recursively and iteratively
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="DFS (Depth-First Search)"
+  tags={["Tree", "DFS", "Stack"]}
+  leetcode="https://leetcode.com/problems/n-ary-tree-preorder-traversal/"
+  problemNumber={589}
+/>
+
+## Problem Statement
+
+Given the root of an **n-ary tree** — a tree where each node can have any number of children — return the **preorder** traversal of its node values.
+
+Preorder means: visit the node first, then traverse each child in order.
+
+```text
+Input:        1
+            / | \
+           3  2  4
+          / \
+         5   6
+
+Output: [1, 3, 5, 6, 2, 4]
+Order:  root → subtree(3) fully → 2 → 4
+```
+
+## Intuition
+
+Preorder has a one-line recursive definition:
+
+<Callout type="info" title="The key insight">
+**Visit the node, then recursively traverse each child, left to right.**
+
+For a binary tree that is `node, left, right`. For an n-ary tree it is `node, child₁, child₂, …, childₖ`. The only change is that the fixed pair of children becomes a loop over a list.
+</Callout>
+
+The word "pre" refers to *when the node itself is recorded*: before its children. The three classic orders differ only in where that one line sits:
+
+| Order | Node recorded | Result for the example |
+|---|---|---|
+| **Preorder** | before the children | `1, 3, 5, 6, 2, 4` |
+| Postorder | after the children | `5, 6, 3, 2, 4, 1` |
+| Inorder | between children (binary trees only) | not defined for n-ary |
+
+### Real-world analogy
+
+Reading a table of contents. You read a chapter title, then everything inside that chapter (including its subsections) before moving to the next chapter. Title first, contents after — that is preorder.
+
+### Watch it run
+
+<TreeViz
+  title="Preorder over the n-ary tree (drawn here in binary positions for layout)"
+  intervalMs={1600}
+  frames={[
+    {
+      nodes: [1, 3, 2, 5, 6, 4],
+      states: ["active"],
+      output: [1],
+      note: "Visit the root, 1, and record it immediately — that is what makes this preorder.",
+    },
+    {
+      nodes: [1, 3, 2, 5, 6, 4],
+      states: ["done", "active"],
+      output: [1, 3],
+      note: "Move to the first child, 3. Record it, then descend into its own children.",
+    },
+    {
+      nodes: [1, 3, 2, 5, 6, 4],
+      states: ["done", "done", undefined, "active"],
+      output: [1, 3, 5],
+      note: "3's first child is 5. It has no children, so record it and return.",
+    },
+    {
+      nodes: [1, 3, 2, 5, 6, 4],
+      states: ["done", "done", undefined, "done", "active"],
+      output: [1, 3, 5, 6],
+      note: "3's second child is 6. Record it. The subtree rooted at 3 is now finished.",
+    },
+    {
+      nodes: [1, 3, 2, 5, 6, 4],
+      states: ["done", "done", "active", "done", "done"],
+      output: [1, 3, 5, 6, 2],
+      note: "Back at the root, move to its second child, 2. Record it. No children.",
+    },
+    {
+      nodes: [1, 3, 2, 5, 6, 4],
+      states: ["done", "done", "done", "done", "done", "match"],
+      output: [1, 3, 5, 6, 2, 4],
+      note: "Finally the root's third child, 4. Complete: [1, 3, 5, 6, 2, 4].",
+    },
+  ]}
+  caption="A subtree is fully explored before its sibling is touched — the signature of DFS."
+/>
+
+## Solution
+
+### Recursive
+
+The definition translated directly into code.
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from typing import Optional
+
+
+class Node:
+    def __init__(self, val: int = 0, children: Optional[list["Node"]] = None):
+        self.val = val
+        self.children = children if children is not None else []
+
+
+def preorder(root: Optional[Node]) -> list[int]:
+    """Node values in preorder: node first, then each child in order."""
+    result: list[int] = []
+
+    def visit(node: Optional[Node]) -> None:
+        if node is None:
+            return
+        result.append(node.val)      # record BEFORE descending
+        for child in node.children:
+            visit(child)
+
+    visit(root)
+    return result
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class Node {
+  val: number;
+  children: Node[];
+
+  constructor(val = 0, children: Node[] = []) {
+    this.val = val;
+    this.children = children;
+  }
+}
+
+function preorder(root: Node | null): number[] {
+  const result: number[] = [];
+
+  const visit = (node: Node | null): void => {
+    if (node === null) return;
+    result.push(node.val); // record BEFORE descending
+    for (const child of node.children) {
+      visit(child);
+    }
+  };
+
+  visit(root);
+  return result;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+### Iterative, with an explicit stack
+
+Recursion uses the call stack; the iterative version manages that stack itself. This matters for very deep trees, where recursion would overflow.
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def preorder_iterative(root: Optional[Node]) -> list[int]:
+    if root is None:
+        return []
+
+    result: list[int] = []
+    stack = [root]
+
+    while stack:
+        node = stack.pop()
+        result.append(node.val)
+
+        # Push children in REVERSE so the first child is popped first.
+        for child in reversed(node.children):
+            stack.append(child)
+
+    return result
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function preorderIterative(root: Node | null): number[] {
+  if (root === null) return [];
+
+  const result: number[] = [];
+  const stack: Node[] = [root];
+
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    result.push(node.val);
+
+    // Push children in REVERSE so the first child is popped first.
+    for (let i = node.children.length - 1; i >= 0; i--) {
+      stack.push(node.children[i]);
+    }
+  }
+
+  return result;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Why the children go on in reverse">
+A stack is last-in-first-out. Pushing children `[3, 2, 4]` in order makes `4` the top, so it would be visited first — the wrong order.
+
+Pushing them reversed as `4, 2, 3` puts `3` on top, so it comes out first. Forgetting this reversal is the standard bug in iterative preorder.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(h)" />
+
+- **Time** — every node is visited exactly once, and every child link is followed once.
+- **Space** — `O(h)` where `h` is the height, for either the call stack or the explicit stack. A balanced tree gives `O(log n)`; a degenerate chain gives `O(n)`.
+
+<Callout type="info" title="Recursive or iterative?">
+The recursive version is shorter and reads like the definition — prefer it unless the tree can be deep. Python's default recursion limit is 1000 frames, so a chain of 10,000 nodes raises `RecursionError`, and JavaScript engines throw `RangeError` at a similar depth. That is when the explicit stack earns its extra lines.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty tree (root is null)">
+Both versions return `[]` — the recursive one via its base case, the iterative one via the early guard.
+</Accordion>
+
+<Accordion title="A single node with no children">
+Its value is recorded and the children loop never runs. Returns a one-element list.
+</Accordion>
+
+<Accordion title="A node with many children">
+The loop handles any number. This is the only structural difference from binary-tree traversal, where `left` and `right` are named fields.
+</Accordion>
+
+<Accordion title="A very deep tree">
+The recursive version can blow the call stack. Use the iterative version, whose stack lives on the heap and is limited only by memory.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — BFS, the breadth-first counterpart
+- [Valid Parentheses](/docs/stacks-queues/valid-parentheses) — the stack that DFS relies on
+- [Find the Town Judge](/docs/graphs/find-the-town-judge) — reasoning about node relationships without traversal

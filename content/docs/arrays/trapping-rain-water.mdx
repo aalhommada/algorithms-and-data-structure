@@ -1,0 +1,309 @@
+---
+title: Trapping Rain Water
+description: Compute the water trapped between bars using two converging pointers and running maximums
+---
+
+<ProblemMeta
+  difficulty="hard"
+  pattern="Two Pointers / Prefix Maximum"
+  tags={["Array", "Two Pointers", "Dynamic Programming", "Stack"]}
+  leetcode="https://leetcode.com/problems/trapping-rain-water/"
+  problemNumber={42}
+/>
+
+## Problem Statement
+
+Given `n` non-negative integers representing an elevation map where the width of each bar is `1`, compute how much water can be trapped after it rains.
+
+```text
+Input:  height = [0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1]
+Output: 6
+
+Input:  height = [4, 2, 0, 3, 2, 5]
+Output: 9
+```
+
+## Intuition
+
+The instinct is to look for "valleys" and measure each one. That works, but valleys nest inside larger valleys and the bookkeeping gets ugly fast.
+
+<Callout type="info" title="The key insight — think per column, not per valley">
+Ask a much smaller question: **how much water sits on top of a single bar `i`?**
+
+Water above bar `i` is held in by the tallest wall somewhere to its left and the tallest wall somewhere to its right. The level it settles at is the *lower* of those two walls — water spills over the shorter side. Then subtract the bar itself, since it occupies space:
+
+`water[i] = min(maxLeft[i], maxRight[i]) - height[i]`
+
+Sum that over every bar and you have the answer. No valley detection at all.
+</Callout>
+
+Try it on `height = [0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1]` at index 5 (`height = 0`):
+
+- Tallest to the left: `2` (index 3)
+- Tallest to the right: `3` (index 7)
+- Water level: `min(2, 3) = 2`, so `water = 2 - 0 = 2` ✓
+
+### Real-world analogy
+
+A row of buildings of different heights after heavy rain. To know how deep the puddle on one rooftop is, you do not survey the whole skyline — you look for the tallest building on each side. The lower of those two is where the water overflows.
+
+## Three Solutions, One Formula
+
+Every approach below computes the same `min(maxLeft, maxRight) - height[i]`. They differ only in how they obtain the two maximums.
+
+### 1. Brute force — `O(n²)`
+
+For each bar, scan left for its maximum and right for its maximum. Correct, but it re-scans the same bars over and over.
+
+### 2. Precomputed arrays — `O(n)` time, `O(n)` space
+
+Two passes fill `maxLeft` and `maxRight`, then a third pass sums the water. This is the [Product of Array Except Self](/docs/arrays/product-of-array-except-self) pattern with `max` in place of `×`.
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def trap_prefix_arrays(height: list[int]) -> int:
+    if not height:
+        return 0
+
+    n = len(height)
+    max_left = [0] * n
+    max_right = [0] * n
+
+    max_left[0] = height[0]
+    for i in range(1, n):
+        max_left[i] = max(max_left[i - 1], height[i])
+
+    max_right[n - 1] = height[n - 1]
+    for i in range(n - 2, -1, -1):
+        max_right[i] = max(max_right[i + 1], height[i])
+
+    return sum(min(max_left[i], max_right[i]) - height[i] for i in range(n))
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function trapPrefixArrays(height: number[]): number {
+  const n = height.length;
+  if (n === 0) return 0;
+
+  const maxLeft = new Array<number>(n).fill(0);
+  const maxRight = new Array<number>(n).fill(0);
+
+  maxLeft[0] = height[0];
+  for (let i = 1; i < n; i++) {
+    maxLeft[i] = Math.max(maxLeft[i - 1], height[i]);
+  }
+
+  maxRight[n - 1] = height[n - 1];
+  for (let i = n - 2; i >= 0; i--) {
+    maxRight[i] = Math.max(maxRight[i + 1], height[i]);
+  }
+
+  let total = 0;
+  for (let i = 0; i < n; i++) {
+    total += Math.min(maxLeft[i], maxRight[i]) - height[i];
+  }
+  return total;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+### 3. Two pointers — `O(n)` time, `O(1)` space
+
+This is the version worth mastering, and its correctness argument is the heart of the problem.
+
+<Callout type="info" title="Why two pointers can replace both arrays">
+Keep `left` and `right` closing in from the ends, along with `maxLeft` (tallest seen from the left so far) and `maxRight` (tallest seen from the right so far).
+
+Suppose `maxLeft < maxRight`. Then for the bar at `left`, its true left maximum is exactly `maxLeft`, and its true right maximum — whatever it turns out to be — is **at least** `maxRight`, which is already bigger. So `min(trueLeft, trueRight) = maxLeft`, and the water above `left` is fully determined *right now*: `maxLeft - height[left]`.
+
+You never needed the exact right maximum. Knowing it is larger was enough.
+</Callout>
+
+That is why the algorithm always processes the side with the **smaller** running maximum: that is the side whose answer is already pinned down.
+
+### Watch it run
+
+<ArrayViz
+  title="height = [4, 2, 0, 3, 2, 5] — two pointers"
+  variant="bars"
+  intervalMs={1800}
+  frames={[
+    {
+      values: [4, 2, 0, 3, 2, 5],
+      overlay: [0, 0, 0, 0, 0, 0],
+      states: ["active", "idle", "idle", "idle", "idle", "active"],
+      pointers: [
+        { index: 0, label: "L" },
+        { index: 5, label: "R" },
+      ],
+      vars: { maxL: 4, maxR: 5, water: 0 },
+      note: "maxL = 4, maxR = 5. maxL is smaller, so the left side is decided. height[0] = 4 = maxL → no water here. Move L.",
+    },
+    {
+      values: [4, 2, 0, 3, 2, 5],
+      overlay: [0, 2, 0, 0, 0, 0],
+      states: ["done", "active", "idle", "idle", "idle", "idle"],
+      pointers: [
+        { index: 1, label: "L" },
+        { index: 5, label: "R" },
+      ],
+      vars: { maxL: 4, maxR: 5, water: 2 },
+      note: "height[1] = 2 < maxL = 4 → traps 4 - 2 = 2 units. Running total: 2.",
+    },
+    {
+      values: [4, 2, 0, 3, 2, 5],
+      overlay: [0, 2, 4, 0, 0, 0],
+      states: ["done", "done", "active", "idle", "idle", "idle"],
+      pointers: [
+        { index: 2, label: "L" },
+        { index: 5, label: "R" },
+      ],
+      vars: { maxL: 4, maxR: 5, water: 6 },
+      note: "height[2] = 0 → traps 4 - 0 = 4 units. Total: 6.",
+    },
+    {
+      values: [4, 2, 0, 3, 2, 5],
+      overlay: [0, 2, 4, 1, 0, 0],
+      states: ["done", "done", "done", "active", "idle", "idle"],
+      pointers: [
+        { index: 3, label: "L" },
+        { index: 5, label: "R" },
+      ],
+      vars: { maxL: 4, maxR: 5, water: 7 },
+      note: "height[3] = 3 → traps 4 - 3 = 1. Total: 7.",
+    },
+    {
+      values: [4, 2, 0, 3, 2, 5],
+      overlay: [0, 2, 4, 1, 2, 0],
+      states: ["done", "done", "done", "done", "active", "idle"],
+      pointers: [
+        { index: 4, label: "L" },
+        { index: 5, label: "R" },
+      ],
+      vars: { maxL: 4, maxR: 5, water: 9 },
+      note: "height[4] = 2 → traps 4 - 2 = 2. Total: 9.",
+    },
+    {
+      values: [4, 2, 0, 3, 2, 5],
+      overlay: [0, 2, 4, 1, 2, 0],
+      states: ["match", "match", "match", "match", "match", "match"],
+      vars: { water: 9 },
+      note: "The pointers meet. Answer: 9 units of water, computed in one pass with no extra arrays.",
+    },
+  ]}
+  caption="Blue is trapped water. Each column is settled the moment its shorter bounding wall is known."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def trap(height: list[int]) -> int:
+    """Total trapped water, in one pass with O(1) extra space."""
+    if not height:
+        return 0
+
+    left, right = 0, len(height) - 1
+    max_left, max_right = height[left], height[right]
+    total = 0
+
+    while left < right:
+        if max_left < max_right:
+            # The left column's water level is already fully determined.
+            left += 1
+            max_left = max(max_left, height[left])
+            total += max_left - height[left]
+        else:
+            right -= 1
+            max_right = max(max_right, height[right])
+            total += max_right - height[right]
+
+    return total
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function trap(height: number[]): number {
+  if (height.length === 0) return 0;
+
+  let left = 0;
+  let right = height.length - 1;
+  let maxLeft = height[left];
+  let maxRight = height[right];
+  let total = 0;
+
+  while (left < right) {
+    if (maxLeft < maxRight) {
+      // The left column's water level is already fully determined.
+      left++;
+      maxLeft = Math.max(maxLeft, height[left]);
+      total += maxLeft - height[left];
+    } else {
+      right--;
+      maxRight = Math.max(maxRight, height[right]);
+      total += maxRight - height[right];
+    }
+  }
+
+  return total;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why the running max is updated before adding water">
+After moving the pointer, `max_left = max(max_left, height[left])` guarantees `max_left >= height[left]`, so `max_left - height[left]` is never negative. A bar taller than everything before it simply contributes `0` — no special case needed.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+| Approach | Time | Space |
+|---|---|---|
+| Brute force | `O(n²)` | `O(1)` |
+| Prefix/suffix arrays | `O(n)` | `O(n)` |
+| **Two pointers** | **`O(n)`** | **`O(1)`** |
+| Monotonic stack | `O(n)` | `O(n)` |
+
+The two-pointer version is optimal on both axes. The stack solution is worth knowing because it generalises to problems like Largest Rectangle in Histogram, where the per-column trick does not apply.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Fewer than three bars">
+No water can be trapped — you need a wall on each side of a dip. With `left` and `right` adjacent, the loop runs at most once and adds `0`.
+</Accordion>
+
+<Accordion title="Monotonic heights, e.g. [1, 2, 3, 4] or [4, 3, 2, 1]">
+Water needs a dip between two higher bars. On a staircase, every bar is its own running maximum, so every contribution is `0`.
+</Accordion>
+
+<Accordion title="Flat terrain, e.g. [3, 3, 3]">
+`max - height` is `0` everywhere. No water.
+</Accordion>
+
+<Accordion title="Ties between maxLeft and maxRight">
+The `else` branch handles the tie by moving `right`. Either side is safe when the maximums are equal, because `min(maxLeft, maxRight)` equals both — the same reasoning as in [Container With Most Water](/docs/arrays/container-with-most-water).
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Container With Most Water](/docs/arrays/container-with-most-water) — the same converging pointers, maximising one area instead of summing many
+- [Product of Array Except Self](/docs/arrays/product-of-array-except-self) — prefix and suffix passes over the same array
+- [Min Stack](/docs/stacks-queues/min-stack) — carrying a running extreme alongside the data

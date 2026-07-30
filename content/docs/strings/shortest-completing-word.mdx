@@ -1,0 +1,256 @@
+---
+title: Shortest Completing Word
+description: Find the shortest word covering a licence plate's letters, using character counts rather than sets
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Hash Map Counting"
+  tags={["Array", "Hash Table", "String"]}
+  leetcode="https://leetcode.com/problems/shortest-completing-word/"
+  problemNumber={748}
+/>
+
+## Problem Statement
+
+Given a string `licensePlate` and an array of `words`, find the **shortest completing word**.
+
+A word is *completing* if it contains **all the letters** of the licence plate, respecting multiplicity. Digits and spaces in the plate are ignored, and comparison is case-insensitive. If several words tie on length, return the one that appears **first** in the array.
+
+```text
+Input:  licensePlate = "1s3 PSt", words = ["step", "steps", "stripe", "stepple"]
+Output: "steps"
+Why:    the plate needs s, p, s, t — that is TWO s's
+        "step"   has only one s  → not completing
+        "steps"  has two s's ✓ and is the shortest such word
+
+Input:  licensePlate = "1s3 456", words = ["looks", "pest", "stew", "show"]
+Output: "pest"
+```
+
+## Intuition
+
+<Callout type="warn" title="Multiplicity is the whole difficulty">
+The plate `"1s3 PSt"` contains `s`, `P`, `S`, `t` — after lowercasing, that is **two** `s` characters. A completing word needs at least two `s` characters too.
+
+Using a **set** of required letters would accept `"step"`, which has only one `s`. Sets discard multiplicity. This problem needs **counts**.
+</Callout>
+
+<Callout type="info" title="The key insight">
+Reduce the plate to a count map of its letters, ignoring digits and spaces. Then a word completes the plate when, for **every** required letter, the word's count is at least the plate's count.
+
+That is a *multiset containment* test, and it is the whole problem.
+</Callout>
+
+Note the asymmetry: the word may contain extra letters and extra copies. Only the required letters impose a floor.
+
+### Watch it run
+
+<HashMapViz
+  title='licensePlate = "1s3 PSt" → needs {s: 2, p: 1, t: 1}'
+  label="letter → required"
+  intervalMs={1600}
+  frames={[
+    {
+      scan: { values: ["1", "s", "3", " ", "P", "S", "t"], cursor: 6 },
+      entries: [
+        { key: "s", value: 2 },
+        { key: "p", value: 1 },
+        { key: "t", value: 1 },
+      ],
+      note: "Digits and spaces are skipped; letters are lowercased and counted. Note s appears twice.",
+    },
+    {
+      scan: { values: ["step", "steps", "stripe", "stepple"], cursor: 0 },
+      entries: [
+        { key: "s", value: "need 2, has 1", state: "discard" },
+        { key: "p", value: "need 1, has 1" },
+        { key: "t", value: "need 1, has 1" },
+      ],
+      note: '"step" has only one s → rejected. A set-based solution would have wrongly accepted it.',
+    },
+    {
+      scan: { values: ["step", "steps", "stripe", "stepple"], cursor: 1 },
+      entries: [
+        { key: "s", value: "need 2, has 2", state: "match" },
+        { key: "p", value: "need 1, has 1", state: "match" },
+        { key: "t", value: "need 1, has 1", state: "match" },
+      ],
+      vars: { best: '"steps" (5)' },
+      note: '"steps" satisfies every requirement. Length 5 — the best so far.',
+    },
+    {
+      scan: { values: ["step", "steps", "stripe", "stepple"], cursor: 3 },
+      entries: [
+        { key: "s", value: "need 2, has 1", state: "discard" },
+        { key: "p", value: "need 1, has 2" },
+        { key: "t", value: "need 1, has 1" },
+      ],
+      vars: { best: '"steps" (5)', answer: "steps" },
+      note: '"stripe" has one s (rejected) and "stepple" also has one s. Answer: "steps".',
+    },
+  ]}
+  caption="Counts, not sets — extra letters are fine, missing copies are not."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Count the plate's letters
+
+Lowercase, skip anything that is not a letter.
+</Step>
+
+<Step>
+### For each word, count its letters
+</Step>
+
+<Step>
+### Test containment
+
+Every required letter must appear at least as many times in the word.
+</Step>
+
+<Step>
+### Keep the shortest passing word
+
+Use a strict `<` comparison so the first of several equal-length matches wins.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import Counter
+
+
+def shortest_completing_word(license_plate: str, words: list[str]) -> str:
+    """Shortest word containing all the plate's letters, with multiplicity."""
+    required = Counter(char.lower() for char in license_plate if char.isalpha())
+
+    best: str | None = None
+
+    for word in words:
+        counts = Counter(word.lower())
+
+        # Every required letter must appear at least `need` times.
+        if all(counts[letter] >= need for letter, need in required.items()):
+            # Strict < keeps the FIRST word among equal-length matches.
+            if best is None or len(word) < len(best):
+                best = word
+
+    return best or ""
+```
+
+Python's `Counter` supports the containment test directly:
+
+```python
+def shortest_completing_word_subtract(
+    license_plate: str, words: list[str]
+) -> str:
+    required = Counter(c.lower() for c in license_plate if c.isalpha())
+
+    completing = [w for w in words if not required - Counter(w.lower())]
+    return min(completing, key=len) if completing else ""
+```
+
+`required - Counter(word)` keeps only the shortfalls; an empty result means the word covers everything.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function shortestCompletingWord(licensePlate: string, words: string[]): string {
+  const countLetters = (text: string): Map<string, number> => {
+    const counts = new Map<string, number>();
+    for (const char of text.toLowerCase()) {
+      if (char >= 'a' && char <= 'z') {
+        counts.set(char, (counts.get(char) ?? 0) + 1);
+      }
+    }
+    return counts;
+  };
+
+  const required = countLetters(licensePlate);
+
+  let best: string | null = null;
+
+  for (const word of words) {
+    const counts = countLetters(word);
+
+    // Every required letter must appear at least `need` times.
+    let completing = true;
+    for (const [letter, need] of required) {
+      if ((counts.get(letter) ?? 0) < need) {
+        completing = false;
+        break;
+      }
+    }
+
+    // Strict < keeps the FIRST word among equal-length matches.
+    if (completing && (best === null || word.length < best.length)) {
+      best = word;
+    }
+  }
+
+  return best ?? '';
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Use `<`, never `<=`, when tracking the shortest">
+`<=` would replace an earlier match with a later one of the same length, breaking the "first in the array wins" tie-break rule. This is a one-character bug that only shows up on tied inputs.
+</Callout>
+
+<Callout type="info" title="Why `counts[letter]` is safe in Python">
+Indexing a missing key on a `Counter` returns `0` rather than raising — which is exactly the behaviour needed for "the word has none of this letter". A plain `dict` would raise `KeyError`, so use `.get(letter, 0)` there. TypeScript's `Map` needs the explicit `?? 0`.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n × L)" space="O(1)" />
+
+Where `n` is the number of words and `L` is the average word length.
+
+- **Time** — counting the plate is `O(|plate|)`, and each word is counted and checked in `O(L)`.
+- **Space** — every count map is bounded by the 26 letters, so it does not grow with input size.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Repeated letters in the plate, e.g. '1s3 PSt'">
+The defining case. Two `s` characters mean a word needs two. Counting handles it; sets do not.
+</Accordion>
+
+<Accordion title="Digits and spaces in the plate">
+Filtered out by the `isalpha` / range check before counting.
+</Accordion>
+
+<Accordion title="Ties in length">
+The strict `<` comparison preserves the first occurrence, as the problem requires.
+</Accordion>
+
+<Accordion title="Mixed case in either the plate or the words">
+Both are lowercased before counting, so `'P'` and `'p'` are the same requirement.
+</Accordion>
+
+<Accordion title="No completing word exists">
+LeetCode guarantees one exists. The code returns `""` defensively rather than crashing.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Valid Anagram](/docs/strings/valid-anagram) — exact multiset equality rather than containment
+- [Keyboard Row](/docs/strings/keyboard-row) — filtering words by a character condition
+- [Longest Palindrome](/docs/strings/longest-palindrome) — another problem driven purely by character counts

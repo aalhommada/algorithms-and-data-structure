@@ -1,0 +1,110 @@
+---
+title: Patterns
+description: A cross-cutting map of the techniques in this guide, and how to recognise which one a problem wants
+---
+
+Most interview problems are variations on a small number of techniques. Learning to **recognise the pattern** is worth more than memorising any individual solution — and it is what turns an unfamiliar problem into a familiar one.
+
+This page maps every technique in the guide to the problems that teach it.
+
+## The Recognition Table
+
+Start here. The wording of a problem usually points straight at the technique.
+
+| The problem says… | Reach for | Start with |
+|---|---|---|
+| "have I seen this / find a pair" | Hash map or set | [Two Sum](/docs/arrays/two-sum) |
+| "the array is sorted" | Two pointers or binary search | [Merge Sorted Array](/docs/arrays/merge-sorted-array) |
+| "subarray of size `k`" | Fixed sliding window | [Maximum Average Subarray I](/docs/arrays/maximum-average-subarray-i) |
+| "sum over a range" | Prefix sums | [Running Sum of 1d Array](/docs/arrays/running-sum-of-1d-array) |
+| "in place, `O(1)` space" | Read and write pointers | [Remove Duplicates II](/docs/arrays/remove-duplicates-from-sorted-array-ii) |
+| "matching / nesting / undo" | Stack | [Valid Parentheses](/docs/stacks-queues/valid-parentheses) |
+| "level by level / fewest steps" | BFS with a queue | [Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) |
+| "explore every path / subtree" | DFS with recursion | [N-ary Preorder](/docs/trees/n-ary-tree-preorder-traversal) |
+| "how many ways / min cost" | Dynamic programming | [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) |
+| "can I reach / is it possible" | Greedy, if provable | [Jump Game](/docs/greedy/jump-game) |
+| "find the first X where…" | Binary search on a boundary | [First Bad Version](/docs/searching/first-bad-version) |
+| "`k` most frequent / largest" | Counting + bucket or heap | [Top K Frequent](/docs/arrays/top-k-frequent-elements) |
+| "group things that are equivalent" | Canonical key + hash map | [Group Anagrams](/docs/arrays/group-anagrams) |
+| "support these ops in `O(1)`" | Combine structures | [Insert Delete GetRandom](/docs/design/insert-delete-getrandom-o1) |
+
+## The Ten Patterns
+
+### 1. Hash Map / Set — trade memory for time
+
+Turn an `O(n)` search into an `O(1)` lookup. The single highest-leverage move in this guide.
+
+[Two Sum](/docs/arrays/two-sum) · [Contains Duplicate](/docs/arrays/contains-duplicate) · [Group Anagrams](/docs/arrays/group-anagrams) · [Valid Anagram](/docs/strings/valid-anagram) · [Minimum Index Sum](/docs/arrays/minimum-index-sum-of-two-lists) · [Unique Email Addresses](/docs/strings/unique-email-addresses)
+
+### 2. Two Pointers — converging
+
+Start at both ends and move inward under a rule that provably discards possibilities.
+
+[Container With Most Water](/docs/arrays/container-with-most-water) · [Valid Palindrome](/docs/strings/valid-palindrome) · [Trapping Rain Water](/docs/arrays/trapping-rain-water)
+
+### 3. Two Pointers — same direction
+
+Both pointers move forward, at different rates or under different conditions.
+
+[Is Subsequence](/docs/strings/is-subsequence) · [Remove Duplicates II](/docs/arrays/remove-duplicates-from-sorted-array-ii) · [Merge Sorted Array](/docs/arrays/merge-sorted-array)
+
+### 4. Fast & Slow Pointers
+
+One pointer moves twice as fast. Finds middles, detects cycles, locates offsets.
+
+[Middle of the Linked List](/docs/linked-lists/middle-of-the-linked-list) · [Linked List Cycle II](/docs/linked-lists/linked-list-cycle-ii) · [Intersection of Two Lists](/docs/linked-lists/intersection-of-two-linked-lists)
+
+### 5. Sliding Window
+
+A range that slides or grows across the data. Fixed size for "subarray of size `k`"; variable size for "longest such that…".
+
+[Maximum Average Subarray I](/docs/arrays/maximum-average-subarray-i)
+
+### 6. Prefix / Suffix Precomputation
+
+One pass forward, one pass back, then combine. Turns range queries into `O(1)` arithmetic.
+
+[Running Sum](/docs/arrays/running-sum-of-1d-array) · [Find Pivot Index](/docs/arrays/find-pivot-index) · [Product of Array Except Self](/docs/arrays/product-of-array-except-self) · [Candy](/docs/greedy/candy) · [Trapping Rain Water](/docs/arrays/trapping-rain-water)
+
+### 7. Stack
+
+Last-in-first-out. Nesting, undo, deferred operands, depth-first traversal.
+
+[Valid Parentheses](/docs/stacks-queues/valid-parentheses) · [Min Stack](/docs/stacks-queues/min-stack) · [Evaluate RPN](/docs/stacks-queues/evaluate-reverse-polish-notation) · [Simplify Path](/docs/stacks-queues/simplify-path)
+
+### 8. BFS / DFS
+
+Queue for breadth, stack for depth. The choice determines both the visit order and the space cost.
+
+[Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) · [N-ary Preorder](/docs/trees/n-ary-tree-preorder-traversal) · [Jump Game II](/docs/greedy/jump-game-ii)
+
+### 9. Binary Search
+
+Halve the search space. Works for exact matches, for boundaries, and even when there is no array.
+
+[Binary Search](/docs/searching/binary-search) · [Search Insert Position](/docs/searching/search-insert-position) · [First Bad Version](/docs/searching/first-bad-version)
+
+### 10. Greedy vs. Dynamic Programming
+
+Greedy when the local choice is provably safe; DP when it is not.
+
+[Jump Game](/docs/greedy/jump-game) · [Gas Station](/docs/greedy/gas-station) · [Candy](/docs/greedy/candy) · [Integer to Roman](/docs/strings/integer-to-roman) · [Climbing Stairs](/docs/dynamic-programming/climbing-stairs)
+
+## Complexity Cheat Sheet
+
+| Notation | Meaning | Example |
+|---|---|---|
+| `O(1)` | constant | hash map lookup |
+| `O(log n)` | halving each step | binary search |
+| `O(n)` | one pass | a single loop |
+| `O(n log n)` | sorting | comparison sorts |
+| `O(n²)` | nested loops | brute-force pairs |
+| `O(2ⁿ)` | branching recursion | unmemoized subsets |
+
+<Callout type="info" title="Constraints tell you the target complexity">
+`n ≤ 10⁵` rules out `O(n²)` — that would be 10 billion operations. It points at `O(n)` or `O(n log n)`.
+
+`n ≤ 20` is small enough for exponential, which usually means the intended solution is backtracking or bitmasking.
+
+Reading the constraints first often tells you which technique the author had in mind.
+</Callout>

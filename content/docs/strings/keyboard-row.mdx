@@ -1,0 +1,225 @@
+---
+title: Keyboard Row
+description: Filter words typeable on a single keyboard row by mapping each letter to its row number
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Hash Map Lookup"
+  tags={["Array", "Hash Table", "String"]}
+  leetcode="https://leetcode.com/problems/keyboard-row/"
+  problemNumber={500}
+/>
+
+## Problem Statement
+
+Given an array of words, return those that can be typed using letters from **only one row** of an American QWERTY keyboard.
+
+```text
+Row 1: q w e r t y u i o p
+Row 2: a s d f g h j k l
+Row 3: z x c v b n m
+
+Input:  ["Hello", "Alaska", "Dad", "Peace"]
+Output: ["Alaska", "Dad"]
+Why:    "Alaska" uses only a, l, s, k → all row 2
+        "Dad"    uses only d, a       → all row 2
+        "Hello"  uses h (row 2) and e (row 1) → mixed
+```
+
+## Intuition
+
+The naive reading suggests checking each word against each of three sets and seeing whether any set contains everything. That works, but there is a cleaner formulation.
+
+<Callout type="info" title="The key insight">
+Build one map from **letter to row number**, then a word is valid exactly when all its letters map to the **same** row number.
+
+Look up the row of the first letter, then verify every other letter agrees. One pass per word, no set operations.
+</Callout>
+
+Case is irrelevant to which key you press, so lowercase everything before looking up. That is the detail the `"Dad"` example is there to test.
+
+### Real-world analogy
+
+Checking whether a shopping list can be filled from a single aisle. You do not compare the list against every aisle's inventory — you look up the aisle number of the first item, then confirm each remaining item has that same number.
+
+### Watch it run
+
+<HashMapViz
+  title='Checking "Dad" → all letters must share a row'
+  label="letter → row"
+  intervalMs={1500}
+  frames={[
+    {
+      scan: { values: ["d", "a", "d"], cursor: 0 },
+      entries: [
+        { key: "d", value: 2, state: "active" },
+        { key: "a", value: 2 },
+      ],
+      vars: { row: 2 },
+      note: "Lowercase 'D' to 'd'. Its row is 2 — that becomes the required row for the whole word.",
+    },
+    {
+      scan: { values: ["d", "a", "d"], cursor: 1 },
+      entries: [
+        { key: "d", value: 2 },
+        { key: "a", value: 2, state: "match" },
+      ],
+      vars: { row: 2 },
+      note: "'a' is also row 2 — still consistent.",
+    },
+    {
+      scan: { values: ["d", "a", "d"], cursor: 2 },
+      entries: [
+        { key: "d", value: 2, state: "match" },
+        { key: "a", value: 2, state: "match" },
+      ],
+      vars: { row: 2, result: "keep" },
+      note: '"Dad" is typeable on one row — keep it.',
+    },
+    {
+      scan: { values: ["h", "e", "l", "l", "o"], cursor: 1 },
+      entries: [
+        { key: "h", value: 2, state: "compare" },
+        { key: "e", value: 1, state: "discard" },
+      ],
+      vars: { row: 2, found: 1, result: "reject" },
+      note: '"Hello": h is row 2 but e is row 1 → reject on the second letter, no need to check the rest.',
+    },
+  ]}
+  caption="One map lookup per character, with an early exit on the first disagreement."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Build the letter-to-row map once
+
+Iterate the three row strings, recording each letter's row index.
+</Step>
+
+<Step>
+### For each word, take the row of its first letter
+</Step>
+
+<Step>
+### Verify every remaining letter has the same row
+
+Lowercase before every lookup.
+</Step>
+
+<Step>
+### Collect the words that pass
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def find_words(words: list[str]) -> list[str]:
+    """Words typeable using letters from a single keyboard row."""
+    rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
+
+    # letter -> which row it lives on
+    row_of = {letter: index for index, row in enumerate(rows) for letter in row}
+
+    result: list[str] = []
+    for word in words:
+        lowered = word.lower()
+        first_row = row_of[lowered[0]]
+
+        if all(row_of[char] == first_row for char in lowered):
+            result.append(word)   # append the ORIGINAL, preserving its case
+
+    return result
+```
+
+A set-based alternative, which reads well and is equally correct:
+
+```python
+def find_words_sets(words: list[str]) -> list[str]:
+    rows = [set("qwertyuiop"), set("asdfghjkl"), set("zxcvbnm")]
+
+    return [
+        word
+        for word in words
+        if any(set(word.lower()) <= row for row in rows)
+    ]
+```
+
+`<=` on sets is the subset test — "every letter of the word lives in this row".
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function findWords(words: string[]): string[] {
+  const rows = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+
+  // letter -> which row it lives on
+  const rowOf = new Map<string, number>();
+  rows.forEach((row, index) => {
+    for (const letter of row) rowOf.set(letter, index);
+  });
+
+  return words.filter((word) => {
+    const lowered = word.toLowerCase();
+    const firstRow = rowOf.get(lowered[0]);
+    return [...lowered].every((char) => rowOf.get(char) === firstRow);
+  });
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Return the original words, not the lowercased ones">
+`"Dad"` must come back as `"Dad"`, not `"dad"`. Lowercasing is only for the lookup — append the original string to the result.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n × L)" space="O(1)" />
+
+Where `n` is the number of words and `L` is the average word length.
+
+- **Time** — building the map touches 26 letters (constant), and each word is scanned once with an early exit on the first mismatch.
+- **Space** — the map holds exactly 26 entries regardless of input, so it does not grow — effectively `O(1)`. The output list is the only input-dependent allocation.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A single-letter word">
+Its row matches itself trivially, so it is always kept.
+</Accordion>
+
+<Accordion title="Mixed case, e.g. 'Alaska'">
+Lowercasing before lookup handles it. `'A'` and `'a'` are the same physical key.
+</Accordion>
+
+<Accordion title="Repeated letters, e.g. 'Dad'">
+Repeats are harmless — each occurrence looks up the same row. No de-duplication is needed.
+</Accordion>
+
+<Accordion title="Empty word in the input">
+`lowered[0]` would throw on an empty string. LeetCode guarantees words have at least one character; defensively you would return `true` (vacuously typeable) or skip it.
+</Accordion>
+
+<Accordion title="Why lowercase rather than uppercase the rows?">
+Either works, as long as it is consistent. Lowercase is conventional because the row strings are naturally written that way.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Shortest Completing Word](/docs/strings/shortest-completing-word) — filtering words by a character-based condition
+- [Unique Email Addresses](/docs/strings/unique-email-addresses) — normalising strings before comparing them
+- [Valid Anagram](/docs/strings/valid-anagram) — character-level string testing

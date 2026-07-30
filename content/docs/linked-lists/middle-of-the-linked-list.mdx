@@ -1,0 +1,270 @@
+---
+title: Middle of the Linked List
+description: Find the middle node in a single pass using fast and slow pointers
+---
+
+<ProblemMeta
+  difficulty="easy"
+  pattern="Fast & Slow Pointers"
+  tags={["Linked List", "Two Pointers"]}
+  leetcode="https://leetcode.com/problems/middle-of-the-linked-list/"
+  problemNumber={876}
+/>
+
+## Problem Statement
+
+Given the head of a singly linked list, return the **middle node**. If there are two middle nodes, return the **second** one.
+
+```text
+Input:  1 → 2 → 3 → 4 → 5
+Output: node 3  (and everything after it: 3 → 4 → 5)
+
+Input:  1 → 2 → 3 → 4 → 5 → 6
+Output: node 4  (the second of the two middles)
+```
+
+## Intuition
+
+With an array you would compute `n / 2` and index straight to it. A linked list has no indexing — the only way to reach node `k` is to follow `k` pointers from the head.
+
+The obvious fix is two passes: count the nodes, then walk halfway. That works and is `O(n)`. But there is a one-pass method that generalises to a whole family of harder problems.
+
+<Callout type="info" title="The key insight">
+Run two pointers from the head at different speeds:
+
+- **`slow`** advances **one** node per step
+- **`fast`** advances **two** nodes per step
+
+When `fast` reaches the end, it has covered the whole list while `slow` has covered exactly half of it. So `slow` is standing on the middle. No counting, no second pass.
+</Callout>
+
+The arithmetic is simple: after `k` steps, `slow` is at index `k` and `fast` is at index `2k`. `fast` finishes when `2k ≈ n`, which is precisely when `k ≈ n / 2`.
+
+### Real-world analogy
+
+Two runners on the same track, one at double the pace. The moment the faster runner crosses the finish line, the slower one is exactly at the halfway marker — without anyone measuring the track.
+
+### Watch it run
+
+<LinkedListViz
+  title="1 → 2 → 3 → 4 → 5 (odd length)"
+  intervalMs={1700}
+  frames={[
+    {
+      nodes: [
+        { value: 1, state: "active", pointers: ["slow", "fast"] },
+        { value: 2 },
+        { value: 3 },
+        { value: 4 },
+        { value: 5 },
+      ],
+      note: "Both start at the head.",
+    },
+    {
+      nodes: [
+        { value: 1, state: "done" },
+        { value: 2, state: "active", pointers: ["slow"] },
+        { value: 3, state: "active", pointers: ["fast"] },
+        { value: 4 },
+        { value: 5 },
+      ],
+      note: "slow moves 1 step to node 2; fast moves 2 steps to node 3.",
+    },
+    {
+      nodes: [
+        { value: 1, state: "done" },
+        { value: 2, state: "done" },
+        { value: 3, state: "match", pointers: ["slow"] },
+        { value: 4, state: "done" },
+        { value: 5, state: "active", pointers: ["fast"] },
+      ],
+      note: "slow is at node 3; fast is at node 5, the last node. fast.next is null → stop.",
+    },
+    {
+      nodes: [
+        { value: 1, state: "discard" },
+        { value: 2, state: "discard" },
+        { value: 3, state: "match", pointers: ["answer"] },
+        { value: 4, state: "match" },
+        { value: 5, state: "match" },
+      ],
+      note: "Return slow — node 3, with 3 → 4 → 5 hanging off it. Exactly one pass through the list.",
+    },
+  ]}
+  caption="fast covers twice the ground, so slow lands on the halfway point."
+/>
+
+<LinkedListViz
+  title="1 → 2 → 3 → 4 → 5 → 6 (even length — the second middle wins)"
+  intervalMs={1700}
+  frames={[
+    {
+      nodes: [
+        { value: 1, state: "active", pointers: ["slow", "fast"] },
+        { value: 2 },
+        { value: 3 },
+        { value: 4 },
+        { value: 5 },
+        { value: 6 },
+      ],
+      note: "Both start at the head.",
+    },
+    {
+      nodes: [
+        { value: 1, state: "done" },
+        { value: 2, state: "active", pointers: ["slow"] },
+        { value: 3, state: "active", pointers: ["fast"] },
+        { value: 4 },
+        { value: 5 },
+        { value: 6 },
+      ],
+      note: "slow → node 2, fast → node 3.",
+    },
+    {
+      nodes: [
+        { value: 1, state: "done" },
+        { value: 2, state: "done" },
+        { value: 3, state: "active", pointers: ["slow"] },
+        { value: 4, state: "done" },
+        { value: 5, state: "active", pointers: ["fast"] },
+        { value: 6 },
+      ],
+      note: "slow → node 3, fast → node 5. fast.next is node 6, so keep going.",
+    },
+    {
+      nodes: [
+        { value: 1, state: "discard" },
+        { value: 2, state: "discard" },
+        { value: 3, state: "discard" },
+        { value: 4, state: "match", pointers: ["slow"] },
+        { value: 5, state: "match" },
+        { value: 6, state: "match" },
+      ],
+      note: "slow → node 4, fast → null. Return node 4 — the SECOND of the two middles, as required.",
+    },
+  ]}
+  caption="Starting both pointers at the head is what makes the even case land on the second middle."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start both pointers at `head`
+</Step>
+
+<Step>
+### Loop while `fast` and `fast.next` both exist
+
+Both checks are needed. `fast` might be `null` (even-length list), or `fast.next` might be `null` (odd-length list). Reading `fast.next.next` without them crashes.
+</Step>
+
+<Step>
+### Advance `slow` by one and `fast` by two
+</Step>
+
+<Step>
+### Return `slow`
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Order the null checks correctly">
+`while fast and fast.next` — never `while fast.next and fast`. Both languages short-circuit left to right, so checking `fast` first guarantees you never dereference `null`.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from typing import Optional
+
+
+class ListNode:
+    def __init__(self, val: int = 0, next: Optional["ListNode"] = None):
+        self.val = val
+        self.next = next
+
+
+def middle_node(head: Optional[ListNode]) -> Optional[ListNode]:
+    """Return the middle node; on a tie, the second middle."""
+    slow = fast = head
+
+    while fast and fast.next:
+        slow = slow.next        # one step
+        fast = fast.next.next   # two steps
+
+    return slow
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class ListNode {
+  val: number;
+  next: ListNode | null;
+
+  constructor(val = 0, next: ListNode | null = null) {
+    this.val = val;
+    this.next = next;
+  }
+}
+
+function middleNode(head: ListNode | null): ListNode | null {
+  let slow = head;
+  let fast = head;
+
+  while (fast !== null && fast.next !== null) {
+    slow = slow!.next; // one step
+    fast = fast.next.next; // two steps
+  }
+
+  return slow;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Getting the FIRST middle instead">
+Some problems want the first of the two middles. The fix is to start `fast` one node ahead — `fast = head.next` — or to loop while `fast.next and fast.next.next`. Knowing which variant you need, and that a one-line change switches between them, is the useful takeaway.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — `fast` traverses the list once; `slow` covers half. Roughly `1.5n` pointer hops, which is `O(n)`.
+- **Space** — two references, regardless of list length. The count-then-walk alternative is also `O(n)` time and `O(1)` space, but makes two passes — which matters when the data is streamed and can only be read once.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty list">
+`slow` and `fast` are both `null`, the loop condition fails immediately, and `null` is returned.
+</Accordion>
+
+<Accordion title="Single node">
+`fast.next` is `null`, so the loop never runs and the head is returned — correctly the middle of a one-node list.
+</Accordion>
+
+<Accordion title="Two nodes, e.g. 1 → 2">
+One iteration moves `slow` to node 2 and `fast` to `null`. Returns node 2 — the second middle, as specified.
+</Accordion>
+
+<Accordion title="Why does this pattern matter beyond this problem?">
+Fast and slow pointers are the core of cycle detection ([Linked List Cycle II](/docs/linked-lists/linked-list-cycle-ii)), palindrome checking on lists, and finding the `n`-th node from the end. Locating the middle in one pass is the gentlest introduction to the technique.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Linked List Cycle II](/docs/linked-lists/linked-list-cycle-ii) — the same two pointers, used to detect and locate a loop
+- [Intersection of Two Linked Lists](/docs/linked-lists/intersection-of-two-linked-lists) — two pointers over two different lists
+- [Reverse Linked List](/docs/linked-lists/reverse-linked-list) — the other essential linked-list building block

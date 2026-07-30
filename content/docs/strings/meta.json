@@ -1,0 +1,27 @@
+{
+  "title": "Strings",
+  "icon": "Type",
+  "pages": [
+    "index",
+    "---Easy---",
+    "valid-palindrome",
+    "valid-anagram",
+    "longest-common-prefix",
+    "length-of-last-word",
+    "roman-to-integer",
+    "is-subsequence",
+    "isomorphic-strings",
+    "longest-palindrome",
+    "find-the-index-of-the-first-occurrence-in-a-string",
+    "keyboard-row",
+    "shortest-completing-word",
+    "unique-email-addresses",
+    "palindrome-number",
+    "---Medium---",
+    "integer-to-roman",
+    "reverse-words-in-a-string",
+    "zigzag-conversion",
+    "---Hard---",
+    "text-justification"
+  ]
+}

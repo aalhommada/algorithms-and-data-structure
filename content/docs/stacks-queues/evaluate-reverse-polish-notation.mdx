@@ -1,0 +1,240 @@
+---
+title: Evaluate Reverse Polish Notation
+description: Evaluate postfix expressions with a stack, and get integer division truncation right
+---
+
+<ProblemMeta
+  difficulty="medium"
+  pattern="Stack"
+  tags={["Array", "Math", "Stack"]}
+  leetcode="https://leetcode.com/problems/evaluate-reverse-polish-notation/"
+  problemNumber={150}
+/>
+
+## Problem Statement
+
+Evaluate an arithmetic expression in **Reverse Polish Notation** (postfix), given as an array of tokens. Valid operators are `+`, `-`, `*` and `/`. Division between two integers **truncates toward zero**.
+
+```text
+Input:  ["2", "1", "+", "3", "*"]
+Output: 9
+Why:    (2 + 1) × 3
+
+Input:  ["4", "13", "5", "/", "+"]
+Output: 6
+Why:    4 + (13 / 5) = 4 + 2
+
+Input:  ["10", "6", "9", "3", "+", "-11", "*", "/", "*", "17", "+", "5", "+"]
+Output: 22
+```
+
+## Intuition
+
+In ordinary infix notation, `2 + 1 * 3` needs precedence rules and parentheses to be unambiguous. Postfix notation removes both: the operator comes *after* its operands, and the order of tokens fully determines the order of evaluation.
+
+<Callout type="info" title="The key insight">
+Read the tokens left to right:
+
+- **A number** → push it.
+- **An operator** → pop the **two** most recent values, apply the operator, push the result back.
+
+Those two most recent values are exactly the operator's operands. That is last-in-first-out, so a stack does all the bookkeeping.
+</Callout>
+
+<Callout type="warn" title="Operand order matters for `-` and `/`">
+The stack pops in reverse. The **first** pop is the **right** operand.
+
+```python
+right = stack.pop()   # popped first → right-hand side
+left = stack.pop()    # popped second → left-hand side
+result = left - right
+```
+
+Getting this backwards gives the correct answer for `+` and `*` and the wrong sign or ratio for `-` and `/` — a bug that passes half the test cases.
+</Callout>
+
+### Watch it run
+
+<StackViz
+  title='Evaluating ["4", "13", "5", "/", "+"]'
+  intervalMs={1600}
+  frames={[
+    {
+      input: { values: ["4", "13", "5", "/", "+"], cursor: 0 },
+      items: [{ value: 4, state: "active" }],
+      note: "'4' is a number → push it.",
+    },
+    {
+      input: { values: ["4", "13", "5", "/", "+"], cursor: 1 },
+      items: [{ value: 4 }, { value: 13, state: "active" }],
+      note: "'13' → push.",
+    },
+    {
+      input: { values: ["4", "13", "5", "/", "+"], cursor: 2 },
+      items: [{ value: 4 }, { value: 13 }, { value: 5, state: "active" }],
+      note: "'5' → push.",
+    },
+    {
+      input: { values: ["4", "13", "5", "/", "+"], cursor: 3 },
+      items: [{ value: 4 }, { value: 13, state: "compare" }, { value: 5, state: "compare" }],
+      vars: { right: 5, left: 13 },
+      note: "'/' → pop 5 (right), then pop 13 (left). Compute 13 / 5.",
+    },
+    {
+      input: { values: ["4", "13", "5", "/", "+"], cursor: 3 },
+      items: [{ value: 4 }, { value: 2, state: "active" }],
+      note: "13 / 5 truncates toward zero → 2. Push the result back.",
+    },
+    {
+      input: { values: ["4", "13", "5", "/", "+"], cursor: 4 },
+      items: [{ value: 6, state: "match" }],
+      vars: { answer: 6 },
+      note: "'+' → pop 2 and 4, push 4 + 2 = 6. One value left on the stack — that is the answer.",
+    },
+  ]}
+  caption="Each operator collapses two stack entries into one."
+/>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Create an empty stack of numbers
+</Step>
+
+<Step>
+### For each token
+
+If it is an operator, pop two values (right first, then left), apply, push the result. Otherwise parse it as an integer and push.
+</Step>
+
+<Step>
+### Return the single remaining value
+
+A valid RPN expression always leaves exactly one value on the stack.
+</Step>
+
+</Steps>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def eval_rpn(tokens: list[str]) -> int:
+    """Evaluate a postfix expression. Division truncates toward zero."""
+    stack: list[int] = []
+
+    for token in tokens:
+        if token in {"+", "-", "*", "/"}:
+            right = stack.pop()   # popped FIRST → right operand
+            left = stack.pop()    # popped SECOND → left operand
+
+            if token == "+":
+                stack.append(left + right)
+            elif token == "-":
+                stack.append(left - right)
+            elif token == "*":
+                stack.append(left * right)
+            else:
+                # int() truncates toward zero; // floors toward -infinity.
+                stack.append(int(left / right))
+        else:
+            stack.append(int(token))
+
+    return stack[0]
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function evalRPN(tokens: string[]): number {
+  const stack: number[] = [];
+
+  for (const token of tokens) {
+    if (token === '+' || token === '-' || token === '*' || token === '/') {
+      const right = stack.pop()!; // popped FIRST → right operand
+      const left = stack.pop()!; // popped SECOND → left operand
+
+      switch (token) {
+        case '+':
+          stack.push(left + right);
+          break;
+        case '-':
+          stack.push(left - right);
+          break;
+        case '*':
+          stack.push(left * right);
+          break;
+        case '/':
+          // Math.trunc cuts toward zero; Math.floor goes toward -infinity.
+          stack.push(Math.trunc(left / right));
+          break;
+      }
+    } else {
+      stack.push(Number(token));
+    }
+  }
+
+  return stack[0];
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="The division trap — this is what the problem is really testing">
+"Truncate toward zero" means `-7 / 2` is `-3`, not `-4`.
+
+**Python:** `-7 // 2` is `-4` — floor division rounds toward negative infinity. Use `int(-7 / 2)`, which gives `-3`. This is the single most common wrong answer on this problem.
+
+**TypeScript:** `Math.floor(-3.5)` is `-4`. Use `Math.trunc(-3.5)`, which gives `-3`.
+
+For positive operands the two agree, so the bug hides until a negative appears — as it does in the third example above.
+</Callout>
+
+<Callout type="info" title="Detecting operators by exclusion is fragile">
+Testing `if (!isNaN(Number(token)))` also works, but negative numbers like `"-11"` start with `-`, so any check that looks only at the first character misclassifies them. Matching against the explicit set of four operators is unambiguous.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — one pass; each token causes a constant amount of stack work.
+- **Space** — the stack holds at most `O(n)` operands, reached when the expression is a long run of numbers before the first operator.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A single number, e.g. ['42']">
+It is pushed and never consumed, so `42` is returned. A lone number is a valid RPN expression.
+</Accordion>
+
+<Accordion title="Negative operands, e.g. ['-11']">
+Both `int("-11")` and `Number("-11")` parse the sign correctly. The important thing is not to classify the token as the `-` operator.
+</Accordion>
+
+<Accordion title="Division producing a negative fraction, e.g. ['-7', '2', '/']">
+The answer is `-3`, not `-4`. See the division warning above — this is the case that separates a correct solution from a nearly correct one.
+</Accordion>
+
+<Accordion title="Division by zero">
+LeetCode guarantees it does not occur. In production you would check `right == 0` and raise, since Python throws `ZeroDivisionError` while TypeScript silently yields `Infinity` or `NaN`.
+</Accordion>
+
+<Accordion title="Why does a valid expression always leave exactly one value?">
+Each number adds one to the stack; each binary operator removes two and adds one, a net loss of one. A well-formed expression with `k` numbers has `k - 1` operators, so the final height is `k - (k - 1) = 1`.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Valid Parentheses](/docs/stacks-queues/valid-parentheses) — the stack as a nesting checker
+- [Min Stack](/docs/stacks-queues/min-stack) — a stack carrying extra state
+- [Simplify Path](/docs/stacks-queues/simplify-path) — a stack where popping means going up a directory

@@ -1,0 +1,11 @@
+{
+  "title": "Trees",
+  "icon": "GitBranch",
+  "pages": [
+    "index",
+    "---Easy---",
+    "n-ary-tree-preorder-traversal",
+    "---Medium---",
+    "binary-tree-level-order-traversal"
+  ]
+}
