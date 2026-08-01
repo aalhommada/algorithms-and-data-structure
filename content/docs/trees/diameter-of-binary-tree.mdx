@@ -1,0 +1,279 @@
+---
+title: Diameter of Binary Tree
+description: Find the longest path between any two nodes, and learn the trick of returning one value while recording another
+difficulty: easy
+pattern: DFS
+variant: return one value, record another
+tags: ["Tree", "DFS", "Recursion"]
+leetcode: https://leetcode.com/problems/diameter-of-binary-tree/
+problemNumber: 543
+---
+
+## Problem Statement
+
+Given the root of a binary tree, return the length of its **diameter** — the longest path between any two nodes, measured in **edges**.
+
+The path does not have to pass through the root.
+
+```text
+Input:  root = [1, 2, 3, 4, 5]
+Output: 3
+
+        1
+       / \
+      2   3
+     / \
+    4   5
+
+Longest path: 4 → 2 → 5 ... or 4 → 2 → 1 → 3 (3 edges)
+```
+
+## Intuition
+
+The tempting answer is `depth(left) + depth(right)` at the root. That is right for the example above — but only by luck.
+
+<Callout type="warn" title="Why the root is not always the answer">
+```text
+        1
+       /
+      2
+     / \
+    4   5
+   /     \
+  6       7
+
+The longest path is 6 → 4 → 2 → 5 → 7, which is 4 edges.
+It never touches the root.
+```
+
+The problem says the path need not pass through the root, and this is the tree that punishes you for assuming it does.
+</Callout>
+
+So the diameter could be centred on **any** node. That suggests checking every node — computing depths at each one — which is `O(n²)`.
+
+<Callout type="info" title="The key insight">
+Every path has exactly one **highest** node — the top of its arch. For that node, the path length is `depth(left) + depth(right)`.
+
+So instead of asking "what is the diameter?", visit each node once and ask "what is the best path *arching over me*?" Keep the largest answer seen.
+</Callout>
+
+That turns `O(n²)` into `O(n)`, because depth and diameter can be computed in the same pass.
+
+### The trick that makes it work
+
+Here is the part worth slowing down on, because it is reused everywhere.
+
+The recursion must produce **two different things**:
+
+| Quantity | Who needs it | Nature |
+|---|---|---|
+| **Depth** of this subtree | The parent, to compute its own arch | Must be *returned* |
+| **Best arch** seen anywhere | Only the final answer | Must be *recorded* |
+
+You cannot return both from one recursive call — the parent's arithmetic requires the depth. So the depth goes in the return value, and the best arch goes into a variable held outside the recursion.
+
+<Callout type="info" title="Why the parent cannot use the diameter">
+A parent building its own arch needs to know *how far down each side reaches*. That is depth.
+
+The child's best diameter might be a path buried deep in a corner that never reaches the child's root — useless for extending upward. Depth is the only thing that composes.
+</Callout>
+
+### The real-world version
+
+Measure the longest corridor in a building where every room branches downward. Stand in each room and ask: *how far can I reach going down the left wing, plus how far down the right wing?* That is the longest corridor passing through this room.
+
+Write it on a whiteboard if it beats the current record. Then tell your parent only the deeper of your two wings — because that is all they can build on.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Keep a `best` variable outside the recursion
+
+It starts at `0` and only ever grows. This is where the answer accumulates.
+</Step>
+
+<Step>
+### Write a helper that returns depth
+
+Empty subtree returns `0`. Otherwise it returns `1 + max(left, right)` — the same shape as [Maximum Depth](/docs/trees/maximum-depth-of-binary-tree).
+</Step>
+
+<Step>
+### Before returning, record the arch
+
+At each node, `left + right` is the path length in edges that arches over it. Update `best` if it is larger.
+
+Note there is no `+1` here. `left + right` already counts edges: going down `left` edges on one side and `right` on the other.
+</Step>
+
+<Step>
+### Return the depth, not the arch
+
+The parent needs `1 + max(left, right)`. Returning the arch instead is the classic bug — it corrupts every calculation above.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<TreeViz
+  title="root = [1, 2, 3, 4, 5]"
+  frames={[
+    {
+      nodes: [1, 2, 3, 4, 5],
+      states: ["idle", "idle", "idle", "active", "idle"],
+      vars: { best: 0 },
+      note: "Reach leaf 4. Both children are empty, so left = 0 and right = 0. Arch = 0. Return depth 1.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5],
+      states: ["idle", "idle", "idle", "done", "active"],
+      vars: { best: 0 },
+      note: "Leaf 5 is the same. Arch = 0, return depth 1.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5],
+      states: ["idle", "active", "idle", "done", "done"],
+      vars: { left: 1, right: 1, arch: 2, best: 2 },
+      note: "At node 2. Its children returned depth 1 each, so the arch is 1 + 1 = 2 edges — the path 4 → 2 → 5. Record best = 2. Return depth 1 + max(1,1) = 2.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5],
+      states: ["idle", "done", "active", "done", "done"],
+      vars: { best: 2 },
+      note: "Leaf 3. Arch = 0, which does not beat 2. Return depth 1.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5],
+      states: ["match", "done", "done", "done", "done"],
+      vars: { left: 2, right: 1, arch: 3, best: 3 },
+      note: "At the root. Left returned 2, right returned 1, so the arch is 3 edges — the path 4 → 2 → 1 → 3. best becomes 3, the final answer.",
+    },
+  ]}
+  caption="Each node reports its depth upward while quietly recording its own arch."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+class TreeNode:
+    def __init__(self, val: int = 0, left: "TreeNode | None" = None,
+                 right: "TreeNode | None" = None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+
+def diameter_of_binary_tree(root: TreeNode | None) -> int:
+    """Return the longest path between any two nodes, counted in edges."""
+    best = 0
+
+    def depth(node: TreeNode | None) -> int:
+        nonlocal best  # without this, `best = ...` would create a local
+
+        if node is None:
+            return 0
+
+        left = depth(node.left)
+        right = depth(node.right)
+
+        # The longest path whose highest point is THIS node.
+        # No +1: left and right already count edges.
+        best = max(best, left + right)
+
+        # The parent needs depth, not diameter.
+        return 1 + max(left, right)
+
+    depth(root)
+    return best
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class TreeNode {
+  val: number;
+  left: TreeNode | null;
+  right: TreeNode | null;
+  constructor(val = 0, left: TreeNode | null = null, right: TreeNode | null = null) {
+    this.val = val;
+    this.left = left;
+    this.right = right;
+  }
+}
+
+function diameterOfBinaryTree(root: TreeNode | null): number {
+  let best = 0;
+
+  function depth(node: TreeNode | null): number {
+    if (node === null) return 0;
+
+    const left = depth(node.left);
+    const right = depth(node.right);
+
+    // The longest path whose highest point is THIS node.
+    // No +1: left and right already count edges.
+    best = Math.max(best, left + right);
+
+    // The parent needs depth, not diameter.
+    return 1 + Math.max(left, right);
+  }
+
+  depth(root);
+  return best;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Two bugs that look almost identical">
+**Returning the arch instead of the depth.** `return left + right` compiles, runs, and gives wrong answers on any tree taller than two levels, because every ancestor then builds on a meaningless number.
+
+**Forgetting `nonlocal` in Python.** Without it, `best = max(...)` creates a fresh local variable inside `depth`, the outer `best` never changes, and the function always returns `0`. There is no error — just a silent zero.
+
+JavaScript closures capture the outer variable automatically, so the second bug does not exist there.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(h)" />
+
+- **Time** — each node is visited exactly once. The naive "compute depth at every node" version would be `O(n²)`; computing depth and diameter together in one pass removes the repeated work.
+- **Space** — the recursion stack, one frame per level. `O(log n)` for a balanced tree, `O(n)` for a chain.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty tree">
+Returns `0`. `depth(None)` returns `0` immediately and `best` is never updated.
+</Accordion>
+
+<Accordion title="A single node">
+Returns `0`, not `1`. The diameter is measured in **edges**, and one node has no edges.
+
+If a problem asks for the count of *nodes* on the path instead, the answer is `best + 1`. Read the definition carefully — the two conventions differ by exactly one.
+</Accordion>
+
+<Accordion title="A tree shaped like one long chain">
+The diameter equals the number of edges, since the only path runs top to bottom. At each node one side is empty, so `left + right` is just the non-empty side. Correct.
+</Accordion>
+
+<Accordion title="A path that avoids the root entirely">
+This is the case the naive solution gets wrong. Because `best` is updated at *every* node, a long path buried in one subtree is recorded when the recursion reaches its highest node — even though the root's own arch is smaller.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Maximum Depth of Binary Tree](/docs/trees/maximum-depth-of-binary-tree) — the depth helper, on its own
+- [Invert Binary Tree](/docs/trees/invert-binary-tree) — the same skeleton, mutating instead of measuring
+- [Trees](/docs/trees) — why post-order is the right visit order here

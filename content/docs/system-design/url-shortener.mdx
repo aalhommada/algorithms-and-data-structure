@@ -1,0 +1,267 @@
+---
+title: URL Shortener
+description: The six-step method applied end to end — ID generation, a 100:1 read ratio, and why the redirect path decides the architecture
+---
+
+The classic first design problem. It looks trivial and it is not: the ID generation question alone has four reasonable answers with different failure modes.
+
+## 1. Clarify and Scope
+
+Questions worth asking before drawing anything:
+
+| Question | Assumption taken here |
+|---|---|
+| Custom aliases? | No — system-generated codes only |
+| Do links expire? | Yes, optional expiry |
+| Analytics? | Click counts only, not real-time |
+| How long are the codes? | As short as possible |
+| Can a link be deleted? | Yes |
+
+**In scope:** shorten a URL, redirect, count clicks.
+**Out of scope:** user accounts, custom domains, editing a link's target.
+
+## 2. Put Numbers On It
+
+```text
+WRITES
+  100 million new links per month
+  100M ÷ (30 × 100,000 sec)        ≈  33 writes/sec
+  × 3 peak                          ≈  100 writes/sec        ← tiny
+
+READS
+  Assume each link is clicked 100 times
+  10 billion redirects per month
+  10B ÷ (30 × 100,000)              ≈  3,300 reads/sec
+  × 3 peak                          ≈  10,000 reads/sec
+
+  Read : write                      =  100 : 1               ← the key finding
+
+STORAGE
+  short code      7 bytes
+  long URL      100 bytes
+  metadata      100 bytes  (created, expiry, owner, clicks)
+  per row     ≈ 210 bytes, round to 500 with indexes
+
+  100M/month × 500 bytes × 12 × 5 years  ≈  3 TB
+```
+
+<Callout type="info" title="What these four numbers decided">
+| Finding | Consequence |
+|---|---|
+| Only 100 writes/sec | One database primary is plenty. No write sharding |
+| 10,000 reads/sec | Cache hard. This is the path to optimise |
+| 100:1 read ratio | Every design decision should favour reads |
+| 3 TB over five years | Fits comfortably on one machine. No sharding needed |
+
+The whole system is **read-heavy and small**. That rules out most of the complexity people reach for.
+</Callout>
+
+### How long must the code be?
+
+```text
+Alphabet: a-z A-Z 0-9  =  62 characters
+
+62^6 =  56 billion
+62^7 =  3.5 trillion       ← 7 characters is ample
+```
+
+At 100 million links per month, seven characters lasts thousands of years.
+
+## 3. Define the Interface
+
+```text
+POST /urls
+  body:     { "url": "https://example.com/very/long/path", "expiry": "2027-01-01" }
+  returns:  { "code": "aB3xK9p", "short": "https://sho.rt/aB3xK9p" }
+
+GET /{code}
+  returns:  301 or 302 redirect to the original URL
+
+GET /urls/{code}/stats
+  returns:  { "code": "aB3xK9p", "clicks": 1423 }
+```
+
+<Callout type="warn" title="301 or 302 — this choice has consequences">
+**301 Permanent** — browsers cache it. Later clicks never reach your servers at all, which massively cuts load. But you can no longer count clicks, and you can never change where the link points.
+
+**302 Found** — every click reaches you. You get analytics and can change the target, at the cost of serving all that traffic.
+
+Since this design counts clicks, **302** is the right call. Say it out loud: *"302, because we need click counts — a 301 would be cheaper but the browser cache would hide the traffic from us."*
+</Callout>
+
+## 4. Generating the Code
+
+This is the real design question, and there are four answers.
+
+| Approach | How | Problem |
+|---|---|---|
+| **Hash the URL** | `base62(md5(url))[:7]` | Collisions must be detected and retried |
+| **Random** | 7 random base62 characters | Collisions; needs a uniqueness check |
+| **Auto-increment + base62** | Encode a counter | Codes are guessable and leak volume |
+| **Counter range per server** | Each server claims a block of ids | Best balance — no coordination per write |
+
+<Callout type="info" title="Counter ranges are the strongest answer">
+A central service hands each application server a block of one million ids. The server encodes them to base62 locally with **no coordination per write**.
+
+- No collisions ever — ranges do not overlap.
+- No database check on the write path.
+- A server crash wastes at most one unused block, which is harmless.
+
+The remaining flaw is that sequential ids are guessable and reveal how many links exist. If that matters, multiply the counter by a large odd number modulo `62⁷`, which scrambles the order while staying collision-free.
+</Callout>
+
+```text
+Server A holds 1,000,000 – 1,999,999
+Server B holds 2,000,000 – 2,999,999
+
+id 1,000,001  →  base62  →  "4c92"
+```
+
+<Callout type="warn" title="Why hashing alone is not enough">
+`md5(url)` truncated to 7 characters will collide — by the birthday paradox, expect the first collision after roughly `√(62⁷)` ≈ 1.8 million links, which you reach in under a month.
+
+You then need a database read on every write to check the code is free, plus a retry loop. That turns a coordination-free write into a coordinated one.
+</Callout>
+
+## 5. The Architecture
+
+<ArchViz
+  title="Building up under pressure"
+  height={320}
+  nodes={[
+    { id: "client", label: "Client", kind: "client", x: 0.0, y: 0.5 },
+    { id: "lb", label: "Load Balancer", kind: "edge", x: 0.2, y: 0.5 },
+    { id: "app", label: "App Servers", sublabel: "stateless", kind: "service", x: 0.42, y: 0.5 },
+    { id: "counter", label: "ID Service", sublabel: "hands out ranges", kind: "service", x: 0.42, y: 0.05 },
+    { id: "cache", label: "Redis", sublabel: "code -> URL", kind: "cache", x: 0.68, y: 0.12 },
+    { id: "db", label: "Database", sublabel: "code, url, expiry", kind: "database", x: 0.68, y: 0.6 },
+    { id: "queue", label: "Queue", sublabel: "click events", kind: "queue", x: 0.9, y: 0.95 },
+    { id: "analytics", label: "Analytics", kind: "service", x: 1.0, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "client", to: "app", label: "POST /urls", active: true },
+        { from: "app", to: "counter", label: "next id", active: true },
+        { from: "app", to: "db", label: "insert", active: true },
+      ],
+      active: ["client", "app", "counter", "db"],
+      dimmed: ["lb", "cache", "queue", "analytics"],
+      vars: { path: "WRITE", rate: "100/sec" },
+      note: "Write path. Take an id from the local range, encode to base62, insert the row. No lookup needed — the code is unique by construction.",
+    },
+    {
+      edges: [
+        { from: "client", to: "lb", active: true },
+        { from: "lb", to: "app", active: true },
+        { from: "app", to: "cache", label: "GET code", active: true },
+      ],
+      active: ["client", "lb", "app", "cache"],
+      dimmed: ["counter", "db", "queue", "analytics"],
+      vars: { path: "READ (cache hit)", latency: "~5 ms", "hit rate": "~90%" },
+      note: "Read path, the common case. Redis answers and the database is never touched. Links follow a heavy popularity skew, so hit rates are high.",
+    },
+    {
+      edges: [
+        { from: "app", to: "cache", label: "miss", dashed: true, active: true },
+        { from: "app", to: "db", label: "SELECT", active: true },
+        { from: "app", to: "cache", label: "populate", active: true },
+      ],
+      active: ["app", "cache", "db"],
+      dimmed: ["client", "lb", "counter", "queue", "analytics"],
+      vars: { path: "READ (cache miss)", latency: "~30 ms" },
+      note: "On a miss, read the row and write it into the cache. The index on `code` makes this a single lookup.",
+    },
+    {
+      edges: [
+        { from: "app", to: "queue", label: "click event", dashed: true, active: true },
+        { from: "queue", to: "analytics", label: "batch", dashed: true, active: true },
+      ],
+      active: ["app", "queue", "analytics"],
+      dimmed: ["client", "lb", "counter", "cache", "db"],
+      vars: { path: "ANALYTICS (async)" },
+      note: "Click counting goes on a queue. Incrementing a row on every redirect would add 10,000 writes/sec — a hundred times the real write load.",
+    },
+  ]}
+  caption="The redirect path is the only one that carries real traffic, so it gets the cache."
+/>
+
+### The database
+
+```text
+urls
+  code         VARCHAR(7)   PRIMARY KEY
+  long_url     TEXT         NOT NULL
+  created_at   TIMESTAMP
+  expires_at   TIMESTAMP    NULL
+  click_count  BIGINT       DEFAULT 0
+```
+
+`code` as the primary key means the redirect is a single primary-key lookup — the fastest read a database offers. No secondary index is needed on the hot path.
+
+<Callout type="warn" title="Never increment click_count on the redirect">
+```text
+UPDATE urls SET click_count = click_count + 1 WHERE code = ?
+```
+
+That is a write, with a row lock, on every single redirect. It turns a 100 writes/sec system into a 10,000 writes/sec system, and hot links serialise on one row.
+
+Push click events onto a queue and aggregate them in batches. Counts become a few seconds stale, which the scoping step already accepted.
+</Callout>
+
+## 6. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| 302 instead of 301 | Click counts, changeable targets | Every click hits our servers |
+| Cache in front | ~90% of reads never reach the DB | Deleted links may redirect for up to the TTL |
+| Async click counting | Write load stays at 100/sec | Counts lag by seconds |
+| Counter ranges | No collision checks, no coordination | Codes are sequential unless scrambled |
+| Single primary | Simple, no sharding | One machine's write capacity — ample here |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="How do expired links get cleaned up?">
+Do not delete them synchronously. Two options:
+
+**Lazy** — check `expires_at` on read and return 404 if past. The row lingers but nothing breaks.
+
+**Background job** — a nightly sweep deleting expired rows in batches.
+
+Use both: lazy checking for correctness, the sweep for storage. Also set the cache TTL no longer than the link's remaining life, or a deleted link keeps redirecting.
+</Accordion>
+
+<Accordion title="What if one link goes viral?">
+It becomes a hot key. The cache handles it — one Redis node serves a single hot key at over 100,000 requests/sec.
+
+If one node is not enough, replicate that key across several cache nodes and pick randomly, or cache it in each application server's local memory, since the mapping never changes once created.
+</Accordion>
+
+<Accordion title="How do you stop it being used for malware?">
+Check submitted URLs against a safe-browsing list at write time — it is only 100 writes/sec, so a synchronous check is affordable.
+
+Rate-limit by API key so one client cannot generate millions of links. Add an interstitial warning page for links flagged after creation.
+</Accordion>
+
+<Accordion title="What if the ID service goes down?">
+Writes continue. Each application server holds a block of a million unused ids, which at 100 writes/sec lasts nearly three hours.
+
+This is the main advantage of ranges over a per-write counter: the ID service is not on the critical path, so its availability barely matters.
+</Accordion>
+
+<Accordion title="Would you shard the database?">
+Not at these numbers — 3 TB and 100 writes/sec fits one machine comfortably.
+
+If it were needed, shard by `code` using consistent hashing. Every query is a lookup by `code`, so it is a perfect shard key: no cross-shard queries, and even distribution.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Numbers Every Design Needs](/docs/system-design/numbers-to-know) — the estimation used here
+- [Caching](/docs/system-design/caching) — the layer doing the real work
+- [Rate Limiter](/docs/system-design/rate-limiter) — protecting the write path
+- [Databases](/docs/system-design/databases) — indexing and when sharding is justified

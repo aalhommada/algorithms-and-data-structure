@@ -1,0 +1,238 @@
+---
+title: Chat System
+description: Long-lived connections instead of polling, how messages find an online user, and getting delivery and ordering right
+---
+
+Chat inverts the usual model. Most systems answer requests; a chat system must **push** to a user who is not asking for anything.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| One-to-one, or groups? | Both, groups capped at 500 |
+| Delivery receipts? | Sent, delivered, read |
+| History? | Stored permanently, searchable |
+| Media? | Uploaded separately, messages carry URLs |
+| End-to-end encryption? | Out of scope — it changes the storage design entirely |
+
+## 2. Put Numbers On It
+
+```text
+50 million daily active users
+Assume 10 million connected at peak
+
+MESSAGES
+  50M × 40 messages/day     =  2B messages/day
+  ÷ 100,000 sec             ≈  20,000 messages/sec
+  × 3 peak                  ≈  60,000 messages/sec
+
+CONNECTIONS
+  10M concurrent connections
+  ~10 KB memory per connection
+  10M × 10 KB               =  100 GB across the fleet
+  At 100k connections/server →  100 servers
+
+STORAGE
+  message ≈ 300 bytes (text, ids, timestamps)
+  2B/day × 300 bytes        =  600 GB/day
+  × 365                     ≈  220 TB/year
+```
+
+<Callout type="info" title="Connections are the resource, not CPU">
+A chat server is mostly idle. It holds sockets open and occasionally forwards a small message.
+
+That makes **memory and file descriptors** the limit, not processing power. It also means the servers are stateful in a way most services are not — a specific user is on a specific machine — which is the central complication of the whole design.
+</Callout>
+
+## 3. Choosing the Transport
+
+| Option | How it works | Verdict |
+|---|---|---|
+| **Short polling** | Ask every few seconds | Wasteful and still laggy |
+| **Long polling** | Request held open until a message arrives | Workable, awkward reconnects |
+| **Server-sent events** | Server pushes over one HTTP stream | One-directional only |
+| **WebSocket** | Full duplex, persistent | **The right choice** |
+
+<Callout type="warn" title="Why polling fails at this scale">
+10 million clients polling every 3 seconds is 3.3 million requests/sec — for a message rate of 60,000/sec.
+
+That is **98% wasted work**, and it still delivers messages up to 3 seconds late. Polling trades away both efficiency and latency at once.
+</Callout>
+
+WebSocket gives a single connection carrying messages in both directions with no per-message HTTP overhead. Keep a fallback to long polling for networks that block WebSocket.
+
+## 4. Finding the Recipient
+
+Here is the real problem. Sara is connected to chat server 42. Ali, connected to server 7, sends her a message. Server 7 has no socket to Sara.
+
+<ArchViz
+  title="Routing a message between servers"
+  height={320}
+  nodes={[
+    { id: "ali", label: "Ali", kind: "client", x: 0.0, y: 0.85 },
+    { id: "s7", label: "Chat Server 7", kind: "service", x: 0.26, y: 0.85 },
+    { id: "registry", label: "Presence", sublabel: "user -> server", kind: "cache", x: 0.52, y: 0.45 },
+    { id: "bus", label: "Message Bus", kind: "queue", x: 0.52, y: 0.98 },
+    { id: "store", label: "Message Store", kind: "database", x: 0.26, y: 0.05 },
+    { id: "s42", label: "Chat Server 42", kind: "service", x: 0.8, y: 0.85 },
+    { id: "sara", label: "Sara", kind: "client", x: 1.0, y: 0.45 },
+  ]}
+  frames={[
+    {
+      edges: [{ from: "ali", to: "s7", label: "send", active: true }],
+      active: ["ali", "s7"],
+      dimmed: ["registry", "bus", "store", "s42", "sara"],
+      vars: { step: "1. arrives" },
+      note: "Ali's message reaches whichever server holds his connection. Server 7 has no idea where Sara is.",
+    },
+    {
+      edges: [
+        { from: "s7", to: "store", label: "persist first", active: true },
+      ],
+      active: ["s7", "store"],
+      dimmed: ["ali", "registry", "bus", "s42", "sara"],
+      vars: { step: "2. persist" },
+      note: "Store the message BEFORE attempting delivery. If delivery fails, the message still exists and can be re-sent.",
+    },
+    {
+      edges: [
+        { from: "s7", to: "registry", label: "where is Sara?", active: true },
+      ],
+      active: ["s7", "registry"],
+      dimmed: ["ali", "bus", "store", "s42", "sara"],
+      vars: { step: "3. look up", answer: "server 42" },
+      note: "A presence registry in Redis maps each online user to the server holding their connection.",
+    },
+    {
+      edges: [
+        { from: "s7", to: "bus", label: "publish", active: true },
+        { from: "bus", to: "s42", label: "deliver", active: true },
+        { from: "s42", to: "sara", label: "push", active: true },
+      ],
+      active: ["s7", "bus", "s42", "sara"],
+      dimmed: ["ali", "registry", "store"],
+      vars: { step: "4. route and push" },
+      note: "Server 7 publishes to server 42 over the message bus. Server 42 pushes down its open WebSocket to Sara.",
+    },
+    {
+      edges: [
+        { from: "s7", to: "registry", label: "Sara offline", dashed: true, active: true },
+        { from: "s7", to: "store", label: "already saved", active: true },
+      ],
+      active: ["s7", "store"],
+      dimmed: ["ali", "bus", "s42", "sara", "registry"],
+      vars: { step: "offline path" },
+      note: "If Sara is offline, nothing more happens now — the message is already stored. She receives it when she reconnects and syncs.",
+    },
+  ]}
+  caption="Persist first, then route. Delivery is best-effort; the store is the source of truth."
+/>
+
+<Callout type="warn" title="Persist before you deliver, always">
+It is tempting to push the message to the recipient first and save it afterwards, since that feels faster.
+
+Then the server crashes between the two, and the message is gone — but the recipient's client already displayed it. Now the two devices disagree about history forever.
+
+Store first. A slightly slower send is far better than a chat log that does not match itself.
+</Callout>
+
+### The presence registry
+
+```text
+Redis:  online:{user_id}  →  server_id     TTL 30 seconds
+```
+
+Servers refresh the TTL with a heartbeat. If a server dies, its users' entries expire naturally rather than pointing at a dead machine.
+
+<Callout type="info" title="Presence is the most write-heavy part of a chat system">
+Every connect, disconnect and heartbeat is a write. With 10 million connections and a 30-second heartbeat, that is over 300,000 writes/sec just to say "still here" — more than five times the message rate.
+
+Reduce it by lengthening the heartbeat interval and accepting a slower "user went offline" signal, and by batching heartbeats per server rather than per user. Precise presence is genuinely expensive, and "last seen recently" is usually enough.
+</Callout>
+
+## 5. Storage and Ordering
+
+```text
+messages
+  channel_id   BIGINT          ← partition key
+  message_id   BIGINT          ← sortable, time-ordered
+  sender_id    BIGINT
+  body         TEXT
+  created_at   TIMESTAMP
+  PRIMARY KEY (channel_id, message_id DESC)
+```
+
+Partitioning by `channel_id` means one conversation lives on one partition, so reading recent history is a single sequential scan. This is a natural fit for a wide-column store.
+
+<Callout type="warn" title="Wall-clock timestamps are not an ordering">
+Two servers' clocks differ by milliseconds. Two messages sent "at the same time" can be stored in an order neither user saw.
+
+Use ids that sort correctly — Snowflake-style ids combining a timestamp, a machine id and a sequence number. They are unique, roughly time-ordered, and generated without coordination.
+
+Within a single conversation, a per-channel sequence number is even stronger, since it makes gaps detectable.
+</Callout>
+
+### Delivery guarantees
+
+| Receipt | Meaning |
+|---|---|
+| **Sent** | The server stored it |
+| **Delivered** | It reached the recipient's device |
+| **Read** | The recipient opened it |
+
+Each is a separate acknowledgement travelling back. Because the network can drop acknowledgements, delivery is [at-least-once](/docs/system-design/queues) — so clients must deduplicate by message id.
+
+## 6. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| WebSocket over polling | Instant delivery, far less traffic | Stateful servers, complex reconnection |
+| Persist before deliver | No message is ever lost | Slightly slower sends |
+| Presence in Redis with TTL | Dead servers clean themselves up | Offline status lags by up to the TTL |
+| Partition by channel | Fast history reads | A very large group is a hot partition |
+| At-least-once delivery | Nothing is dropped | Clients must deduplicate |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="How does a client catch up after being offline?">
+Give each channel a monotonically increasing sequence number. The client stores the last one it saw and asks for everything after it on reconnect.
+
+This is far more reliable than "send me messages since timestamp X", which breaks with clock skew and cannot detect gaps.
+</Accordion>
+
+<Accordion title="How do group messages work?">
+For groups up to a few hundred, fan out on write: look up each member, route to their server, store one copy per recipient's view.
+
+For very large groups this becomes the [news feed problem](/docs/system-design/news-feed) — at that point, switch to storing one copy and having clients pull, which is why broadcast channels behave differently from group chats in real products.
+</Accordion>
+
+<Accordion title="What happens when a chat server crashes?">
+Every connection on it drops. Clients reconnect, the load balancer sends them to a different server, and each re-registers in the presence registry.
+
+Nothing is lost because messages were persisted before delivery. The visible effect is a brief reconnect, and any messages that arrived during the gap are fetched by the sequence-number sync.
+
+This is why reconnection logic with exponential backoff is not optional in a chat client.
+</Accordion>
+
+<Accordion title="How do you keep connections balanced across servers?">
+Connections are long-lived, so a server that filled up during a spike stays full while newer servers sit idle. Round robin does not fix this.
+
+Use least-connections routing, and have servers report load so the balancer can avoid the busiest. Some systems periodically ask a fraction of clients to reconnect, which rebalances gradually.
+</Accordion>
+
+<Accordion title="Why not put every user's messages in one table keyed by user?">
+Because a conversation would then be split across two partitions — one per participant — and reading it would require merging both.
+
+Keying by channel keeps a conversation together, which is the access pattern that actually matters. Choose the partition key from how the data is read, not how it is written.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Queues and Async Work](/docs/system-design/queues) — the message bus between servers
+- [Reliability](/docs/system-design/reliability) — reconnection, backoff and heartbeats
+- [Databases](/docs/system-design/databases) — partition keys and hot partitions
+- [News Feed](/docs/system-design/news-feed) — the fan-out problem, in its other form

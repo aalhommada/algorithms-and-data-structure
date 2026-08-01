@@ -1,0 +1,328 @@
+---
+title: Course Schedule
+description: Detect whether a set of dependencies can be satisfied, using topological sort to find a cycle
+difficulty: medium
+pattern: BFS
+variant: topological sort
+tags: ["Graph", "Topological Sort", "BFS", "DFS", "Cycle Detection"]
+leetcode: https://leetcode.com/problems/course-schedule/
+problemNumber: 207
+---
+
+## Problem Statement
+
+There are `numCourses` courses labelled `0` to `numCourses - 1`. You are given `prerequisites`, where `[a, b]` means **you must take `b` before `a`**.
+
+Return `true` if you can finish every course.
+
+```text
+Input:  numCourses = 2, prerequisites = [[1, 0]]
+Output: true
+Why:    take 0, then 1
+
+Input:  numCourses = 2, prerequisites = [[1, 0], [0, 1]]
+Output: false
+Why:    1 needs 0, and 0 needs 1 — neither can go first
+```
+
+## Intuition
+
+Read the second example again. It is impossible not because there are too many courses, but because the requirements **point in a circle**.
+
+<Callout type="info" title="The key insight">
+Every course list is finishable *unless* it contains a **cycle**.
+
+If there is no cycle, some course must have no prerequisites left — you take it, cross it off, and that frees others. Repeat, and the whole list clears.
+
+So the question "can I finish everything?" is really the question **"does this dependency graph contain a cycle?"**
+</Callout>
+
+### Modelling it
+
+Draw an arrow from `b` to `a` when `b` must come before `a`. The pair `[1, 0]` means "0 before 1", so the arrow runs `0 → 1`.
+
+<GraphViz
+  title="prerequisites = [[1, 0], [2, 1], [3, 1]] — no cycle"
+  directed
+  nodes={[
+    { id: 0, x: 0.0, y: 0.5 },
+    { id: 1, x: 0.35, y: 0.5 },
+    { id: 2, x: 0.75, y: 0.15 },
+    { id: 3, x: 0.75, y: 0.85 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 1, to: 3 },
+      ],
+      note: "Arrows point from prerequisite to dependent. There is a clear starting point (0) and no way back to it.",
+    },
+  ]}
+  caption="A valid order exists: 0, then 1, then 2 and 3 in any order."
+/>
+
+<GraphViz
+  title="prerequisites = [[1, 0], [0, 1]] — a cycle"
+  directed
+  nodes={[
+    { id: 0, x: 0.25, y: 0.5 },
+    { id: 1, x: 0.7, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: 0, to: 1, highlight: true },
+        { from: 1, to: 0, highlight: true },
+      ],
+      note: "Each course waits for the other. Neither ever becomes available, so no valid order exists.",
+    },
+  ]}
+  caption="Every impossible schedule contains a loop like this one."
+/>
+
+### The counting trick
+
+There is a neat way to detect the cycle without ever explicitly looking for one.
+
+For each course, count how many prerequisites it still needs. That number is its **in-degree** — the number of arrows pointing at it.
+
+<Callout type="info" title="Kahn's algorithm, in one sentence">
+Repeatedly take any course whose in-degree is `0`, and reduce the in-degree of everything that depended on it.
+
+If you manage to take all `n` courses, there was no cycle. If you get stuck with courses left over, every remaining course is waiting on another remaining course — which is exactly what a cycle looks like.
+</Callout>
+
+The elegance is that you never search for the cycle. You just count how many courses you finished.
+
+### The real-world version
+
+You have a pile of tasks with sticky notes saying what must come first. You look for a task with no sticky notes, do it, and then peel that task's name off every other note.
+
+Doing a task frees others. If you eventually clear the pile, fine. If you reach a point where every remaining task still has a note on it, the tasks are waiting on each other and nothing can start.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Build the graph and count in-degrees
+
+For each pair `[a, b]`, add an edge `b → a` and increment `inDegree[a]`.
+
+Build both in the same loop — they describe the same information from two directions.
+</Step>
+
+<Step>
+### Queue every course with in-degree 0
+
+These need no prerequisites and can be taken immediately. If this queue starts empty and there is at least one course, there is already a cycle.
+</Step>
+
+<Step>
+### Take a course, and free its dependents
+
+Pop from the queue and increment a `taken` counter. For every course that depended on it, decrement that course's in-degree.
+</Step>
+
+<Step>
+### A course reaching in-degree 0 joins the queue
+
+Its last prerequisite has just been satisfied.
+</Step>
+
+<Step>
+### Compare `taken` against `numCourses`
+
+Equal means every course was reachable — no cycle. Fewer means the leftovers form a cycle.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<GraphViz
+  title="numCourses = 4, prerequisites = [[1,0], [2,1], [3,1]]"
+  directed
+  nodes={[
+    { id: 0, x: 0.0, y: 0.5 },
+    { id: 1, x: 0.35, y: 0.5 },
+    { id: 2, x: 0.75, y: 0.15 },
+    { id: 3, x: 0.75, y: 0.85 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 1, to: 3 },
+      ],
+      states: { "0": "active", "1": "idle", "2": "idle", "3": "idle" },
+      vars: { "in-degrees": "0:0  1:1  2:1  3:1", queue: "[0]", taken: 0 },
+      note: "Only course 0 has in-degree 0, so it is the only place to start.",
+    },
+    {
+      edges: [
+        { from: 0, to: 1, highlight: true },
+        { from: 1, to: 2 },
+        { from: 1, to: 3 },
+      ],
+      states: { "0": "done", "1": "active", "2": "idle", "3": "idle" },
+      vars: { "in-degrees": "1:0  2:1  3:1", queue: "[1]", taken: 1 },
+      note: "Take 0. Course 1 loses its only prerequisite, so its in-degree drops to 0 and it joins the queue.",
+    },
+    {
+      edges: [
+        { from: 0, to: 1 },
+        { from: 1, to: 2, highlight: true },
+        { from: 1, to: 3, highlight: true },
+      ],
+      states: { "0": "done", "1": "done", "2": "active", "3": "active" },
+      vars: { "in-degrees": "2:0  3:0", queue: "[2, 3]", taken: 2 },
+      note: "Take 1. Both 2 and 3 are freed at once, so both enter the queue.",
+    },
+    {
+      edges: [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 1, to: 3 },
+      ],
+      states: { "0": "done", "1": "done", "2": "match", "3": "match" },
+      vars: { queue: "[]", taken: 4, answer: "true" },
+      note: "Take 2 and 3. taken = 4 = numCourses, so every course was reachable. Return true.",
+    },
+  ]}
+  caption="Courses become available in waves. Each wave is one level of the dependency graph."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import defaultdict, deque
+
+
+def can_finish(num_courses: int, prerequisites: list[list[int]]) -> bool:
+    """Return True when the dependency graph has no cycle (Kahn's algorithm)."""
+    # dependents[b] lists every course that becomes available after b.
+    dependents: defaultdict[int, list[int]] = defaultdict(list)
+    in_degree = [0] * num_courses
+
+    for course, prereq in prerequisites:
+        dependents[prereq].append(course)  # edge prereq -> course
+        in_degree[course] += 1
+
+    # Everything that can be taken right now.
+    queue = deque(c for c in range(num_courses) if in_degree[c] == 0)
+    taken = 0
+
+    while queue:
+        course = queue.popleft()
+        taken += 1
+
+        for dependent in dependents[course]:
+            in_degree[dependent] -= 1
+            # Enqueue exactly when the LAST prerequisite is satisfied.
+            if in_degree[dependent] == 0:
+                queue.append(dependent)
+
+    # Anything left over is stuck waiting on something equally stuck.
+    return taken == num_courses
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function canFinish(numCourses: number, prerequisites: number[][]): boolean {
+  // dependents[b] lists every course that becomes available after b.
+  const dependents: number[][] = Array.from({ length: numCourses }, () => []);
+  const inDegree = new Array<number>(numCourses).fill(0);
+
+  for (const [course, prereq] of prerequisites) {
+    dependents[prereq].push(course); // edge prereq -> course
+    inDegree[course]++;
+  }
+
+  // Everything that can be taken right now.
+  const queue: number[] = [];
+  for (let c = 0; c < numCourses; c++) {
+    if (inDegree[c] === 0) queue.push(c);
+  }
+
+  let taken = 0;
+  let head = 0; // read index instead of shift(), which is O(n)
+
+  while (head < queue.length) {
+    const course = queue[head++];
+    taken++;
+
+    for (const dependent of dependents[course]) {
+      inDegree[dependent]--;
+      // Enqueue exactly when the LAST prerequisite is satisfied.
+      if (inDegree[dependent] === 0) queue.push(dependent);
+    }
+  }
+
+  // Anything left over is stuck waiting on something equally stuck.
+  return taken === numCourses;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Get the edge direction right">
+`[a, b]` means *take `b` before `a`*, so the arrow is `b → a`. It is easy to build it backwards.
+
+The reversed graph often still returns `true` on valid inputs, so small tests pass — and then it fails on an asymmetric case. Write the direction down before you code, and check it against the first example.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(V + E)" space="O(V + E)" />
+
+Where `V` is `numCourses` and `E` is the number of prerequisite pairs.
+
+- **Time** — building the graph touches each edge once. In the main loop each course is dequeued at most once, and each edge is examined exactly once when its source is taken.
+- **Space** — the adjacency list holds `E` entries, and the in-degree array plus the queue hold `V`.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="No prerequisites at all">
+Every in-degree is `0`, so all courses enter the queue immediately and `taken` reaches `numCourses`. Returns `true`.
+</Accordion>
+
+<Accordion title="A course depending on itself, e.g. [[1, 1]]">
+A self-loop. Course 1 has in-degree 1 and nothing can reduce it, so it never enters the queue and `taken` falls short. Returns `false` — correct, since a course cannot precede itself.
+</Accordion>
+
+<Accordion title="Two separate groups, one with a cycle">
+The clean group drains normally, but the cycle never contributes. `taken` ends below `numCourses`, so the answer is `false`.
+
+This is why the algorithm counts rather than checking whether the queue emptied — the queue always empties eventually.
+</Accordion>
+
+<Accordion title="Duplicate prerequisite pairs, e.g. [[1,0],[1,0]]">
+In-degree for course 1 becomes 2, and course 0 appears twice in the dependents list — so it is decremented twice. The counts stay consistent and the answer is still `true`.
+
+Deduplicating first is safe but unnecessary here.
+</Accordion>
+
+<Accordion title="What if the actual order were required?">
+That is Course Schedule II. Record each course as you dequeue it, and that list is a valid topological order. The only change is collecting the output instead of counting it.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Number of Islands](/docs/graphs/number-of-islands) — traversal on an implicit grid graph
+- [Find the Town Judge](/docs/graphs/find-the-town-judge) — in-degree and out-degree again, without traversal
+- [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — the same queue-driven wave, on a tree
+- [Graphs](/docs/graphs) — representations, and why cycles force a visited set

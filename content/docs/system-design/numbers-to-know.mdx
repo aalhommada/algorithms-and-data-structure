@@ -1,0 +1,205 @@
+---
+title: Numbers Every Design Needs
+description: Latency figures worth memorising, and how to turn "a million users" into requests per second and terabytes per year
+---
+
+Before you can choose an architecture, you need to know roughly how big the problem is. Not exactly — roughly. The difference between 100 and 100,000 requests per second changes everything; the difference between 90,000 and 110,000 changes nothing.
+
+This page gives you the numbers and the arithmetic.
+
+## Latency: How Long Things Take
+
+These figures are approximate and change slowly with hardware. What matters is the **ratios between them**, which have stayed roughly stable for decades.
+
+| Operation | Time | Relative to memory |
+|---|---|---|
+| L1 cache reference | 1 ns | — |
+| Main memory reference | 100 ns | 1× |
+| Read 1 MB sequentially from memory | 50 µs | 500× |
+| SSD random read | 100 µs | 1,000× |
+| Read 1 MB from SSD | 1 ms | 10,000× |
+| Network round trip, same datacentre | 500 µs | 5,000× |
+| Disk seek (spinning) | 10 ms | 100,000× |
+| Network round trip, across a continent | 40 ms | 400,000× |
+| Network round trip, across the world | 150 ms | 1,500,000× |
+
+<Callout type="info" title="The three lessons hidden in this table">
+**Memory is about 1,000× faster than disk.** This is the entire justification for caching.
+
+**Crossing the world costs 150 ms, and physics will not improve it.** Light in fibre takes roughly that long to go around the earth and back. No optimisation removes it — you must move the data closer to the user, which is what a CDN does.
+
+**Sequential beats random by a lot.** Reading 1 MB in one go from SSD costs about 1 ms; a thousand random 1 KB reads costs about 100 ms. This is why databases work hard to keep related rows near each other.
+</Callout>
+
+### What a user actually notices
+
+| Response time | How it feels |
+|---|---|
+| under 100 ms | Instant |
+| 100 ms – 300 ms | Fast |
+| 300 ms – 1 s | Noticeable pause |
+| over 1 s | The user's attention drifts |
+| over 10 s | The user leaves |
+
+A budget of 200 ms sounds generous until you subtract 40 ms of network time, leaving 160 ms for everything your servers do.
+
+## Capacity: Turning Users Into Load
+
+The arithmetic is always the same three steps.
+
+<Steps>
+
+<Step>
+### Daily active users → requests per day
+
+Multiply users by how many actions each performs.
+
+*10 million users × 20 actions each = 200 million requests per day.*
+</Step>
+
+<Step>
+### Requests per day → requests per second
+
+Divide by 86,400 — the seconds in a day. In practice round that to **100,000**, which is close enough and much easier mentally.
+
+*200 million ÷ 100,000 = 2,000 requests per second, on average.*
+</Step>
+
+<Step>
+### Average → peak
+
+Traffic is never flat. People sleep, and then everyone wakes up at once. Multiply the average by **2 to 3** for a normal peak, and by 10 if the product has spikes such as ticket sales.
+
+*2,000 × 3 = 6,000 requests per second at peak.*
+</Step>
+
+</Steps>
+
+<Callout type="info" title="The one number worth memorising">
+**One day ≈ 100,000 seconds.**
+
+The true figure is 86,400, but 100,000 makes every division trivial and the error is under 15% — far smaller than the error in your traffic estimate.
+</Callout>
+
+### Storage
+
+Same pattern: size of one item × number of items × how long you keep it.
+
+```text
+A tweet:
+  text        280 bytes
+  metadata    200 bytes  (id, user id, timestamp, counts)
+  total     ≈ 500 bytes
+
+500 million tweets per day
+  × 500 bytes            = 250 GB per day
+  × 365                  ≈ 90 TB per year
+  × 3 (replication)      ≈ 270 TB per year
+```
+
+<Callout type="warn" title="Do not forget replication and indexes">
+Raw data is rarely the real number. Multiply by 3 for typical replication, then allow another 10–30% for indexes.
+
+A design that says "90 TB per year" when the real figure is 270 TB has understated its storage bill by two-thirds.
+</Callout>
+
+### Bandwidth
+
+Requests per second × bytes per response.
+
+```text
+6,000 requests/sec × 500 bytes  =  3 MB/sec   — trivial
+6,000 requests/sec × 2 MB image =  12 GB/sec  — needs a CDN
+```
+
+That contrast is the whole reason images and video go through a CDN while JSON usually does not.
+
+## Rounding Rules
+
+Use powers of two and ten. Precision is false comfort here.
+
+| Term | Bytes |
+|---|---|
+| Thousand (KB) | 10³ |
+| Million (MB) | 10⁶ |
+| Billion (GB) | 10⁹ |
+| Trillion (TB) | 10¹² |
+
+| Item | Typical size |
+|---|---|
+| A character | 1 byte (ASCII), up to 4 (Unicode) |
+| An integer / timestamp | 8 bytes |
+| A UUID | 16 bytes |
+| A URL | 100 bytes |
+| A row of user metadata | 1 KB |
+| A compressed photo | 500 KB |
+| A minute of 1080p video | 50 MB |
+
+## What One Machine Can Do
+
+A useful sanity check, because it tells you when you genuinely need more than one.
+
+| Component | Rough capacity per machine |
+|---|---|
+| Application server | 1,000 – 10,000 requests/sec |
+| Redis cache | 100,000+ operations/sec |
+| SQL database, simple reads | 5,000 – 15,000 queries/sec |
+| SQL database, writes | 1,000 – 5,000 writes/sec |
+| Memory | 64 – 512 GB |
+| SSD | 1 – 20 TB |
+
+<Callout type="info" title="Modern machines are bigger than people assume">
+A single database server can often handle tens of thousands of reads per second and hold a terabyte of data. Many real products never outgrow one.
+
+Reaching for sharding when the numbers say one machine would do is the most common form of over-engineering. Do the arithmetic first — it frequently tells you the simple answer is correct.
+</Callout>
+
+## A Worked Example
+
+**"Design a photo sharing service for 100 million daily active users."**
+
+```text
+WRITES
+  100M users × 0.5 uploads/day        =  50M uploads/day
+  50M ÷ 100,000 sec                   ≈  500 uploads/sec average
+  × 3 peak factor                     ≈  1,500 uploads/sec peak
+
+READS
+  100M users × 50 photo views/day     =  5B views/day
+  5B ÷ 100,000                        ≈  50,000 views/sec average
+  × 3                                 ≈  150,000 views/sec peak
+
+  Read : write ratio                  ≈  100 : 1     ← the key finding
+
+STORAGE
+  50M uploads × 500 KB                =  25 TB/day
+  × 365                               ≈  9 PB/year
+  × 3 replication                     ≈  27 PB/year
+
+BANDWIDTH (reads)
+  150,000/sec × 500 KB                ≈  75 GB/sec   ← must be a CDN
+```
+
+<Callout type="info" title="What these numbers actually decided">
+| Finding | Consequence for the design |
+|---|---|
+| 100:1 read-to-write | Optimise reads hard — cache aggressively, add read replicas |
+| 75 GB/sec of image traffic | Images cannot come from your servers; a CDN is mandatory |
+| 27 PB/year | Object storage, not a database. Store the *URL* in the database |
+| Only 1,500 writes/sec | One primary database can absorb the writes; no write sharding needed yet |
+
+Four numbers, four architectural decisions. That is what the arithmetic is for — not to be right, but to make the choices obvious.
+</Callout>
+
+## The Habit Worth Building
+
+State your assumptions out loud as you go. *"I will assume each user posts twice a day — is that reasonable?"*
+
+A wrong assumption stated clearly can be corrected in one sentence. A wrong assumption left silent poisons everything built on top of it.
+
+## Related Reading
+
+- [Scaling](/docs/system-design/scaling) — what to do once one machine is not enough
+- [Caching](/docs/system-design/caching) — exploiting the 1,000× gap between memory and disk
+- [Databases](/docs/system-design/databases) — where the storage numbers land
+- [URL Shortener](/docs/system-design/url-shortener) — this arithmetic applied end to end

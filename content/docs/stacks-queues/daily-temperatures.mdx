@@ -1,0 +1,289 @@
+---
+title: Daily Temperatures
+description: For each day, how long until it gets warmer — the monotonic stack, and why it is linear despite the nested loop
+difficulty: medium
+pattern: Stack
+variant: monotonic
+tags: ["Array", "Stack", "Monotonic Stack"]
+leetcode: https://leetcode.com/problems/daily-temperatures/
+problemNumber: 739
+---
+
+## Problem Statement
+
+Given an array of daily temperatures, return an array where `answer[i]` is the number of days you must wait after day `i` for a warmer temperature. If no warmer day ever comes, put `0`.
+
+```text
+Input:  temperatures = [73, 74, 75, 71, 69, 72, 76, 73]
+Output: [1, 1, 4, 2, 1, 1, 0, 0]
+
+Day 0 (73): day 1 is 74, warmer → wait 1
+Day 2 (75): next warmer is day 6 (76) → wait 4
+Day 6 (76): nothing warmer follows → 0
+```
+
+## Intuition
+
+The brute force is: for each day, scan forward until you find something warmer. `O(n²)`, and on a long decreasing run it does an enormous amount of repeated scanning.
+
+Look at what that repetition is doing. Scanning forward from day 3 walks over days 4, 5, 6. Scanning from day 4 walks over 5, 6 again. The same days are re-examined over and over.
+
+<Callout type="info" title="The key insight">
+Turn the question inside out. Instead of each day searching **forward** for its answer, let each new day look **backward** and resolve everyone who was waiting for it.
+
+Keep a stack of days that are still waiting. When a warmer day arrives, it settles every waiting day it beats — all at once.
+</Callout>
+
+### Why the stack is monotonic
+
+Here is the property that makes it work.
+
+If day `a` comes before day `b` and `temp[a] <= temp[b]`, then day `a` can be discarded from consideration the moment `b` arrives — because any future day warm enough to settle `a` would have already settled `b` first.
+
+<Callout type="info" title="Put another way">
+A day only stays on the stack while it is **colder** than everything after it that is still pending. So the stack holds temperatures in **decreasing** order from bottom to top.
+
+That is what "monotonic stack" means: the stack is kept sorted by construction, and anything violating the order is popped off.
+</Callout>
+
+```text
+Stack (bottom → top) holds indices of days still waiting:
+
+  75   ← colder days sit on top
+  71
+  69   ← top: coldest, most recently added
+```
+
+When day 5 (72°) arrives, it pops 69 and 71 — both are settled — but stops at 75, which is still warmer and keeps waiting.
+
+### Why this is `O(n)`, despite the nested loop
+
+The `while` inside the `for` looks quadratic. It is not.
+
+<Callout type="info" title="The counting argument">
+Each day is **pushed exactly once** and **popped at most once**. That is `2n` stack operations across the whole run, no matter how the inner loop is distributed.
+
+Some days pop nothing; one day might pop twenty. The *total* is still bounded by `n`.
+
+This is called **amortised** analysis, and it is the same reasoning that makes the set version of a sliding window linear.
+</Callout>
+
+### The real-world version
+
+People queue at a counter, each waiting for someone taller than them to walk past. They stand in order of decreasing height, so the shortest is always at the front.
+
+When a tall person walks by, everyone shorter than them is served immediately and leaves. The tall person then joins the queue to wait for someone taller still.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start with an answer array of zeros
+
+Zero is already the correct answer for any day that never warms up, so days left on the stack at the end need no special handling.
+</Step>
+
+<Step>
+### Keep a stack of **indices**, not temperatures
+
+You need the index to compute the waiting time, and the index gives you the temperature anyway. Storing temperatures alone loses the position.
+</Step>
+
+<Step>
+### For each day, pop every colder day still waiting
+
+While the stack is non-empty and today is warmer than the day on top, pop it and record `answer[popped] = today - popped`.
+</Step>
+
+<Step>
+### Push today
+
+Today now waits for its own warmer day.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<StackViz
+  title="temperatures = [73, 74, 75, 71, 69, 72, 76, 73]"
+  frames={[
+    {
+      items: [{ value: "d0:73", state: "active" }],
+      input: { values: [73, 74, 75, 71, 69, 72, 76, 73], cursor: 0 },
+      vars: { answer: "[0,0,0,0,0,0,0,0]" },
+      note: "The stack is empty, so day 0 just waits. Push it.",
+    },
+    {
+      items: [{ value: "d1:74", state: "active" }],
+      input: { values: [73, 74, 75, 71, 69, 72, 76, 73], cursor: 1 },
+      vars: { answer: "[1,0,0,0,0,0,0,0]" },
+      note: "74 > 73, so day 0 is settled: 1 - 0 = 1 day of waiting. Pop it, then push day 1.",
+    },
+    {
+      items: [{ value: "d2:75", state: "active" }],
+      input: { values: [73, 74, 75, 71, 69, 72, 76, 73], cursor: 2 },
+      vars: { answer: "[1,1,0,0,0,0,0,0]" },
+      note: "75 > 74, so day 1 is settled with a wait of 1. Push day 2.",
+    },
+    {
+      items: [
+        { value: "d2:75", state: "idle" },
+        { value: "d3:71", state: "active" },
+      ],
+      input: { values: [73, 74, 75, 71, 69, 72, 76, 73], cursor: 3 },
+      vars: { answer: "[1,1,0,0,0,0,0,0]" },
+      note: "71 < 75, so nothing is settled. Day 3 stacks on top. The stack now decreases upward: 75, 71.",
+    },
+    {
+      items: [
+        { value: "d2:75", state: "idle" },
+        { value: "d3:71", state: "idle" },
+        { value: "d4:69", state: "active" },
+      ],
+      input: { values: [73, 74, 75, 71, 69, 72, 76, 73], cursor: 4 },
+      vars: { answer: "[1,1,0,0,0,0,0,0]" },
+      note: "69 is colder still. Three days now waiting, in decreasing order 75 > 71 > 69.",
+    },
+    {
+      items: [
+        { value: "d2:75", state: "idle" },
+        { value: "d5:72", state: "active" },
+      ],
+      input: { values: [73, 74, 75, 71, 69, 72, 76, 73], cursor: 5 },
+      vars: { answer: "[1,1,0,2,1,0,0,0]" },
+      note: "72 settles TWO days in one step: day 4 (5-4=1) and day 3 (5-3=2). It stops at 75, which is still warmer.",
+    },
+    {
+      items: [{ value: "d6:76", state: "active" }],
+      input: { values: [73, 74, 75, 71, 69, 72, 76, 73], cursor: 6 },
+      vars: { answer: "[1,1,4,2,1,1,0,0]" },
+      note: "76 is warmer than everything waiting. It settles day 5 (1) and day 2 (6-2=4), emptying the stack.",
+    },
+    {
+      items: [
+        { value: "d6:76", state: "idle" },
+        { value: "d7:73", state: "done" },
+      ],
+      input: { values: [73, 74, 75, 71, 69, 72, 76, 73], cursor: 7 },
+      vars: { answer: "[1,1,4,2,1,1,0,0]" },
+      note: "73 < 76, so it just waits. The array ends with days 6 and 7 still on the stack — both keep their default 0.",
+    },
+  ]}
+  caption="Every day is pushed once and popped at most once. 8 days, at most 16 stack operations."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def daily_temperatures(temperatures: list[int]) -> list[int]:
+    """For each day, days until a warmer one. 0 if none follows."""
+    n = len(temperatures)
+
+    # 0 is already correct for days that never warm up.
+    answer = [0] * n
+
+    # Indices of days still waiting, temperatures decreasing bottom to top.
+    stack: list[int] = []
+
+    for today, temp in enumerate(temperatures):
+        # Today settles every colder day still waiting.
+        while stack and temperatures[stack[-1]] < temp:
+            earlier = stack.pop()
+            answer[earlier] = today - earlier
+
+        stack.append(today)
+
+    # Anything left never warmed up — already 0.
+    return answer
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function dailyTemperatures(temperatures: number[]): number[] {
+  const n = temperatures.length;
+
+  // 0 is already correct for days that never warm up.
+  const answer = new Array<number>(n).fill(0);
+
+  // Indices of days still waiting, temperatures decreasing bottom to top.
+  const stack: number[] = [];
+
+  for (let today = 0; today < n; today++) {
+    // Today settles every colder day still waiting.
+    while (
+      stack.length > 0 &&
+      temperatures[stack[stack.length - 1]] < temperatures[today]
+    ) {
+      const earlier = stack.pop()!;
+      answer[earlier] = today - earlier;
+    }
+
+    stack.push(today);
+  }
+
+  // Anything left never warmed up — already 0.
+  return answer;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Three details that decide correctness">
+**Store indices, not temperatures.** Without the index you cannot compute `today - earlier`, and you cannot write into the right slot of `answer`.
+
+**Use `<` not `<=`.** The problem asks for a *strictly* warmer day. With `<=`, an equal temperature would wrongly settle the earlier day. Check `[73, 73]`: the answer is `[0, 0]`, not `[1, 0]`.
+
+**Check the stack is non-empty first.** Both languages short-circuit left to right, so `stack and temperatures[stack[-1]] < temp` is safe. Reversing the order reads from an empty stack — `IndexError` in Python, `undefined` in TypeScript.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+- **Time** — the outer loop runs `n` times. The inner `while` looks like it could multiply that, but each index is pushed once and popped once, so all inner iterations together total at most `n`. That gives `O(n)` overall.
+- **Space** — the stack holds at most `n` indices, which happens when temperatures strictly decrease and nothing is ever settled. The output array is not usually counted, since it is required by the problem.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Strictly increasing, e.g. [70, 71, 72]">
+Answer is `[1, 1, 0]`. Every day settles the one before it immediately, so the stack never holds more than one entry. Best case for space.
+</Accordion>
+
+<Accordion title="Strictly decreasing, e.g. [72, 71, 70]">
+Answer is `[0, 0, 0]`. Nothing is ever popped, the stack grows to `n`, and every day keeps its default `0`. Worst case for space.
+</Accordion>
+
+<Accordion title="All equal, e.g. [73, 73, 73]">
+Answer is `[0, 0, 0]`. Because the comparison is strict `<`, an equal temperature never settles anything. If the problem asked for "warmer or equal", the comparison would become `<=`.
+</Accordion>
+
+<Accordion title="A single day">
+Answer is `[0]`. It is pushed and never settled.
+</Accordion>
+
+<Accordion title="Why is this not O(n²)?">
+Because the inner loop's work is bounded globally, not per iteration.
+
+Look at the run above: day 5 popped twice, day 6 popped twice, and most days popped nothing. Across all 8 days there were exactly 8 pushes and 6 pops.
+
+Counting the total rather than the worst single step is what amortised analysis means.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Valid Parentheses](/docs/stacks-queues/valid-parentheses) — a stack for nesting rather than ordering
+- [Min Stack](/docs/stacks-queues/min-stack) — a stack carrying extra state alongside each value
+- [Trapping Rain Water](/docs/arrays/trapping-rain-water) — solvable with this same monotonic stack, as well as with two pointers
+- [Stacks & Queues](/docs/stacks-queues) — recognising which one a problem needs

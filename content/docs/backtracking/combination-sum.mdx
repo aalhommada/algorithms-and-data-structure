@@ -1,0 +1,294 @@
+---
+title: Combination Sum
+description: Find every combination summing to a target when numbers may be reused, and learn pruning — the move that makes backtracking fast
+difficulty: medium
+pattern: Backtracking
+variant: reuse allowed, with pruning
+tags: ["Array", "Backtracking", "Pruning", "Recursion"]
+leetcode: https://leetcode.com/problems/combination-sum/
+problemNumber: 39
+---
+
+## Problem Statement
+
+Given an array of **distinct** integers `candidates` and a `target`, return all unique combinations that sum to `target`.
+
+The **same number may be chosen any number of times**. Two combinations are different only if the *counts* of chosen numbers differ.
+
+```text
+Input:  candidates = [2, 3, 6, 7], target = 7
+Output: [[2, 2, 3], [7]]
+
+Input:  candidates = [2, 3, 5], target = 8
+Output: [[2, 2, 2, 2], [2, 3, 3], [3, 5]]
+```
+
+## Intuition
+
+This combines the two ideas from the previous pages, then adds a third.
+
+| Feature | Where it comes from |
+|---|---|
+| Combinations, not orderings — `[2,2,3]` and `[2,3,2]` are the same | [Subsets](/docs/backtracking/subsets): use a start index |
+| Numbers may repeat | New: recurse with `i` rather than `i + 1` |
+| Only paths hitting the target count | New: the base case tests a running sum |
+
+<Callout type="info" title="The key insight">
+Reuse costs exactly one character. In Subsets you recurse with `i + 1` to move past the chosen element. Here you recurse with **`i`** — staying put, so the same number can be chosen again.
+
+Still no going backwards, so `[3, 2]` can never be produced after `[2, 3]`. Duplicates are avoided and reuse is allowed at the same time.
+</Callout>
+
+### Why the search still ends
+
+If a number can be reused forever, why does the recursion terminate?
+
+Because the target shrinks with every choice. Every candidate is positive, so `remaining` strictly decreases and must eventually hit `0` or go negative. Both are stopping conditions.
+
+<Callout type="warn" title="This breaks if zero or negatives are allowed">
+A candidate of `0` would let the search take it forever without changing `remaining` — an infinite loop.
+
+The problem guarantees positive candidates. If it did not, this approach would need rethinking entirely.
+</Callout>
+
+### Pruning: the move that matters
+
+Sort the candidates first. Then, inside the loop, when `candidates[i] > remaining` you can stop — not just skip.
+
+```text
+candidates sorted = [2, 3, 6, 7],  remaining = 1
+
+i=0: 2 > 1  →  too big.
+               And 3, 6, 7 are all bigger still.
+               So BREAK, not continue.
+```
+
+Without sorting you would have to `continue` and test every remaining candidate. With sorting, one failed test rules out the entire rest of the loop.
+
+<Callout type="info" title="continue vs break">
+`continue` skips one candidate. `break` abandons every candidate after it too.
+
+Sorting is what earns you the right to `break`, and on deep searches that turns a slow solution into a fast one. It does not change the answer — only how much work is wasted getting there.
+</Callout>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Sort the candidates
+
+Only to enable pruning. The answer is identical without it, just slower.
+</Step>
+
+<Step>
+### Record when `remaining` hits exactly zero
+
+The path sums to the target. Record a **copy** and return.
+</Step>
+
+<Step>
+### Loop from `start`, and break when a candidate is too big
+
+Because the list is sorted, the first candidate exceeding `remaining` means every later one does too.
+</Step>
+
+<Step>
+### Choose, explore with `i` (not `i + 1`), undo
+
+Passing `i` keeps the current number available for the next level, which is what allows `[2, 2, 2]`.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="candidates = [2, 3, 6, 7], target = 7"
+  frames={[
+    {
+      values: [2, 3, 6, 7],
+      states: ["compare", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { path: "[]", remaining: 7 },
+      note: "Start at index 0. 2 fits inside 7, so take it.",
+    },
+    {
+      values: [2, 3, 6, 7],
+      states: ["match", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { path: "[2]", remaining: 5 },
+      note: "Recurse with i = 0, NOT i + 1. Index 0 is still available, so 2 can be chosen again.",
+    },
+    {
+      values: [2, 3, 6, 7],
+      states: ["match", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { path: "[2, 2]", remaining: 3 },
+      note: "Take 2 again. remaining is 3. Try 2 a third time: remaining would become 1.",
+    },
+    {
+      values: [2, 3, 6, 7],
+      states: ["discard", "compare", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[2, 2, 2]", remaining: 1 },
+      note: "At remaining = 1, candidate 2 is too big. Because the list is sorted, 3, 6 and 7 are too — BREAK. This whole branch dies.",
+    },
+    {
+      values: [2, 3, 6, 7],
+      states: ["match", "match", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[2, 2, 3]", remaining: 0, results: 1 },
+      note: "Back at [2, 2] with remaining = 3, the loop moves to index 1. 3 fits exactly — remaining hits 0. Record [2, 2, 3].",
+    },
+    {
+      values: [2, 3, 6, 7],
+      states: ["discard", "match", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[2, 3]", remaining: 2, results: 1 },
+      note: "Undo back to [2] and try index 1. Path [2, 3] leaves 2 — but index 1 is the floor now, so 2 can no longer be used.",
+    },
+    {
+      values: [2, 3, 6, 7],
+      states: ["discard", "discard", "discard", "match"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { path: "[7]", remaining: 0, results: 2 },
+      note: "All branches starting with 2 or 3 are exhausted. Index 3 gives 7, which hits the target exactly.",
+    },
+    {
+      values: [2, 3, 6, 7],
+      states: ["done", "done", "done", "done"],
+      vars: { results: 2, answer: "[[2,2,3], [7]]" },
+      note: "Two combinations. The start index kept [3, 2, 2] from ever appearing as a separate answer.",
+    },
+  ]}
+  caption="Reuse comes from recursing with i. Uniqueness comes from never going below start."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def combination_sum(candidates: list[int], target: int) -> list[list[int]]:
+    """Every combination summing to target, with unlimited reuse."""
+    # Sorting is only for pruning — the answer is the same without it.
+    candidates.sort()
+
+    results: list[list[int]] = []
+    path: list[int] = []
+
+    def backtrack(start: int, remaining: int) -> None:
+        if remaining == 0:
+            results.append(path[:])   # copy, not the live array
+            return
+
+        for i in range(start, len(candidates)):
+            # Sorted, so if this one is too big every later one is too.
+            if candidates[i] > remaining:
+                break
+
+            path.append(candidates[i])              # choose
+            backtrack(i, remaining - candidates[i])  # explore — i, not i + 1
+            path.pop()                              # undo
+
+    backtrack(0, target)
+    return results
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function combinationSum(candidates: number[], target: number): number[][] {
+  // Sorting is only for pruning — the answer is the same without it.
+  // Note the comparator: sort() without one sorts as STRINGS.
+  const sorted = [...candidates].sort((a, b) => a - b);
+
+  const results: number[][] = [];
+  const path: number[] = [];
+
+  function backtrack(start: number, remaining: number): void {
+    if (remaining === 0) {
+      results.push([...path]); // copy, not the live array
+      return;
+    }
+
+    for (let i = start; i < sorted.length; i++) {
+      // Sorted, so if this one is too big every later one is too.
+      if (sorted[i] > remaining) break;
+
+      path.push(sorted[i]); // choose
+      backtrack(i, remaining - sorted[i]); // explore — i, not i + 1
+      path.pop(); // undo
+    }
+  }
+
+  backtrack(0, target);
+  return results;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Three one-character mistakes">
+| Written | Effect |
+|---|---|
+| `backtrack(i + 1, ...)` | No reuse — becomes a different problem (each number used at most once) |
+| `backtrack(0, ...)` | No start floor — produces `[2,3]` *and* `[3,2]` as separate answers |
+| `continue` instead of `break` | Still correct, just slower — the pruning is wasted |
+
+The first two change the answer. Only the third is merely a performance issue.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n^(T/m))" space="O(T/m)" />
+
+Where `T` is the target, `m` is the smallest candidate, and `n` is the number of candidates.
+
+- **Time** — the deepest a path can go is `T/m`, since each step subtracts at least `m`. At each level there are up to `n` branches, giving `n^(T/m)` in the worst case. Pruning cuts this dramatically in practice but does not change the bound.
+- **Space** — excluding the output: the recursion stack and `path`, both bounded by the maximum depth `T/m`.
+
+<Callout type="info" title="Why the bound looks so unusual">
+Most complexities are written in terms of the input *size*. Here the cost depends on the target *value* and on how small the candidates are.
+
+With `candidates = [1]` and `target = 100`, the path is 100 deep. With `candidates = [50]` and the same target, it is 2 deep. Same input size, wildly different work — which is why `T/m` appears rather than `n`.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="No combination reaches the target, e.g. candidates = [3], target = 7">
+Returns `[]`. Every branch either overshoots or gets pruned, and `remaining` never lands on exactly `0`.
+</Accordion>
+
+<Accordion title="A candidate equals the target exactly">
+It appears alone as a one-element combination — like `[7]` in the first example. The base case fires on the very next call.
+</Accordion>
+
+<Accordion title="target = 0">
+Returns `[[]]`. The base case fires immediately with an empty path. There is exactly one way to sum to zero: choose nothing.
+</Accordion>
+
+<Accordion title="A candidate larger than the target">
+Pruned on the first comparison. After sorting, it sits at the end and the `break` never even reaches it.
+</Accordion>
+
+<Accordion title="Why doesn't the start index prevent [2, 2, 2]?">
+Because `start` is a *floor*, not a step. Passing `i` sets the floor to the current index, which still includes the current index itself.
+
+Passing `i + 1` would raise the floor past it and forbid reuse — that is Combination Sum II.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Subsets](/docs/backtracking/subsets) — the start index, without reuse
+- [Permutations](/docs/backtracking/permutations) — where order matters and no floor applies
+- [Coin Change](/docs/dynamic-programming/coin-change) — the same shape, but asking for the *fewest* coins rather than every combination, which makes it DP
+- [Backtracking](/docs/backtracking) — the template and the pruning idea

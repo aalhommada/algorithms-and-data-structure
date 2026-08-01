@@ -11,8 +11,10 @@ import { Difficulty } from '@/components/algorithm/Difficulty';
 import { LeetCodeLink } from '@/components/algorithm/LeetCodeLink';
 import { ProblemMeta } from '@/components/algorithm/ProblemMeta';
 import { Tags } from '@/components/algorithm/Tags';
+import { ArchDiagram, ArchViz } from '@/components/viz/ArchViz';
 import { ArrayDiagram, ArrayViz } from '@/components/viz/ArrayViz';
 import { GraphViz } from '@/components/viz/GraphViz';
+import { GridDiagram, GridViz } from '@/components/viz/GridViz';
 import { HashMapViz } from '@/components/viz/HashMapViz';
 import { LinkedListDiagram, LinkedListViz } from '@/components/viz/LinkedListViz';
 import { StackViz } from '@/components/viz/StackViz';
@@ -41,11 +43,15 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     Tab,
     ArrayViz,
     ArrayDiagram,
+    ArchViz,
+    ArchDiagram,
     LinkedListViz,
     LinkedListDiagram,
     TreeViz,
     TreeDiagram,
     GraphViz,
+    GridViz,
+    GridDiagram,
     HashMapViz,
     StackViz,
     ...components,

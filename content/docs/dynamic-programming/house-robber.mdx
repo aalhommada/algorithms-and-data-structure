@@ -1,0 +1,303 @@
+---
+title: House Robber
+description: Pick non-adjacent numbers for the largest total, and meet the take-it-or-skip-it decision that defines dynamic programming
+difficulty: medium
+pattern: Dynamic Programming
+variant: take or skip
+tags: ["Array", "Dynamic Programming"]
+leetcode: https://leetcode.com/problems/house-robber/
+problemNumber: 198
+---
+
+## Problem Statement
+
+You are given an array where `nums[i]` is the amount of money in house `i`. You cannot take from **two adjacent** houses. Return the maximum you can collect.
+
+```text
+Input:  nums = [1, 2, 3, 1]
+Output: 4
+Why:    take house 0 (1) and house 2 (3)
+
+Input:  nums = [2, 7, 9, 3, 1]
+Output: 12
+Why:    take 2 + 9 + 1, not 7 + 3
+```
+
+## Intuition
+
+The tempting rule is "always take the biggest available house". Watch it fail:
+
+<Callout type="warn" title="Why greedy is wrong here">
+```text
+nums = [2, 7, 9, 3, 1]
+
+Greedy: take 9 (the largest).
+        Now 7 and 3 are blocked as neighbours.
+        Take 2, then take 1  →  total 12.  Correct by luck.
+
+nums = [2, 1, 1, 2]
+
+Greedy: take a 2, block its neighbour, take the other 2  →  4.
+        Fine here too.
+
+nums = [5, 1, 1, 5, 100]
+
+Greedy: take 100, blocking 5. Then take 5 and 1  →  106.
+Best:   take 5, 5, 100  →  110.
+```
+
+Taking the biggest first can block something better later. Local best is not global best, so greedy does not apply.
+</Callout>
+
+Since you cannot decide greedily, you must consider both options — and that is the shape of dynamic programming.
+
+<Callout type="info" title="The key insight">
+Standing at house `i`, there are exactly two choices:
+
+- **Take it** — collect `nums[i]`, plus the best possible from houses `0 … i-2` (skipping the neighbour).
+- **Skip it** — collect the best possible from houses `0 … i-1`.
+
+The answer at `i` is the larger of the two:
+
+```text
+best(i) = max( nums[i] + best(i - 2),  best(i - 1) )
+```
+</Callout>
+
+That single line is the entire algorithm. Everything else is bookkeeping.
+
+### Why this is DP and not just recursion
+
+Write that formula as plain recursion and `best(3)` gets computed by `best(5)`, and again by `best(4)`, and so on — the same subproblems recomputed exponentially many times.
+
+Both DP conditions hold:
+
+| Condition | Here |
+|---|---|
+| **Optimal substructure** — big answers built from small ones | `best(i)` is built from `best(i-1)` and `best(i-2)` |
+| **Overlapping subproblems** — small ones repeat | `best(i-2)` is needed by both `best(i)` and `best(i-1)` |
+
+So compute each `best(i)` once, in order, and reuse it.
+
+### The real-world version
+
+You are choosing which shifts to work. Two shifts back to back are not allowed. Standing at Friday, you ask: *is it better to work Friday plus my best through Wednesday, or to skip Friday and keep my best through Thursday?*
+
+You do not need to remember which specific days you picked — only the two running totals.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Notice only two previous answers matter
+
+`best(i)` depends on `best(i-1)` and `best(i-2)`. Nothing older is ever consulted.
+
+So the whole table collapses into two variables.
+</Step>
+
+<Step>
+### Track `prev` and `prev2`
+
+`prev` is the best through the previous house; `prev2` is the best through the one before that. Both start at `0`, which correctly represents "no houses yet".
+</Step>
+
+<Step>
+### At each house, take the better of the two options
+
+`current = max(num + prev2, prev)`.
+</Step>
+
+<Step>
+### Shift the window forward
+
+`prev2 = prev`, then `prev = current`. Order matters — overwriting `prev` first would lose the value `prev2` needs.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [2, 7, 9, 3, 1]"
+  frames={[
+    {
+      values: [2, 7, 9, 3, 1],
+      states: ["active", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { prev2: 0, prev: 0, take: 2, skip: 0, best: 2 },
+      note: "House 0. Take = 2 + 0 = 2. Skip = 0. Taking wins, so best is 2.",
+    },
+    {
+      values: [2, 7, 9, 3, 1],
+      states: ["done", "active", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { prev2: 0, prev: 2, take: 7, skip: 2, best: 7 },
+      note: "House 1. Take = 7 + prev2(0) = 7, since house 0 is blocked. Skip = 2. Take wins.",
+    },
+    {
+      values: [2, 7, 9, 3, 1],
+      states: ["match", "discard", "active", "idle", "idle"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { prev2: 2, prev: 7, take: 11, skip: 7, best: 11 },
+      note: "House 2. Take = 9 + prev2(2) = 11 — that 2 is house 0. Skip = 7. Take wins with 11.",
+    },
+    {
+      values: [2, 7, 9, 3, 1],
+      states: ["match", "discard", "match", "discard", "idle"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { prev2: 7, prev: 11, take: 10, skip: 11, best: 11 },
+      note: "House 3. Take = 3 + 7 = 10. Skip = 11. SKIP wins — the first time skipping is better.",
+    },
+    {
+      values: [2, 7, 9, 3, 1],
+      states: ["match", "discard", "match", "discard", "match"],
+      pointers: [{ index: 4, label: "i" }],
+      vars: { prev2: 11, prev: 11, take: 12, skip: 11, best: 12 },
+      note: "House 4. Take = 1 + 11 = 12. Skip = 11. Take wins. Final answer 12 = houses 0, 2 and 4.",
+    },
+  ]}
+  caption="Two variables replace the whole table, because nothing older than two steps is ever needed."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def rob(nums: list[int]) -> int:
+    """Maximum sum of non-adjacent values, in O(1) space."""
+    prev2 = 0  # best through house i-2
+    prev = 0   # best through house i-1
+
+    for num in nums:
+        # Take this house (skipping the neighbour) or skip it.
+        current = max(num + prev2, prev)
+
+        # Shift the window. prev2 must be updated BEFORE prev is overwritten.
+        prev2 = prev
+        prev = current
+
+    return prev
+
+
+def rob_table(nums: list[int]) -> int:
+    """The same recurrence with an explicit table — clearer, uses O(n) space."""
+    if not nums:
+        return 0
+
+    n = len(nums)
+    best = [0] * (n + 1)
+    best[1] = nums[0]
+
+    for i in range(2, n + 1):
+        # best[i] means "best using the first i houses".
+        best[i] = max(nums[i - 1] + best[i - 2], best[i - 1])
+
+    return best[n]
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function rob(nums: number[]): number {
+  let prev2 = 0; // best through house i-2
+  let prev = 0; // best through house i-1
+
+  for (const num of nums) {
+    // Take this house (skipping the neighbour) or skip it.
+    const current = Math.max(num + prev2, prev);
+
+    // Shift the window. prev2 must be updated BEFORE prev is overwritten.
+    prev2 = prev;
+    prev = current;
+  }
+
+  return prev;
+}
+
+function robTable(nums: number[]): number {
+  if (nums.length === 0) return 0;
+
+  const n = nums.length;
+  const best = new Array<number>(n + 1).fill(0);
+  best[1] = nums[0];
+
+  for (let i = 2; i <= n; i++) {
+    // best[i] means "best using the first i houses".
+    best[i] = Math.max(nums[i - 1] + best[i - 2], best[i - 1]);
+  }
+
+  return best[n];
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="The update order is a real bug source">
+```text
+prev = current      ← WRONG if done first
+prev2 = prev        ← now prev2 gets the NEW value, not the old one
+```
+
+Both variables end up holding the same thing, and the adjacency rule silently stops being enforced. The result is too large, with no error.
+
+Update `prev2` first, or use simultaneous assignment: `prev2, prev = prev, current`.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+- **Time** — one pass, constant work per house.
+- **Space** — two variables, regardless of input size. The table version is `O(n)` and is worth writing first if the recurrence is not yet obvious; collapsing to two variables is a mechanical last step.
+
+<Callout type="info" title="The four stages, on this problem">
+| Stage | Cost | What it looks like |
+|---|---|---|
+| Naive recursion | `O(2ⁿ)` | `rob(i) = max(nums[i] + rob(i-2), rob(i-1))` |
+| Memoized | `O(n)` time, `O(n)` space | Same, plus a cache |
+| Tabulated | `O(n)` time, `O(n)` space | The loop with a `best` array |
+| Space-optimised | `O(n)` time, `O(1)` space | Two variables |
+
+Every stage is correct. Stop wherever the constraints allow.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty array">
+Returns `0`. The loop never runs and `prev` stays at its initial `0`. No special case needed — which is one advantage of starting both variables at zero.
+</Accordion>
+
+<Accordion title="A single house">
+Returns that house's value. `current = max(num + 0, 0) = num`.
+</Accordion>
+
+<Accordion title="Two houses, e.g. [2, 7]">
+Returns `7`. At house 1, taking gives `7 + prev2(0) = 7` and skipping gives `2`. Correct — you cannot take both.
+</Accordion>
+
+<Accordion title="All zeros, or all equal">
+Returns the right answer either way. With `[5, 5, 5]` the result is `10`, taking the first and last.
+</Accordion>
+
+<Accordion title="What if the houses were in a circle?">
+That is House Robber II, and the neat trick is to reuse this function twice: once on `nums[0 : n-1]` and once on `nums[1 : n]`, then take the larger.
+
+The reasoning: the first and last houses are now adjacent, so they cannot both be taken. Excluding one or the other covers every legal arrangement.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) — the same two-variable shape, adding instead of maximising
+- [Coin Change](/docs/dynamic-programming/coin-change) — when the window is not fixed at two
+- [Best Time to Buy and Sell Stock](/docs/arrays/best-time-to-buy-and-sell-stock) — a DP table collapsed to a single running value
+- [Dynamic Programming](/docs/dynamic-programming) — the four stages in detail

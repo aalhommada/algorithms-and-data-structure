@@ -1,0 +1,251 @@
+---
+title: News Feed
+description: Fan-out on write versus on read, why accounts with millions of followers break both, and the hybrid that real systems use
+---
+
+A feed looks like a database query and is not. The whole problem is that one write can require a million updates — or one read can require a million lookups.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| Feed ordering? | Reverse chronological, with room for ranking later |
+| How far back? | The most recent few hundred posts |
+| Real time? | Seconds of delay is fine |
+| Media? | Posts carry text plus image URLs |
+| Follow model? | One-directional, like Twitter |
+
+**In scope:** post, follow, read your feed.
+**Out of scope:** direct messages, notifications, comment threads.
+
+## 2. Put Numbers On It
+
+```text
+300 million daily active users
+
+WRITES
+  300M × 2 posts/day        =  600M posts/day
+  ÷ 100,000 sec             ≈  6,000 posts/sec
+  × 3 peak                  ≈  18,000 posts/sec
+
+READS
+  300M × 10 feed loads/day  =  3B reads/day
+  ÷ 100,000                 ≈  30,000 reads/sec
+  × 3 peak                  ≈  90,000 reads/sec
+
+  Read : write              ≈  5 : 1
+
+Average followers per user  ≈  200
+Largest accounts            ≈  100,000,000 followers   ← the whole problem
+```
+
+<Callout type="warn" title="That last line is the design">
+6,000 posts/sec × 200 average followers = **1.2 million feed writes per second**. That is already large.
+
+But an account with 100 million followers generates 100 million feed writes from a *single* post. If a few such accounts post at once, the system must absorb hundreds of millions of writes in seconds.
+
+Averages are useless here. The design is decided entirely by the tail.
+</Callout>
+
+## 3. Define the Interface
+
+```text
+POST /posts              { "text": "...", "media": [...] }
+GET  /feed?after=cursor  the caller's feed, newest first
+POST /follow/{user_id}
+```
+
+Cursor pagination, not offset — new posts arrive constantly, so [offset pagination](/docs/system-design/apis) would duplicate and skip items.
+
+## 4. The Two Approaches
+
+### Fan-out on read — assemble at read time
+
+Store each post once. When a user opens their feed, fetch the people they follow, query recent posts from each, merge and sort.
+
+```text
+Write:  1 insert                              ← cheap
+Read:   fetch 200 followees
+        query recent posts from each
+        merge and sort                        ← expensive, on every read
+```
+
+Writes are trivial. Reads are heavy — and reads outnumber writes 5:1, so the cost lands in the worst place.
+
+### Fan-out on write — precompute the feed
+
+When someone posts, immediately push the post id into a stored feed list for every follower.
+
+```text
+Write:  1 insert + N feed pushes              ← expensive, N = follower count
+Read:   read one precomputed list             ← a single lookup
+```
+
+Reads become trivial. Writes explode for popular accounts.
+
+<Callout type="info" title="The core trade-off, stated plainly">
+| | Fan-out on read | Fan-out on write |
+|---|---|---|
+| Write cost | `O(1)` | `O(followers)` |
+| Read cost | `O(followees)` | `O(1)` |
+| Feed latency | Slow — assembled live | Fast — already built |
+| Storage | Minimal | One entry per follower per post |
+| Breaks on | Users following thousands | Accounts with millions of followers |
+
+Neither is correct on its own. Fan-out on write is right for the 99.9% of users with normal follower counts; fan-out on read is right for the handful with millions.
+</Callout>
+
+## 5. The Hybrid
+
+Use fan-out on write for ordinary accounts, and fan-out on read for the small number of very large ones.
+
+<ArchViz
+  title="Hybrid fan-out"
+  height={330}
+  nodes={[
+    { id: "author", label: "Author", kind: "client", x: 0.0, y: 0.25 },
+    { id: "api", label: "Post Service", kind: "service", x: 0.24, y: 0.25 },
+    { id: "posts", label: "Post Store", sublabel: "source of truth", kind: "database", x: 0.5, y: 0.02 },
+    { id: "queue", label: "Fan-out Queue", kind: "queue", x: 0.5, y: 0.45 },
+    { id: "workers", label: "Fan-out Workers", kind: "service", x: 0.75, y: 0.45 },
+    { id: "feeds", label: "Feed Cache", sublabel: "per-user lists", kind: "cache", x: 1.0, y: 0.25 },
+    { id: "reader", label: "Reader", kind: "client", x: 0.0, y: 0.95 },
+    { id: "feedapi", label: "Feed Service", kind: "service", x: 0.4, y: 0.95 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "author", to: "api", label: "POST", active: true },
+        { from: "api", to: "posts", label: "insert", active: true },
+        { from: "api", to: "queue", label: "enqueue", dashed: true, active: true },
+      ],
+      active: ["author", "api", "posts", "queue"],
+      dimmed: ["workers", "feeds", "reader", "feedapi"],
+      vars: { "author followers": "200 (normal)" },
+      note: "The post is stored once and the author gets a fast response. Fan-out is queued, not done inline.",
+    },
+    {
+      edges: [
+        { from: "queue", to: "workers", active: true },
+        { from: "workers", to: "feeds", label: "push to 200 lists", active: true },
+      ],
+      active: ["queue", "workers", "feeds"],
+      dimmed: ["author", "api", "posts", "reader", "feedapi"],
+      vars: { "writes": 200, "time": "< 1 sec" },
+      note: "Workers push the post id into each follower's cached feed list. For a normal account this is fast and cheap.",
+    },
+    {
+      edges: [
+        { from: "author", to: "api", label: "POST", active: true },
+        { from: "api", to: "posts", label: "insert only", active: true },
+      ],
+      active: ["author", "api", "posts"],
+      dimmed: ["queue", "workers", "feeds", "reader", "feedapi"],
+      vars: { "author followers": "100,000,000 (celebrity)", "fan-out": "SKIPPED" },
+      note: "For a very large account, fan-out is skipped entirely. Writing 100 million list entries per post is not viable.",
+    },
+    {
+      edges: [
+        { from: "reader", to: "feedapi", label: "GET /feed", active: true },
+        { from: "feedapi", to: "feeds", label: "precomputed", active: true },
+        { from: "feedapi", to: "posts", label: "celebrity posts", active: true },
+      ],
+      active: ["reader", "feedapi", "feeds", "posts"],
+      dimmed: ["author", "api", "queue", "workers"],
+      vars: { read: "merge two sources" },
+      note: "On read, take the precomputed list and merge in fresh posts from the few large accounts this user follows. Two cheap lookups, not two hundred.",
+    },
+  ]}
+  caption="Precompute for the many, assemble on read for the few. The merge is small because nobody follows many celebrities."
+/>
+
+<Callout type="info" title="Why the merge stays cheap">
+A user might follow 500 accounts, but only a handful are large enough to be excluded from fan-out.
+
+So the read is: one lookup for the precomputed list, plus perhaps three to five lookups for large accounts. That is six lookups, not five hundred — the hybrid keeps reads nearly as fast as pure fan-out on write.
+</Callout>
+
+### Storage
+
+```text
+posts
+  post_id      BIGINT PRIMARY KEY
+  author_id    BIGINT
+  text         TEXT
+  media_urls   JSON
+  created_at   TIMESTAMP
+  INDEX (author_id, created_at DESC)      ← for the celebrity read path
+
+feeds  (Redis, one sorted set per user)
+  key:    feed:{user_id}
+  score:  post timestamp
+  member: post_id
+  capped at ~800 entries
+```
+
+<Callout type="warn" title="Cap the feed lists">
+Without a cap, feed lists grow forever and Redis runs out of memory.
+
+Nobody scrolls past a few hundred posts. Trim each list to around 800 entries on write. Users who scroll deeper fall through to a slower database query, which is a fine trade for a rare action.
+
+Storing only post **ids** in the list, and hydrating the post bodies from a separate cache, keeps memory small and means an edited post is corrected everywhere at once.
+</Callout>
+
+## 6. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Fan-out on write for most users | Feed reads are one lookup | Huge write amplification |
+| Skip fan-out for large accounts | Write load stays bounded | Reads must merge two sources |
+| Async fan-out via queue | Posting is fast | Followers see the post seconds later |
+| Capped feed lists | Bounded memory | Deep scrolling is slow |
+| Store ids, not post bodies | Small memory, edits propagate | Extra hydration lookup |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="Where is the threshold between 'normal' and 'celebrity'?">
+Somewhere around 10,000 to 100,000 followers, tuned by measurement rather than principle.
+
+Set it by asking what fan-out write rate you can absorb. If workers handle 2 million pushes/sec and you want fan-out to finish within a second, the threshold is where the tail stops fitting in that budget.
+
+Make it a configuration value, not a constant — it will need tuning.
+</Accordion>
+
+<Accordion title="What if a user follows 50,000 accounts?">
+The opposite tail. Their precomputed feed receives writes from 50,000 sources, which is fine — the cost is on the *authors'* side, not theirs.
+
+The problem case is a user following many *celebrities*, since each is a separate read-path lookup. Cap the merge at the most recently active few, or precompute a shared "celebrity timeline" that many users read from.
+</Accordion>
+
+<Accordion title="How would ranking change this?">
+Reverse chronological is a sort. Ranking is a scoring function over candidates.
+
+The structure survives: fan-out still gathers *candidates*, then a ranking service scores them at read time using engagement signals and freshness. Scoring 800 candidates per read is affordable; scoring the whole corpus is not.
+
+This is why candidate generation and ranking are separate stages in every real feed.
+</Accordion>
+
+<Accordion title="What happens when a fan-out worker fails halfway?">
+Some followers have the post, others do not. Since fan-out jobs are [at-least-once](/docs/system-design/queues), the retry re-pushes to everyone.
+
+Make it idempotent: a sorted set keyed by post id means pushing the same post twice is a no-op. This is a case where choosing the right data structure removes the deduplication problem entirely.
+</Accordion>
+
+<Accordion title="How do you handle unfollowing and deleted posts?">
+Do **not** try to remove entries from millions of cached feeds.
+
+Filter on read instead: when hydrating post ids, drop any whose author the reader no longer follows, and any post that no longer exists. The list is capped at 800, so filtering is cheap, and stale ids age out naturally.
+
+This is the general principle — lazy cleanup on a bounded read beats eager cleanup across an unbounded write.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Queues and Async Work](/docs/system-design/queues) — the fan-out pipeline
+- [Caching](/docs/system-design/caching) — feed lists are a cache with a cap
+- [Databases](/docs/system-design/databases) — sharding the post store
+- [Heaps](/docs/heaps) — merging k sorted post streams is [Merge k Sorted Lists](/docs/heaps/merge-k-sorted-lists)

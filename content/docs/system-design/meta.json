@@ -1,0 +1,23 @@
+{
+  "title": "System Design",
+  "icon": "Server",
+  "pages": [
+    "index",
+    "---Foundations---",
+    "numbers-to-know",
+    "scaling",
+    "caching",
+    "databases",
+    "consistency",
+    "queues",
+    "apis",
+    "reliability",
+    "---Worked Designs---",
+    "url-shortener",
+    "rate-limiter",
+    "news-feed",
+    "chat-system",
+    "autocomplete",
+    "video-streaming"
+  ]
+}

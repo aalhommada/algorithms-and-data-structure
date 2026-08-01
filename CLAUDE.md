@@ -1,5 +1,14 @@
 # CLAUDE.md - Project Guide
 
+## How to Answer (always)
+
+- **Use simple English.** Short sentences. Plain words instead of jargon. If a
+  technical term is unavoidable, explain it in the same breath.
+- **Use tables and diagrams whenever they make the answer clearer** than prose —
+  comparisons, before/after, trade-offs, step sequences, file structures. Prefer
+  a small table over a long paragraph.
+- Do not pad the answer. Say the thing, show it, stop.
+
 ## Project Overview
 
 An algorithms and data structures documentation site built with **Fumadocs**. It covers 56 LeetCode problems with beginner-friendly explanations, animated visualizations, and solutions in **Python** and **TypeScript**.

@@ -1,0 +1,268 @@
+---
+title: Invert Binary Tree
+description: Mirror a tree by swapping every node's children, and see why the order of the swap matters
+difficulty: easy
+pattern: DFS
+variant: pre-order
+tags: ["Tree", "DFS", "BFS", "Recursion"]
+leetcode: https://leetcode.com/problems/invert-binary-tree/
+problemNumber: 226
+---
+
+## Problem Statement
+
+Given the root of a binary tree, invert it — turn it into its mirror image — and return the root.
+
+```text
+Input:  root = [4, 2, 7, 1, 3, 6, 9]
+Output: [4, 7, 2, 9, 6, 3, 1]
+
+      4                 4
+     / \               / \
+    2   7      →      7   2
+   / \ / \           / \ / \
+  1  3 6  9         9  6 3  1
+```
+
+## Intuition
+
+The word "invert" sounds like it needs a plan. It does not. Look at one node in isolation:
+
+```text
+    2          becomes          2
+   / \                         / \
+  1   3                       3   1
+```
+
+Its two children swapped places. That is the entire operation.
+
+<Callout type="info" title="The key insight">
+Inverting a whole tree is nothing more than **swapping the two children of every single node**. There is no order to work out and no bookkeeping.
+
+Do it once per node, and the mirroring happens on its own.
+</Callout>
+
+Why does that produce a full mirror rather than just a shuffled top? Because when you swap node `2`'s children, the *entire subtree* under `1` moves with it. Swapping a pointer moves everything hanging off it. Do that at every level and every layer flips.
+
+### The real-world version
+
+Hold a mobile — the hanging kind above a cot — and rotate each crossbar 180°. You do not track where any individual toy ends up. You flip each bar, and every toy below it comes along.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Stop at empty
+
+If the node is `null`, return `null`. Nothing to swap.
+</Step>
+
+<Step>
+### Swap this node's two children
+
+A single assignment. In Python one line does it; in TypeScript use a temporary variable or destructuring.
+</Step>
+
+<Step>
+### Recurse into both children
+
+Each child then swaps its own children, and so on down.
+</Step>
+
+<Step>
+### Return the node
+
+Returning the root lets the caller chain the result, and lets each recursive call reattach cleanly.
+</Step>
+
+</Steps>
+
+<Callout type="info" title="Swap first or recurse first? Both work.">
+This is unusual. Most tree problems care deeply about ordering, but here **pre-order** (swap, then recurse) and **post-order** (recurse, then swap) both give the same answer.
+
+The reason: swapping a node's children and inverting its subtrees are independent operations. Neither depends on the other having happened.
+
+Compare that with [Validate BST](/docs/trees/validate-binary-search-tree), where order is everything.
+</Callout>
+
+### Watch it run
+
+<TreeViz
+  title="root = [4, 2, 7, 1, 3, 6, 9]"
+  frames={[
+    {
+      nodes: [4, 2, 7, 1, 3, 6, 9],
+      states: ["active", "compare", "compare", "idle", "idle", "idle", "idle"],
+      note: "At the root. Its children are 2 and 7 — about to be swapped.",
+    },
+    {
+      nodes: [4, 7, 2, 6, 9, 1, 3],
+      states: ["done", "match", "match", "idle", "idle", "idle", "idle"],
+      note: "Swapped. Notice 6 and 9 travelled with 7, and 1 and 3 travelled with 2 — whole subtrees moved, not just two nodes.",
+    },
+    {
+      nodes: [4, 7, 2, 6, 9, 1, 3],
+      states: ["done", "active", "idle", "compare", "compare", "idle", "idle"],
+      note: "Recurse into the left child, which is now 7. Its children 6 and 9 are next.",
+    },
+    {
+      nodes: [4, 7, 2, 9, 6, 1, 3],
+      states: ["done", "done", "idle", "match", "match", "idle", "idle"],
+      note: "Swapped. 7's subtree is now mirrored.",
+    },
+    {
+      nodes: [4, 7, 2, 9, 6, 1, 3],
+      states: ["done", "done", "active", "idle", "idle", "compare", "compare"],
+      note: "Now the right child, 2, with children 1 and 3.",
+    },
+    {
+      nodes: [4, 7, 2, 9, 6, 3, 1],
+      states: ["match", "done", "done", "done", "done", "match", "match"],
+      note: "Swapped. Every node has had its turn, and the tree is a complete mirror.",
+    },
+  ]}
+  caption="Four nodes had children to swap. The three leaves were reached, swapped nothing, and returned."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+class TreeNode:
+    def __init__(self, val: int = 0, left: "TreeNode | None" = None,
+                 right: "TreeNode | None" = None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+
+def invert_tree(root: TreeNode | None) -> TreeNode | None:
+    """Mirror the tree by swapping every node's two children."""
+    if root is None:
+        return None
+
+    # Python evaluates the right side fully before assigning, so no temp needed.
+    root.left, root.right = root.right, root.left
+
+    invert_tree(root.left)
+    invert_tree(root.right)
+
+    return root
+
+
+def invert_tree_iterative(root: TreeNode | None) -> TreeNode | None:
+    """Same work, with an explicit stack instead of recursion."""
+    if root is None:
+        return None
+
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        node.left, node.right = node.right, node.left
+
+        if node.left:
+            stack.append(node.left)
+        if node.right:
+            stack.append(node.right)
+
+    return root
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class TreeNode {
+  val: number;
+  left: TreeNode | null;
+  right: TreeNode | null;
+  constructor(val = 0, left: TreeNode | null = null, right: TreeNode | null = null) {
+    this.val = val;
+    this.left = left;
+    this.right = right;
+  }
+}
+
+function invertTree(root: TreeNode | null): TreeNode | null {
+  if (root === null) return null;
+
+  // Destructuring swaps in one statement, like Python's tuple assignment.
+  [root.left, root.right] = [root.right, root.left];
+
+  invertTree(root.left);
+  invertTree(root.right);
+
+  return root;
+}
+
+function invertTreeIterative(root: TreeNode | null): TreeNode | null {
+  if (root === null) return null;
+
+  const stack: TreeNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    [node.left, node.right] = [node.right, node.left];
+
+    if (node.left) stack.push(node.left);
+    if (node.right) stack.push(node.right);
+  }
+
+  return root;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="The classic swap bug">
+Writing this without a temporary is wrong:
+
+```text
+node.left = node.right      ← node.left is now lost
+node.right = node.left      ← this copies the value we just overwrote
+```
+
+Both children end up as the original right child, and the original left subtree is unreachable — leaked, with no error.
+
+Python's `a, b = b, a` and JavaScript's `[a, b] = [b, a]` both build the right-hand side first, which is why they are safe.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(h)" />
+
+- **Time** — each node is visited once and does one constant-time swap.
+- **Space** — the call stack holds one frame per level of the current path, so `O(h)`. Balanced trees give `O(log n)`; a single chain gives `O(n)`.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty tree">
+Returns `null` immediately. The base case covers it.
+</Accordion>
+
+<Accordion title="A single node">
+Both children are `null`. Swapping two nulls is harmless, and the tree is its own mirror.
+</Accordion>
+
+<Accordion title="A node with only one child">
+Swapping still works. A node with only a left child ends up with only a right child — which is exactly what a mirror should do. No null check is needed around the swap.
+</Accordion>
+
+<Accordion title="Does this need to return a new tree?">
+No. This version mutates in place and returns the same root, which the problem allows.
+
+If the original must survive, build new nodes instead: `TreeNode(root.val, invert(root.right), invert(root.left))`. That costs `O(n)` extra space but leaves the input untouched.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Maximum Depth of Binary Tree](/docs/trees/maximum-depth-of-binary-tree) — the same skeleton, returning a value instead of mutating
+- [Validate Binary Search Tree](/docs/trees/validate-binary-search-tree) — where traversal order does matter
+- [Trees](/docs/trees) — the traversal orders explained side by side

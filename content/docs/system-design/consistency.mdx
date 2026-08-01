@@ -1,0 +1,238 @@
+---
+title: Consistency and CAP
+description: What you must give up when data lives in more than one place, and how to choose which guarantee each feature needs
+---
+
+The moment your data exists on two machines, they can disagree. Everything on this page is about managing that fact.
+
+## The CAP Theorem
+
+CAP says a distributed system can guarantee at most **two** of three properties:
+
+| Letter | Property | Meaning |
+|---|---|---|
+| **C** | Consistency | Every read sees the most recent write |
+| **A** | Availability | Every request gets an answer |
+| **P** | Partition tolerance | The system keeps working when the network splits |
+
+<Callout type="warn" title="CAP is usually stated misleadingly">
+"Pick two" implies you have a free choice of three. You do not.
+
+**Network partitions happen.** Cables are cut, switches fail, datacentres lose connectivity. You cannot opt out of `P` — you can only decide what to do when a partition occurs.
+
+So the real choice is only ever between **C and A**, and only *during a partition*. When the network is healthy you can have both.
+</Callout>
+
+### What the choice looks like
+
+Two replicas, and the link between them breaks. A write arrives at one side.
+
+<ArchViz
+  title="A partition forces one decision"
+  height={250}
+  nodes={[
+    { id: "user1", label: "User A", kind: "client", x: 0.0, y: 0.2 },
+    { id: "n1", label: "Node 1", sublabel: "London", kind: "database", x: 0.35, y: 0.2 },
+    { id: "n2", label: "Node 2", sublabel: "Tokyo", kind: "database", x: 0.35, y: 0.85 },
+    { id: "user2", label: "User B", kind: "client", x: 0.0, y: 0.85 },
+    { id: "choice", label: "The decision", kind: "external", x: 0.85, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "user1", to: "n1", label: "write x=5", active: true },
+        { from: "n1", to: "n2", label: "replicate", dashed: true, active: true },
+        { from: "user2", to: "n2", label: "read x" },
+      ],
+      active: ["n1", "n2"],
+      dimmed: ["choice"],
+      vars: { network: "healthy", "node 1": "x=5", "node 2": "x=5" },
+      note: "Healthy network. The write replicates, both nodes agree, and both users see x=5. No trade-off is needed.",
+    },
+    {
+      edges: [
+        { from: "user1", to: "n1", label: "write x=9", active: true },
+        { from: "user2", to: "n2", label: "read x" },
+      ],
+      active: ["n1"],
+      dimmed: ["choice"],
+      vars: { network: "PARTITIONED", "node 1": "x=9", "node 2": "x=5 (stale)" },
+      note: "The link breaks. Node 1 accepts x=9; node 2 cannot hear about it. The two now disagree.",
+    },
+    {
+      edges: [
+        { from: "user2", to: "n2", label: "read x", active: true },
+        { from: "n2", to: "choice", label: "refuse", active: true },
+      ],
+      active: ["n2", "choice"],
+      vars: { choice: "CP — choose Consistency", result: "error returned" },
+      note: "CP: node 2 knows it may be stale, so it refuses to answer. No wrong data is ever served — but User B gets an error.",
+    },
+    {
+      edges: [
+        { from: "user2", to: "n2", label: "read x", active: true },
+        { from: "n2", to: "choice", label: "answer x=5", active: true },
+      ],
+      active: ["n2", "choice"],
+      vars: { choice: "AP — choose Availability", result: "stale value served" },
+      note: "AP: node 2 answers with the value it has. User B gets a response, but it is out of date. It will converge once the link heals.",
+    },
+  ]}
+  caption="During a partition there is no third option. Serve possibly-wrong data, or serve nothing."
+/>
+
+| Choice | During a partition | Suits |
+|---|---|---|
+| **CP** — consistency | Refuse requests rather than risk stale data | Payments, inventory, bookings |
+| **AP** — availability | Answer with possibly stale data | Feeds, likes, view counts, DNS |
+
+<Callout type="info" title="The right answer differs per feature, not per company">
+The same product usually needs both.
+
+A shop can serve a slightly stale **product description** — nobody is harmed by a 30-second-old description. The same shop must not serve a stale **stock count** at checkout, or it sells items it does not have.
+
+Strong design says: *"the catalogue is AP, the checkout path is CP."* Choosing one guarantee for the entire system is almost always wrong.
+</Callout>
+
+## Consistency Models
+
+"Consistent" is not binary. There is a ladder, and each rung costs more than the one below.
+
+| Model | Guarantee | Cost |
+|---|---|---|
+| **Strong** | Every read sees the latest write | Slowest — needs coordination |
+| **Read-your-writes** | *You* see your own writes; others may lag | Cheap and usually enough |
+| **Monotonic reads** | You never see time go backwards | Cheap |
+| **Eventual** | Given no new writes, replicas converge | Fastest, weakest |
+
+<Callout type="warn" title="Eventual consistency has a sharp edge">
+"Eventually consistent" sounds harmless. The failure it permits is not:
+
+```text
+Read 1 (replica A, caught up):  balance = £100
+Read 2 (replica B, lagging):    balance = £150
+Read 3 (replica A again):       balance = £100
+```
+
+The user watches their balance change and change back. Nothing is broken, no error is logged, and they will not trust the number again.
+
+**Monotonic reads** fixes exactly this by pinning a user to one replica, and it is far cheaper than full strong consistency.
+</Callout>
+
+### Read-your-writes is the one to reach for
+
+Most "the data is wrong" complaints are really read-after-write problems: a user saves something, reads it back from a lagging replica, and their change appears to have vanished.
+
+Full strong consistency would fix it, at a heavy cost. Read-your-writes fixes it cheaply:
+
+- Route that user's reads to the primary for a few seconds after they write, or
+- Keep the value in their session and serve it back to them, or
+- Have the client hold the version it wrote and wait for a replica that has it.
+
+## ACID and BASE
+
+Two philosophies, and the names are deliberately opposed.
+
+| ACID (typically relational) | BASE (typically distributed) |
+|---|---|
+| **A**tomic — all or nothing | **B**asically **A**vailable |
+| **C**onsistent — constraints hold | **S**oft state — may be in flux |
+| **I**solated — transactions do not interfere | **E**ventually consistent |
+| **D**urable — committed means saved | |
+
+<Callout type="info" title="Isolation levels are where real bugs live">
+Even a single relational database offers several isolation levels, and the default is often not the safest:
+
+| Level | Prevents | Still allows |
+|---|---|---|
+| Read uncommitted | almost nothing | dirty reads |
+| Read committed | dirty reads | non-repeatable reads |
+| Repeatable read | non-repeatable reads | phantom rows |
+| Serializable | everything | nothing — but it is slow |
+
+PostgreSQL defaults to *read committed*. Two transactions reading the same row can therefore see different values, which breaks "check then act" patterns such as *"is there stock left? then decrement it"*.
+
+The fix is an explicit lock or an atomic conditional update — not a re-read.
+</Callout>
+
+## Idempotency: The Practical Safeguard
+
+Networks lose responses. The client retries. The action happens twice.
+
+```text
+Client → POST /charge  →  server charges £50  →  response LOST
+Client retries         →  server charges £50 AGAIN
+```
+
+An **idempotent** operation can be repeated safely. The client sends a unique key, and the server records which keys it has already handled.
+
+```text
+POST /charge
+Idempotency-Key: 7f3a-9b21
+
+First time:  perform the charge, store the result under that key
+Retry:       key already seen  →  return the stored result, charge nothing
+```
+
+<Callout type="info" title="This is worth mentioning in almost any design">
+Retries are unavoidable in a distributed system, so *any* operation that changes state needs an answer to "what happens if this arrives twice?"
+
+Reads and deletes are naturally idempotent. Creates and increments are not, and those are exactly the ones that cost money when they double.
+</Callout>
+
+## Distributed Transactions
+
+Sometimes an action must span services — take payment *and* reserve stock. Two-phase commit exists but holds locks across the network and blocks if the coordinator dies.
+
+The common alternative is a **saga**: a sequence of local transactions, each with a compensating undo.
+
+```text
+1. reserve stock       →  ok
+2. charge the card     →  ok
+3. book the courier    →  FAILS
+
+compensate backwards:
+   refund the card
+   release the stock
+```
+
+<Callout type="warn" title="Sagas trade atomicity for availability">
+There is a window where stock is reserved and the card is charged but the courier is not booked. The system is temporarily inconsistent by design.
+
+That is acceptable when the compensations are reliable and the window is short. It is not acceptable where an observer must never see the intermediate state.
+
+The honest framing: *"we use a saga, so there is a brief window where the order is partially complete; the compensating actions close it within seconds."*
+</Callout>
+
+## How to Decide
+
+Ask two questions about each piece of data.
+
+<Steps>
+
+<Step>
+### What happens if a reader sees data a few seconds old?
+
+*"A like count is briefly wrong"* — eventual consistency is fine.
+
+*"We sell stock we do not have"* — you need strong consistency on that path.
+</Step>
+
+<Step>
+### What happens if the operation runs twice?
+
+*"The same row is set to the same value"* — naturally idempotent.
+
+*"The customer is charged twice"* — you need an idempotency key.
+</Step>
+
+</Steps>
+
+Answer those two per feature, and the consistency design follows.
+
+## Related Reading
+
+- [Databases](/docs/system-design/databases) — replication lag, the source of most inconsistency
+- [Caching](/docs/system-design/caching) — a cache is deliberate, bounded staleness
+- [Queues and Async Work](/docs/system-design/queues) — delivery guarantees and why idempotency matters there too
+- [Reliability](/docs/system-design/reliability) — retries, which are what make idempotency necessary

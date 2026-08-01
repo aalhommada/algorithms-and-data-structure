@@ -1,0 +1,229 @@
+---
+title: Caching
+description: Where to put a cache, how entries are evicted and invalidated, and the three failure modes that take systems down
+---
+
+Memory is roughly **1,000× faster than disk**. A cache is how you spend memory to avoid disk.
+
+It is usually the single highest-value component you can add — and also the one that introduces the most subtle bugs, because a cache means the same fact now exists in two places.
+
+## Where Caches Live
+
+There is not one cache. There are several, stacked, and a request may be answered by any of them.
+
+<ArchViz
+  title="A request falling through the cache layers"
+  height={280}
+  nodes={[
+    { id: "browser", label: "Browser", sublabel: "local cache", kind: "client", x: 0.0, y: 0.5 },
+    { id: "cdn", label: "CDN", sublabel: "edge, near user", kind: "edge", x: 0.25, y: 0.5 },
+    { id: "app", label: "App Server", kind: "service", x: 0.5, y: 0.5 },
+    { id: "redis", label: "Redis", sublabel: "shared cache", kind: "cache", x: 0.75, y: 0.12 },
+    { id: "db", label: "Database", kind: "database", x: 1.0, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [{ from: "browser", to: "cdn", dashed: true }],
+      active: ["browser"],
+      dimmed: ["cdn", "app", "redis", "db"],
+      vars: { latency: "0 ms", "served by": "browser" },
+      note: "Best case: the browser already holds it. No network request at all. Controlled by Cache-Control headers.",
+    },
+    {
+      edges: [{ from: "browser", to: "cdn", active: true }],
+      active: ["browser", "cdn"],
+      dimmed: ["app", "redis", "db"],
+      vars: { latency: "~20 ms", "served by": "CDN edge" },
+      note: "Browser misses. The CDN has a copy at a location near the user. Your servers are never touched.",
+    },
+    {
+      edges: [
+        { from: "browser", to: "cdn" },
+        { from: "cdn", to: "app", active: true },
+        { from: "app", to: "redis", active: true },
+      ],
+      active: ["app", "redis"],
+      dimmed: ["db"],
+      vars: { latency: "~30 ms", "served by": "Redis" },
+      note: "CDN misses. The app checks the shared cache and finds it. The database is still untouched.",
+    },
+    {
+      edges: [
+        { from: "browser", to: "cdn" },
+        { from: "cdn", to: "app" },
+        { from: "app", to: "redis", label: "miss", dashed: true },
+        { from: "app", to: "db", label: "read", active: true },
+        { from: "app", to: "redis", label: "write back", active: true },
+      ],
+      active: ["app", "db", "redis"],
+      vars: { latency: "~100 ms", "served by": "database" },
+      note: "Full miss. Read from the database, then write the value into Redis so the next request is fast.",
+    },
+  ]}
+  caption="Every layer that answers is a layer of load the ones behind it never see."
+/>
+
+| Layer | Holds | Typical lifetime |
+|---|---|---|
+| Browser | Static files, API responses | Minutes to a year |
+| CDN | Images, video, CSS, JS | Hours to days |
+| Application memory | Hot config, small lookups | Seconds to minutes |
+| Shared cache (Redis) | Sessions, query results, computed values | Minutes to hours |
+| Database buffer pool | Recently read pages | Managed automatically |
+
+<Callout type="info" title="A cache hit ratio of 80% removes 80% of the load">
+If 80% of reads are served from cache, your database sees one-fifth of the traffic it otherwise would.
+
+This is why caching so often beats adding database replicas: it is cheaper, it is faster, and it works on the read path where the pressure usually is.
+</Callout>
+
+## Reading and Writing
+
+### Cache-aside — the default
+
+The application manages the cache itself.
+
+```text
+READ
+  1. look in cache
+  2. hit  → return it
+  3. miss → read the database, store it in the cache, return it
+
+WRITE
+  1. write to the database
+  2. delete the key from the cache
+```
+
+<Callout type="warn" title="Delete the key — do not update it">
+On a write, it is tempting to write the new value into the cache too. Resist it.
+
+Two concurrent writes can interleave so the cache keeps the *older* value permanently:
+
+```text
+Writer A: db ← 10
+Writer B: db ← 20
+Writer B: cache ← 20
+Writer A: cache ← 10     ← cache now says 10 forever, db says 20
+```
+
+Deleting has no such race. The next read repopulates from the database, which is the single source of truth.
+</Callout>
+
+### The other strategies
+
+| Strategy | How | Trade-off |
+|---|---|---|
+| **Cache-aside** | App reads cache, falls back to the database | Simple, but the first request after a miss is slow |
+| **Read-through** | The cache itself loads on a miss | Cleaner app code, needs cache support |
+| **Write-through** | Write to cache and database together | Cache is never stale; writes are slower |
+| **Write-behind** | Write to cache now, database later | Very fast writes; **data loss if the cache dies** |
+
+Cache-aside covers the great majority of real systems. Write-behind is genuinely dangerous and should only be used where losing a few seconds of writes is acceptable — view counters, not payments.
+
+## Eviction: What to Throw Away
+
+Memory is finite, so something must go.
+
+| Policy | Removes | Good for |
+|---|---|---|
+| **LRU** — least recently used | The one untouched longest | General purpose. The default for a reason |
+| **LFU** — least frequently used | The one used least often | Stable popularity, e.g. a product catalogue |
+| **FIFO** | The oldest inserted | Rarely the right answer |
+| **TTL** — time to live | Anything past its expiry | Data that goes stale on a schedule |
+
+LRU and a TTL are usually combined: TTL bounds staleness, LRU bounds memory.
+
+<Callout type="info" title="LRU is a hash map plus a doubly linked list">
+The classic implementation: a hash map for `O(1)` lookup, and a linked list ordering entries by recency. On access, the entry is unlinked and moved to the front. On eviction, the tail is removed.
+
+Both operations are `O(1)`. This is the same combine-two-structures idea as [Insert Delete GetRandom](/docs/design/insert-delete-getrandom-o1).
+</Callout>
+
+## Invalidation: The Hard Part
+
+Keeping the cache honest is the difficult half of caching.
+
+| Approach | How it works | Cost |
+|---|---|---|
+| **TTL** | Entries expire after `n` seconds | Simple; stale for up to `n` seconds |
+| **Explicit deletion** | Writes delete affected keys | Fresh; you must know every affected key |
+| **Versioned keys** | Key includes a version: `user:42:v7` | No deletion needed; old entries linger until evicted |
+
+<Callout type="warn" title="Explicit invalidation gets hard fast">
+One cached value often depends on many rows. A cached "user profile" might include the name, follower count and latest three posts.
+
+Now: which cache keys must be deleted when someone gains a follower? Miss one and users see wrong data with no error anywhere.
+
+This is why a short TTL is often the pragmatic choice even when precise invalidation is possible. Being stale for 60 seconds is usually a smaller problem than being wrong indefinitely.
+</Callout>
+
+## The Three Failure Modes
+
+These are what take systems down, and being able to name them is worth more than knowing any eviction policy.
+
+### 1. Cache stampede
+
+A popular key expires. A thousand requests miss simultaneously, and all thousand hit the database at once.
+
+```text
+       key expires
+            ↓
+ 1000 requests miss  →  1000 identical database queries  →  database falls over
+```
+
+**Fixes**
+
+- **Locking** — the first miss takes a lock and loads; the rest wait briefly for it.
+- **Early recomputation** — refresh in the background shortly *before* expiry.
+- **Jittered TTL** — add a random 0–10% to each TTL so keys do not expire together.
+
+### 2. Cache penetration
+
+Requests for keys that **do not exist anywhere**. Nothing ever populates the cache, so every request reaches the database. Often this is an attack.
+
+**Fixes**
+
+- Cache the absence too — store a null marker with a short TTL.
+- A Bloom filter in front to reject keys that certainly do not exist.
+
+### 3. Cache avalanche
+
+The cache restarts, or a large number of keys expire together. Everything misses at once and the full traffic load lands on the database, which was never sized for it.
+
+**Fixes**
+
+- Jittered expiry times, so keys do not share a deadline.
+- Warm the cache before sending traffic to a restarted node.
+- A circuit breaker on the database so it sheds load rather than collapsing.
+
+<Callout type="warn" title="Ask what happens when the cache is empty">
+A system sized on the assumption of a 90% hit rate is sized for one-tenth of its real traffic. When the cache empties, the database receives ten times its usual load and often dies — taking the recovery with it.
+
+Any design with a cache should have an answer to "what happens on a cold start?"
+</Callout>
+
+## What Not to Cache
+
+Caching is not free, and some things should not be cached at all.
+
+| Do not cache | Why |
+|---|---|
+| Data that must be exact | Account balances, stock levels, permissions |
+| Data written far more than read | The invalidation costs more than the hits save |
+| Data unique to each request | No reuse means no benefit |
+| Very large values | One 50 MB entry can evict thousands of useful small ones |
+
+<Callout type="info" title="Say what the cache costs you">
+Every cache introduces staleness. The useful sentence in any design is:
+
+*"Reads may be up to 60 seconds out of date, which is acceptable for follower counts but not for the payment page — so that path bypasses the cache."*
+
+Naming the window, and naming what is excluded from it, is what makes the choice defensible.
+</Callout>
+
+## Related Reading
+
+- [Numbers Every Design Needs](/docs/system-design/numbers-to-know) — the memory-vs-disk gap that makes caching worthwhile
+- [Consistency and CAP](/docs/system-design/consistency) — staleness as a deliberate choice
+- [Scaling](/docs/system-design/scaling) — where a cache sits in the growth ladder
+- [News Feed](/docs/system-design/news-feed) — a design where caching decides the whole architecture

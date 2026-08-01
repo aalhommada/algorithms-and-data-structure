@@ -1,0 +1,184 @@
+---
+title: Backtracking
+description: Build a candidate one choice at a time, undo the last choice, and try the next — the template behind subsets, permutations and combinations
+---
+
+Backtracking is how you explore **every possible arrangement** of something without writing a separate loop for each position.
+
+The name describes the mechanism exactly: you go forward making choices, and when you run out of road you *back up* one step and try a different choice.
+
+## When You Need It
+
+The signal is a problem asking for **all** of something, rather than a count or a best.
+
+| The problem says… | Example |
+|---|---|
+| "return all subsets / combinations" | [Subsets](/docs/backtracking/subsets) |
+| "return all permutations / orderings" | [Permutations](/docs/backtracking/permutations) |
+| "find all ways to reach a target" | [Combination Sum](/docs/backtracking/combination-sum) |
+| "place N things so no two conflict" | N-Queens, Sudoku |
+
+<Callout type="info" title="The constraint is a giveaway">
+Backtracking explores an exponential number of states, so problems that need it come with **small inputs** — usually `n ≤ 20`, often `n ≤ 10`.
+
+If you see a tiny limit like that, the author is telling you that exponential is expected. A large limit means they want dynamic programming or greedy instead.
+</Callout>
+
+## The Shape of the Search
+
+Every backtracking problem is a **tree of decisions**. Each level is one position to fill; each branch is one choice for it.
+
+Take building subsets of `[1, 2]`. At each element you decide *in* or *out*:
+
+```text
+                    []
+              /            \
+        take 1              skip 1
+          /  \               /  \
+   take 2   skip 2     take 2   skip 2
+      |        |          |        |
+   [1,2]      [1]        [2]      []
+```
+
+Four leaves, four subsets. Backtracking is simply a depth-first walk of this tree — and the "undo" step is what lets one array be reused for every path instead of copying at every node.
+
+## The Template
+
+Every solution on this page is the same five lines.
+
+```text
+def backtrack(path, choices):
+    if path is complete:
+        record a COPY of path
+        return
+
+    for each choice in choices:
+        if choice is not allowed:  continue
+
+        path.append(choice)          ← choose
+        backtrack(path, remaining)   ← explore
+        path.pop()                   ← UNDO
+```
+
+Learn this shape once and the problems become variations on three questions:
+
+| Question | What changes between problems |
+|---|---|
+| **When is a path complete?** | Fixed length, target reached, or every node |
+| **What choices exist here?** | All items, only those after index `i`, only unused ones |
+| **Which choices are illegal?** | Already used, would exceed the target, breaks a rule |
+
+<Callout type="warn" title="The undo is not optional">
+Remove `path.pop()` and everything breaks. The single `path` array is shared by every branch of the tree, so a choice left behind leaks into every sibling explored afterwards.
+
+The symptom is distinctive: answers grow longer and longer as the run goes on. If you see that, you forgot the undo.
+</Callout>
+
+## The Copy Trap
+
+This is the second bug everybody writes, and it is worth its own section.
+
+<Callout type="warn" title="Record a copy, not the array itself">
+```text
+results.append(path)        ← WRONG: stores a reference
+results.append(path[:])     ← right: stores a snapshot
+```
+
+`path` is one array that is mutated throughout the entire search. Storing a reference to it means every entry in `results` points at the *same* array — and when the search finishes and every choice has been undone, that array is empty.
+
+The symptom is unmistakable: the right number of results, all of them empty or identical.
+
+**Python:** `path[:]` or `list(path)`.
+**TypeScript:** `[...path]` or `path.slice()`.
+</Callout>
+
+## Choose, Explore, Undo — Watched
+
+<StackViz
+  title="Building subsets of [1, 2] — the path as a stack"
+  frames={[
+    {
+      items: [],
+      vars: { results: "[]" },
+      note: "Start with an empty path. An empty subset is itself a valid answer, so record it.",
+    },
+    {
+      items: [{ value: 1, state: "active" }],
+      vars: { results: "[ [] ]" },
+      note: "CHOOSE 1. The path is now [1], which is another valid subset — record it.",
+    },
+    {
+      items: [
+        { value: 1, state: "done" },
+        { value: 2, state: "active" },
+      ],
+      vars: { results: "[ [], [1] ]" },
+      note: "EXPLORE deeper: choose 2. The path is [1, 2] — record it. No choices remain below.",
+    },
+    {
+      items: [{ value: 1, state: "done" }],
+      vars: { results: "[ [], [1], [1,2] ]" },
+      note: "UNDO — pop 2. The path returns to [1], exactly as it was before that branch.",
+    },
+    {
+      items: [],
+      vars: { results: "[ [], [1], [1,2] ]" },
+      note: "UNDO again — pop 1. The path is empty again, ready for a completely different first choice.",
+    },
+    {
+      items: [{ value: 2, state: "active" }],
+      vars: { results: "[ [], [1], [1,2], [2] ]" },
+      note: "CHOOSE 2 as the first element. Because the undo was clean, no trace of the [1] branch remains.",
+    },
+  ]}
+  caption="One array, reused for every branch. The undo is what makes that safe."
+/>
+
+## Pruning — Where the Speed Comes From
+
+A plain backtracking search explores everything. **Pruning** is cutting off a branch the moment you can prove nothing good lies down it.
+
+```text
+Combination Sum, target = 7, current sum = 6, next candidate = 5
+
+6 + 5 = 11 > 7  →  this branch is dead
+                   and because candidates are SORTED, so is every branch after it
+```
+
+That last line is the important one. Sorting turns a single failed check into permission to stop the whole loop — `break` rather than `continue`.
+
+<Callout type="info" title="Pruning does not change the answer, only the cost">
+A pruned search and an unpruned one return exactly the same results. Pruning is purely about not wasting time on branches that cannot possibly succeed.
+
+On the problems here it often turns "too slow" into "instant".
+</Callout>
+
+## Cost
+
+Backtracking is exponential, and that is expected rather than a flaw.
+
+| Problem | Number of results | Cost |
+|---|---|---|
+| Subsets of `n` items | `2ⁿ` | `O(n · 2ⁿ)` |
+| Permutations of `n` items | `n!` | `O(n · n!)` |
+| Combinations choosing `k` from `n` | `C(n, k)` | `O(k · C(n,k))` |
+
+The extra factor of `n` or `k` is the cost of copying each completed path into the results.
+
+<Callout type="info" title="You cannot beat the output size">
+If a problem asks for all `2ⁿ` subsets, no algorithm can be faster than `2ⁿ` — just writing the answer down takes that long.
+
+So when the output is the full set, exponential is optimal. It is only wasteful when the question actually wanted a count or a best, which is the signal for dynamic programming.
+</Callout>
+
+## Problems
+
+- [Subsets](/docs/backtracking/subsets) — the take-it-or-leave-it decision tree
+- [Permutations](/docs/backtracking/permutations) — every ordering, using a "used" marker
+- [Combination Sum](/docs/backtracking/combination-sum) — reuse allowed, plus pruning
+
+## Related Reading
+
+- [DFS](/docs/trees) — backtracking is depth-first search over a tree that is never built
+- [Dynamic Programming](/docs/dynamic-programming) — what to use when the question asks *how many* or *best*, not *all*
+- [Recursion in Trees](/docs/trees/maximum-depth-of-binary-tree) — the base-case-plus-combine skeleton

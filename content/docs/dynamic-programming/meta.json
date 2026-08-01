@@ -4,6 +4,10 @@
   "pages": [
     "index",
     "---Easy---",
-    "climbing-stairs"
+    "climbing-stairs",
+    "---Medium---",
+    "house-robber",
+    "coin-change",
+    "longest-increasing-subsequence"
   ]
 }

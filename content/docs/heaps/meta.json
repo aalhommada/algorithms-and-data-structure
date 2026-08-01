@@ -1,0 +1,11 @@
+{
+  "title": "Heaps",
+  "icon": "TrendingUp",
+  "pages": [
+    "index",
+    "---Medium---",
+    "kth-largest-element-in-an-array",
+    "---Hard---",
+    "merge-k-sorted-lists"
+  ]
+}

@@ -1,0 +1,280 @@
+---
+title: Lowest Common Ancestor of a BST
+description: Find where two nodes' paths split, using the ordering of a BST to walk straight there without any searching
+difficulty: medium
+pattern: Binary Search
+variant: on a tree
+tags: ["Tree", "BST", "DFS", "Binary Search"]
+leetcode: https://leetcode.com/problems/lowest-common-ancestor-of-a-binary-search-tree/
+problemNumber: 235
+---
+
+## Problem Statement
+
+Given a binary **search** tree and two nodes `p` and `q` that both exist in it, return their lowest common ancestor — the deepest node that has both as descendants.
+
+A node counts as a descendant of itself.
+
+```text
+        6
+      /   \
+     2     8
+    / \   / \
+   0   4 7   9
+      / \
+     3   5
+
+p = 2, q = 8  →  6   (their paths split at the root)
+p = 2, q = 4  →  2   (2 is an ancestor of itself)
+```
+
+## Intuition
+
+In a plain binary tree this is real work: you must search both subtrees and reason about what came back. But this is a **search** tree, and that changes everything.
+
+Stand at any node and compare it against both targets. There are only three possibilities.
+
+| Situation | What it means | What to do |
+|---|---|---|
+| Both `p` and `q` are **smaller** | Both live in the left subtree | Go left |
+| Both `p` and `q` are **larger** | Both live in the right subtree | Go right |
+| They fall on **opposite sides** (or one *is* this node) | The paths part here | **This is the answer** |
+
+<Callout type="info" title="The key insight">
+The lowest common ancestor is exactly the **first node where the two targets stop agreeing on a direction**.
+
+While both say "go left", they are still travelling together. The moment one says left and the other says right, they have separated — and the node they separated at is their deepest shared ancestor.
+</Callout>
+
+There is no searching, no backtracking and nothing to compare on the way back up. You walk down once and stop.
+
+### Why the *first* split is the *lowest* ancestor
+
+It sounds backwards that the first node you meet is the *lowest* ancestor. Here is why it holds.
+
+Everything above the split point is also a common ancestor — but higher up, and so not the lowest. Everything below the split point lies on one side only, so it cannot contain both.
+
+That makes the split point the unique deepest node containing both.
+
+### The real-world version
+
+Two people follow the same road out of a city. They stay together through every junction where their directions match. The moment their directions differ, they part — and that junction is the last place they were together.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start at the root
+
+The root is always a common ancestor, since every node is below it. The job is to get as deep as possible.
+</Step>
+
+<Step>
+### If both targets are smaller, move left
+
+Neither can be in the right subtree, so the whole right half is discarded — exactly like binary search.
+</Step>
+
+<Step>
+### If both targets are larger, move right
+
+The mirror image.
+</Step>
+
+<Step>
+### Otherwise, stop and return this node
+
+Either the targets straddle it, or one of them *is* it. Both cases mean the split happens here.
+</Step>
+
+</Steps>
+
+<Callout type="info" title="The 'or one of them is this node' case comes free">
+If `p` is the current node, then `p` is not strictly less and not strictly greater than itself. Both branch conditions fail, so the loop stops and returns the node.
+
+That is exactly right, because a node is its own descendant. No special case is needed.
+</Callout>
+
+### Watch it run
+
+<TreeViz
+  title="Finding the ancestor of p = 2 and q = 4"
+  frames={[
+    {
+      nodes: [6, 2, 8, 0, 4, 7, 9],
+      states: ["active", "compare", "idle", "idle", "compare", "idle", "idle"],
+      vars: { node: 6, p: 2, q: 4 },
+      note: "At 6. Both targets (2 and 4) are smaller, so both live to the left. Discard the entire right subtree.",
+    },
+    {
+      nodes: [6, 2, 8, 0, 4, 7, 9],
+      states: ["discard", "active", "discard", "idle", "compare", "discard", "discard"],
+      vars: { node: 2, p: 2, q: 4 },
+      note: "At 2. Now p equals this node, so it is neither smaller nor larger. The walk stops here.",
+    },
+    {
+      nodes: [6, 2, 8, 0, 4, 7, 9],
+      states: ["discard", "match", "discard", "idle", "done", "discard", "discard"],
+      vars: { answer: 2 },
+      note: "Return 2. It is an ancestor of 4 and an ancestor of itself.",
+    },
+  ]}
+  caption="Two comparisons, no backtracking. Half the tree was discarded at the first step."
+/>
+
+<TreeViz
+  title="Finding the ancestor of p = 3 and q = 5"
+  frames={[
+    {
+      nodes: [6, 2, 8, 0, 4, 7, 9, null, null, 3, 5],
+      states: ["active", "idle", "idle", "idle", "idle", "idle", "idle", null, null, "compare", "compare"],
+      vars: { node: 6, p: 3, q: 5 },
+      note: "At 6. Both 3 and 5 are smaller, so go left.",
+    },
+    {
+      nodes: [6, 2, 8, 0, 4, 7, 9, null, null, 3, 5],
+      states: ["discard", "active", "discard", "idle", "idle", "discard", "discard", null, null, "compare", "compare"],
+      vars: { node: 2, p: 3, q: 5 },
+      note: "At 2. Both 3 and 5 are larger, so go right.",
+    },
+    {
+      nodes: [6, 2, 8, 0, 4, 7, 9, null, null, 3, 5],
+      states: ["discard", "discard", "discard", "discard", "match", "discard", "discard", null, null, "done", "done"],
+      vars: { node: 4, answer: 4 },
+      note: "At 4. Now 3 is smaller and 5 is larger — they straddle this node. This is where their paths split.",
+    },
+  ]}
+  caption="Three steps down a tree of nine nodes. The path length is the height, not the size."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+class TreeNode:
+    def __init__(self, val: int = 0, left: "TreeNode | None" = None,
+                 right: "TreeNode | None" = None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+
+def lowest_common_ancestor(root: TreeNode, p: TreeNode, q: TreeNode) -> TreeNode:
+    """Walk down until p and q disagree about which way to go."""
+    node = root
+
+    while node:
+        if p.val < node.val and q.val < node.val:
+            node = node.left       # both on the left
+        elif p.val > node.val and q.val > node.val:
+            node = node.right      # both on the right
+        else:
+            return node            # they split here, or one IS here
+
+    return root  # unreachable when both nodes are guaranteed present
+
+
+def lowest_common_ancestor_recursive(root: TreeNode, p: TreeNode, q: TreeNode) -> TreeNode:
+    """Same logic expressed recursively. The iterative form is preferred:
+    it uses O(1) space because nothing happens after the recursive call."""
+    if p.val < root.val and q.val < root.val:
+        return lowest_common_ancestor_recursive(root.left, p, q)
+    if p.val > root.val and q.val > root.val:
+        return lowest_common_ancestor_recursive(root.right, p, q)
+    return root
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class TreeNode {
+  val: number;
+  left: TreeNode | null;
+  right: TreeNode | null;
+  constructor(val = 0, left: TreeNode | null = null, right: TreeNode | null = null) {
+    this.val = val;
+    this.left = left;
+    this.right = right;
+  }
+}
+
+function lowestCommonAncestor(
+  root: TreeNode,
+  p: TreeNode,
+  q: TreeNode
+): TreeNode {
+  let node: TreeNode | null = root;
+
+  while (node !== null) {
+    if (p.val < node.val && q.val < node.val) {
+      node = node.left; // both on the left
+    } else if (p.val > node.val && q.val > node.val) {
+      node = node.right; // both on the right
+    } else {
+      return node; // they split here, or one IS here
+    }
+  }
+
+  return root; // unreachable when both nodes are guaranteed present
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(h)" space="O(1)" />
+
+- **Time** — one step per level, so the height of the tree. That is `O(log n)` when balanced, and `O(n)` for a tree shaped like a chain.
+- **Space** — the iterative version keeps a single variable. Nothing is stored, and nothing is revisited.
+
+<Callout type="info" title="Why this is really binary search">
+Look at the loop again: compare, discard half, repeat. That is the same move as [Binary Search](/docs/searching/binary-search), with tree links instead of array indices.
+
+The ordering guarantee is what both rely on. Take it away — an ordinary binary tree — and the problem becomes genuinely harder, because you must search both sides and combine the results.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="One node is an ancestor of the other, e.g. p = 2, q = 4">
+Answer is `2`. When the walk reaches `2`, `p.val < node.val` is false because they are equal, so the loop stops and returns it.
+
+Many first attempts add an explicit check for this. It is unnecessary — the comparison structure already covers it.
+</Accordion>
+
+<Accordion title="p and q are the same node">
+Answer is that node. Neither branch condition holds, so it is returned immediately.
+</Accordion>
+
+<Accordion title="One node is the root">
+Answer is the root. The very first comparison fails on both sides, so the loop exits at once.
+</Accordion>
+
+<Accordion title="What if this were an ordinary binary tree, not a BST?">
+A completely different algorithm. With no ordering, you cannot tell which way to go, so you must search both subtrees:
+
+```text
+if node is null, p, or q:  return node
+left  = recurse(node.left)
+right = recurse(node.right)
+if both are non-null:  this node is the split → return it
+otherwise:             return whichever is non-null
+```
+
+That costs `O(n)` time and `O(h)` space, because every node must be examined. Compare with `O(h)` and `O(1)` here — the ordering is worth a lot.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Validate Binary Search Tree](/docs/trees/validate-binary-search-tree) — checking the property this problem relies on
+- [Binary Search](/docs/searching/binary-search) — the same discard-half move, on an array
+- [Maximum Depth of Binary Tree](/docs/trees/maximum-depth-of-binary-tree) — where recursion genuinely is needed

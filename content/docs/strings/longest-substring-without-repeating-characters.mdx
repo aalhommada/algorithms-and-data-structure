@@ -1,0 +1,303 @@
+---
+title: Longest Substring Without Repeating Characters
+description: The variable-size sliding window — grow the right edge greedily, and jump the left edge only when a rule breaks
+difficulty: medium
+pattern: Sliding Window
+variant: variable size
+tags: ["String", "Sliding Window", "Hash Table", "Two Pointers"]
+leetcode: https://leetcode.com/problems/longest-substring-without-repeating-characters/
+problemNumber: 3
+---
+
+## Problem Statement
+
+Given a string `s`, find the length of the longest **substring** with no repeated characters.
+
+A substring is **contiguous** — unlike a subsequence, you cannot skip characters.
+
+```text
+Input:  s = "abcabcbb"
+Output: 3
+Why:    "abc"
+
+Input:  s = "bbbbb"
+Output: 1
+Why:    "b"
+
+Input:  s = "pwwkew"
+Output: 3
+Why:    "wke" — note "pwke" is a subsequence, not a substring
+```
+
+## Intuition
+
+The brute force is to try every starting position and extend until a repeat appears. That is `O(n²)` and it does a lot of repeated work.
+
+<Callout type="info" title="The key insight">
+A window with no repeats stays valid as you extend it — right up until the moment you add a character already inside it.
+
+When that happens, you do not need to restart. You only need to move the **left** edge just past the previous copy of that character. Everything between the new left edge and the right edge is still repeat-free.
+</Callout>
+
+This is the **variable-size** sliding window, and it differs from the fixed-size kind in one important way.
+
+| | Fixed size ([Max Average Subarray](/docs/arrays/maximum-average-subarray-i)) | Variable size (here) |
+|---|---|---|
+| Window width | Always exactly `k` | Grows and shrinks |
+| Left edge | Moves every step, in lockstep | Moves only when the rule breaks |
+| Question asked | "best window of size `k`" | "largest window that stays valid" |
+
+### Why the left edge can jump
+
+This is the part worth slowing down on.
+
+```text
+s = "a b c a b c b b"
+     0 1 2 3 4 5 6 7
+
+Window is [0..2] = "abc".  Add s[3] = 'a'.
+'a' was last seen at index 0.
+```
+
+Any window still containing index 0 now has two `a`s. So every start from 0 is dead — and the next legal start is index 1.
+
+Crucially, you can jump straight there. Sliding the left edge one step at a time would give the same answer, but the jump is what keeps this to a single pass.
+
+<Callout type="warn" title="The left edge must never move backwards">
+```text
+s = "abba"
+
+At index 3 ('a'), the map still says 'a' was last seen at index 0.
+Naively: left = 0 + 1 = 1.
+But left is already 2 (pushed there by the second 'b').
+Moving back to 1 would put 'b' in the window twice.
+```
+
+The fix is `left = max(left, lastSeen[c] + 1)`. The window may only ever grow from the left.
+
+Forgetting the `max` is the defining bug of this problem — `"abba"` returns `3` instead of `2`.
+</Callout>
+
+### The real-world version
+
+You are reading a shelf of books left to right, collecting a run with no duplicate titles. When you hit a title already in your run, you do not empty your arms and start again. You drop everything up to and including the earlier copy, and carry on from there.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Keep a map of character → last index seen
+
+This is what makes the jump possible. A set would tell you *whether* a character repeats, but not *where*, so the left edge could only creep.
+</Step>
+
+<Step>
+### Move the right edge across the string
+
+One character per step, always forward.
+</Step>
+
+<Step>
+### If the character is inside the window, jump the left edge
+
+Inside means it was seen before **and** its last index is at or after `left`. Then `left = lastSeen[c] + 1`, guarded by `max`.
+</Step>
+
+<Step>
+### Record the character's index and the best width
+
+Update `lastSeen[c] = right`, then `best = max(best, right - left + 1)`.
+
+The `+1` is because both edges are inclusive.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title='s = "abcabcbb"'
+  frames={[
+    {
+      values: ["a", "b", "c", "a", "b", "c", "b", "b"],
+      states: ["active", "idle", "idle", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "L" }, { index: 0, label: "R" }],
+      vars: { window: "a", best: 1 },
+      note: "Window is just 'a'. Record a at index 0.",
+    },
+    {
+      values: ["a", "b", "c", "a", "b", "c", "b", "b"],
+      states: ["active", "active", "active", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "L" }, { index: 2, label: "R" }],
+      vars: { window: "abc", best: 3 },
+      note: "b and c are both new, so the window grows freely to 'abc'. Best is 3.",
+    },
+    {
+      values: ["a", "b", "c", "a", "b", "c", "b", "b"],
+      states: ["discard", "active", "active", "active", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "L" }, { index: 3, label: "R" }],
+      vars: { window: "bca", best: 3 },
+      note: "s[3] = 'a' was last seen at index 0, which is inside the window. Jump left to 0 + 1 = 1. Window is 'bca', still width 3.",
+    },
+    {
+      values: ["a", "b", "c", "a", "b", "c", "b", "b"],
+      states: ["discard", "discard", "active", "active", "active", "idle", "idle", "idle"],
+      pointers: [{ index: 2, label: "L" }, { index: 4, label: "R" }],
+      vars: { window: "cab", best: 3 },
+      note: "s[4] = 'b' was last at index 1. Jump left to 2. Width is still 3.",
+    },
+    {
+      values: ["a", "b", "c", "a", "b", "c", "b", "b"],
+      states: ["discard", "discard", "discard", "discard", "active", "active", "idle", "idle"],
+      pointers: [{ index: 4, label: "L" }, { index: 6, label: "R" }],
+      vars: { window: "bc → cb", best: 3 },
+      note: "s[6] = 'b' was last at index 4, so left jumps to 5. The window shrinks to 'cb', width 2.",
+    },
+    {
+      values: ["a", "b", "c", "a", "b", "c", "b", "b"],
+      states: ["discard", "discard", "discard", "discard", "discard", "discard", "discard", "match"],
+      pointers: [{ index: 7, label: "L" }, { index: 7, label: "R" }],
+      vars: { window: "b", best: 3, answer: 3 },
+      note: "s[7] = 'b' was last at index 6, so left jumps to 7. The window is one character. Best stays 3.",
+    },
+  ]}
+  caption="The right edge advanced 8 times, the left edge only when forced. One pass, never backwards."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def length_of_longest_substring(s: str) -> int:
+    """Longest repeat-free substring, using a variable-size window."""
+    last_seen: dict[str, int] = {}  # character -> most recent index
+    left = 0
+    best = 0
+
+    for right, char in enumerate(s):
+        # Only jump if the previous copy is INSIDE the current window.
+        # max() stops the left edge ever moving backwards.
+        if char in last_seen and last_seen[char] >= left:
+            left = last_seen[char] + 1
+
+        last_seen[char] = right
+
+        # Both edges are inclusive, hence the + 1.
+        best = max(best, right - left + 1)
+
+    return best
+
+
+def length_of_longest_substring_set(s: str) -> int:
+    """Set version — shrinks one step at a time instead of jumping.
+    Same O(n) total, since each character is removed at most once."""
+    window: set[str] = set()
+    left = 0
+    best = 0
+
+    for right, char in enumerate(s):
+        while char in window:
+            window.remove(s[left])
+            left += 1
+
+        window.add(char)
+        best = max(best, right - left + 1)
+
+    return best
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function lengthOfLongestSubstring(s: string): number {
+  const lastSeen = new Map<string, number>(); // character -> most recent index
+  let left = 0;
+  let best = 0;
+
+  for (let right = 0; right < s.length; right++) {
+    const char = s[right];
+    const previous = lastSeen.get(char);
+
+    // Only jump if the previous copy is INSIDE the current window.
+    // Math.max stops the left edge ever moving backwards.
+    if (previous !== undefined && previous >= left) {
+      left = previous + 1;
+    }
+
+    lastSeen.set(char, right);
+
+    // Both edges are inclusive, hence the + 1.
+    best = Math.max(best, right - left + 1);
+  }
+
+  return best;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="`previous !== undefined`, not `if (previous)`">
+A character first seen at index `0` gives `previous === 0`, which is falsy in JavaScript. Writing `if (previous)` skips the jump entirely for any character that first appeared at the start of the string.
+
+`"abba"` would then return `4`. This is the same falsy-zero trap as in [Two Sum](/docs/arrays/two-sum), and it is worth building the habit of comparing against `undefined` whenever a `Map` can hold `0`.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(min(n, alphabet))" />
+
+- **Time** — the right edge moves `n` times and the left edge only ever moves forward, so it also moves at most `n` times in total. Two pointers, each crossing the string once.
+- **Space** — the map holds at most one entry per distinct character. For lowercase English that is 26 regardless of input length; in general it is bounded by both the alphabet size and `n`.
+
+<Callout type="info" title="Why the set version is still O(n)">
+The inner `while` loop looks like it makes the set version quadratic. It does not.
+
+Each character is added to the window exactly once and removed at most once across the entire run. The total work of the inner loop over the whole algorithm is at most `n` — this is *amortised* analysis, the same argument that makes a monotonic stack linear.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty string">
+Returns `0`. The loop never runs and `best` stays at its initial `0`.
+</Accordion>
+
+<Accordion title="All identical, e.g. 'bbbbb'">
+Returns `1`. Every step jumps the left edge to sit on the right edge, giving a window of width 1.
+</Accordion>
+
+<Accordion title="All distinct, e.g. 'abcdef'">
+Returns the string length. The left edge never moves. This is the best case, and a useful sanity check that the jump logic is not firing when it should not.
+</Accordion>
+
+<Accordion title="'abba' — the case that catches most solutions">
+Returns `2`. Walk it through:
+
+```text
+index 0 'a': left=0, best=1, lastSeen={a:0}
+index 1 'b': left=0, best=2, lastSeen={a:0, b:1}
+index 2 'b': b last at 1 >= left 0  →  left=2, best=2
+index 3 'a': a last at 0, but 0 < left 2  →  NO jump. best = 3-2+1 = 2
+```
+
+Without the `>= left` check (or the `max`), step 3 would move `left` back to `1`, and the window `"bba"` would wrongly count as valid.
+</Accordion>
+
+<Accordion title="Spaces, digits and symbols">
+No special handling. The map is keyed by character, so any alphabet works. Only the space bound changes.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Maximum Average Subarray I](/docs/arrays/maximum-average-subarray-i) — the fixed-size window, where the left edge moves every step
+- [Is Subsequence](/docs/strings/is-subsequence) — subsequences, where skipping is allowed
+- [Two Sum](/docs/arrays/two-sum) — the same falsy-zero trap with a `Map`
+- [Valid Palindrome](/docs/strings/valid-palindrome) — two pointers converging instead of sliding

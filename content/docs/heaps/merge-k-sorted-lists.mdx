@@ -1,0 +1,304 @@
+---
+title: Merge k Sorted Lists
+description: Combine k sorted linked lists into one, using a heap to pick the next smallest head in log k time
+difficulty: hard
+pattern: Heap
+variant: k-way merge
+tags: ["Linked List", "Heap", "Divide and Conquer", "Merge Sort"]
+leetcode: https://leetcode.com/problems/merge-k-sorted-lists/
+problemNumber: 23
+---
+
+## Problem Statement
+
+You are given an array of `k` linked lists, each already sorted in ascending order. Merge them into one sorted list and return its head.
+
+```text
+Input:  lists = [[1, 4, 5], [1, 3, 4], [2, 6]]
+Output: [1, 1, 2, 3, 4, 4, 5, 6]
+
+Input:  lists = []
+Output: []
+
+Input:  lists = [[]]
+Output: []
+```
+
+## Intuition
+
+Start from what you already know. [Merge Two Sorted Lists](/docs/linked-lists/merge-two-sorted-lists) works by comparing two heads and taking the smaller one. The natural extension is to compare all `k` heads and take the smallest.
+
+That works, and it is worth writing down because it shows exactly where the cost goes:
+
+```text
+Total nodes = N.  For each of the N outputs, scan all k heads.
+Cost = O(N · k)
+```
+
+With `k = 10,000` lists, you scan 10,000 heads to produce **one** node. That is the waste.
+
+<Callout type="info" title="The key insight">
+Between one output and the next, almost nothing changes. You removed **one** head and replaced it with **one** successor. The other `k - 1` heads are exactly as they were.
+
+Rescanning all `k` throws away everything you learned last step. What you need is a container that maintains "which is smallest" as items come and go — and that is precisely a heap.
+</Callout>
+
+Swapping the scan for a heap turns each step from `O(k)` into `O(log k)`.
+
+### The real-world version
+
+Picture `k` queues of people, each queue already sorted by height. You want one line, shortest first.
+
+The slow way: walk down all `k` queue fronts every single time you pick someone.
+
+The heap way: keep the `k` queue fronts on a small sorted shelf. Take the shortest, and immediately put that queue's *next* person on the shelf. The shelf never holds more than `k` people, and finding the shortest on it is instant.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Push the head of every non-empty list
+
+The heap starts with at most `k` nodes — one per list. Skip empty lists entirely.
+</Step>
+
+<Step>
+### Pop the smallest head
+
+That node is guaranteed to be the next value in the merged output. No other list can hold anything smaller, because every list is sorted and this was the smallest of all the fronts.
+</Step>
+
+<Step>
+### Append it, then push its successor
+
+If the popped node has a `next`, push that in. This keeps the invariant: **the heap always holds the current front of every list that still has nodes.**
+</Step>
+
+<Step>
+### Repeat until the heap is empty
+
+Use a dummy head so appending never needs a special case for the first node.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<StackViz
+  title='lists = [[1, 4, 5], [1, 3, 4], [2, 6]]'
+  kind="queue"
+  frames={[
+    {
+      items: [
+        { value: "1(a)", state: "match" },
+        { value: "1(b)", state: "idle" },
+        { value: "2(c)", state: "idle" },
+      ],
+      vars: { output: "—" },
+      note: "Seed the heap with all three heads. The smallest is 1, from list a.",
+    },
+    {
+      items: [
+        { value: "1(b)", state: "match" },
+        { value: "2(c)", state: "idle" },
+        { value: "4(a)", state: "active" },
+      ],
+      vars: { output: "1" },
+      note: "Pop 1(a) into the output, then push its successor 4(a). The heap still holds one front per list.",
+    },
+    {
+      items: [
+        { value: "2(c)", state: "match" },
+        { value: "3(b)", state: "active" },
+        { value: "4(a)", state: "idle" },
+      ],
+      vars: { output: "1 → 1" },
+      note: "Pop 1(b), push 3(b). Now the smallest front is 2 from list c.",
+    },
+    {
+      items: [
+        { value: "3(b)", state: "match" },
+        { value: "4(a)", state: "idle" },
+        { value: "6(c)", state: "active" },
+      ],
+      vars: { output: "1 → 1 → 2" },
+      note: "Pop 2(c), push 6(c).",
+    },
+    {
+      items: [
+        { value: "4(a)", state: "match" },
+        { value: "4(b)", state: "active" },
+        { value: "6(c)", state: "idle" },
+      ],
+      vars: { output: "1 → 1 → 2 → 3" },
+      note: "Pop 3(b), push 4(b). Two nodes now tie at 4 — either may go first.",
+    },
+    {
+      items: [
+        { value: "5(a)", state: "active" },
+        { value: "6(c)", state: "idle" },
+      ],
+      vars: { output: "1 → 1 → 2 → 3 → 4 → 4" },
+      note: "Both 4s are popped. List b is exhausted, so the heap shrinks to 2 — it holds only lists that still have nodes.",
+    },
+    {
+      items: [],
+      vars: { output: "1 → 1 → 2 → 3 → 4 → 4 → 5 → 6" },
+      note: "The last two nodes drain out. An empty heap means every list is exhausted.",
+    },
+  ]}
+  caption="The heap holds at most k nodes at any moment, regardless of how long the lists are."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+import heapq
+
+
+class ListNode:
+    def __init__(self, val: int = 0, next: "ListNode | None" = None):
+        self.val = val
+        self.next = next
+
+
+def merge_k_lists(lists: list[ListNode | None]) -> ListNode | None:
+    """Merge k sorted linked lists using a min-heap of the current heads."""
+    # (value, tiebreaker, node). The tiebreaker matters: when two values are
+    # equal, Python compares the NEXT tuple element, and ListNode has no
+    # __lt__ — so without a unique integer here this raises TypeError.
+    heap: list[tuple[int, int, ListNode]] = []
+
+    for index, head in enumerate(lists):
+        if head:  # skip empty lists
+            heapq.heappush(heap, (head.val, index, head))
+
+    dummy = ListNode()
+    tail = dummy
+
+    while heap:
+        _, index, node = heapq.heappop(heap)
+
+        tail.next = node
+        tail = node
+
+        if node.next:
+            heapq.heappush(heap, (node.next.val, index, node.next))
+
+    return dummy.next
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class ListNode {
+  val: number;
+  next: ListNode | null;
+  constructor(val = 0, next: ListNode | null = null) {
+    this.val = val;
+    this.next = next;
+  }
+}
+
+// Uses the MinHeap from the Heaps overview page.
+function mergeKLists(lists: Array<ListNode | null>): ListNode | null {
+  const heap = new MinHeap<ListNode>((a, b) => a.val - b.val);
+
+  for (const head of lists) {
+    if (head !== null) heap.push(head); // skip empty lists
+  }
+
+  const dummy = new ListNode();
+  let tail = dummy;
+
+  while (heap.size > 0) {
+    const node = heap.pop()!;
+
+    tail.next = node;
+    tail = node;
+
+    if (node.next !== null) {
+      heap.push(node.next);
+    }
+  }
+
+  // Cut the tail loose — the last node may still point into its old list.
+  tail.next = null;
+  return dummy.next;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Two traps, one per language">
+**Python** — pushing `(node.val, node)` crashes on ties. When two values are equal, Python falls through to comparing the next element, and `ListNode` has no `<` operator. The error is a `TypeError` that only appears on inputs containing duplicates, so it passes small tests and fails big ones. The fix is the list index as a middle element: it is unique, so comparison never reaches the node.
+
+**TypeScript** — the final `tail.next = null` is not decoration. The last node you append still carries its original `next` pointer. Without cutting it, you may return a list with extra nodes on the end, or a cycle.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(N log k)" space="O(k)" />
+
+Where `N` is the total number of nodes across all lists and `k` is the number of lists.
+
+- **Time** — every node enters and leaves the heap exactly once. Each of those `2N` operations costs `O(log k)`, because the heap never holds more than one node per list.
+- **Space** — the heap holds at most `k` nodes. The output reuses the existing nodes rather than allocating new ones, so no extra space is needed for the result.
+
+### Compared with the alternatives
+
+| Approach | Time | Space | Note |
+|---|---|---|---|
+| Scan all `k` heads each step | `O(N · k)` | `O(1)` | Fine for `k ≤ 3` |
+| Merge lists one at a time | `O(N · k)` | `O(1)` | Deceptive — the first list is re-walked `k` times |
+| **Heap of heads** | `O(N log k)` | `O(k)` | The standard answer |
+| Divide and conquer, merge in pairs | `O(N log k)` | `O(log k)` | Same time, no heap needed |
+
+<Callout type="info" title="Why merging one at a time is slower than it looks">
+Merging list 1 into an accumulator, then list 2, then list 3… feels linear. It is not.
+
+The accumulator grows as you go, and every merge walks it from the start again. The first list gets traversed `k` times, giving `O(N · k)`.
+
+Pairing them instead — merge 1+2, 3+4, then merge the results — means each node is touched only `log k` times. Same result as the heap, and it needs no extra structure.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="lists is empty, i.e. []">
+The heap never receives anything, the loop never runs, and `dummy.next` is `null`. Correct with no special case.
+</Accordion>
+
+<Accordion title="lists contains empty lists, e.g. [[], [1], []]">
+This is why the seeding loop checks `if head` before pushing. Pushing a null head would either crash on `.val` or place a null in the heap that later breaks the comparison.
+
+Skipping them is also why the heap can be smaller than `k`.
+</Accordion>
+
+<Accordion title="Every list is empty, e.g. [[], []]">
+Same as an empty input — nothing is ever pushed, so the result is `null`.
+</Accordion>
+
+<Accordion title="Only one list, e.g. [[1, 2, 3]]">
+The heap holds one node at a time and the algorithm degenerates into walking that list. Correct, and still `O(N)` since `log 1 = 0`.
+</Accordion>
+
+<Accordion title="Duplicate values across lists">
+Ties are allowed and the output stays sorted — but which duplicate comes first is not defined. That is fine here, because the problem only asks for sorted order. It would matter if the merge had to be *stable*, in which case the tiebreaker must be the list index, exactly as the Python version does.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Merge Two Sorted Lists](/docs/linked-lists/merge-two-sorted-lists) — the `k = 2` case, and the source of the dummy-head trick
+- [Kth Largest Element in an Array](/docs/heaps/kth-largest-element-in-an-array) — the other core heap move, keeping only `k` candidates
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — the same merge, in place and backwards
+- [Heaps](/docs/heaps) — why push and pop cost `O(log k)`

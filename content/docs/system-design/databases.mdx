@@ -1,0 +1,247 @@
+---
+title: Databases
+description: Choosing between SQL and NoSQL, how indexes work, and the difference between replication and sharding
+---
+
+The database is usually where a design gets hard, because it is the one component that cannot simply be duplicated. Every other layer can be copied; data must agree with itself.
+
+## SQL or NoSQL
+
+The honest answer is that this choice matters less than people think, and **relational is the right default** for most systems. But you should be able to say why.
+
+| | Relational (SQL) | Document / key-value (NoSQL) |
+|---|---|---|
+| Schema | Fixed, enforced | Flexible, per record |
+| Joins | Built in | Usually absent — you denormalise |
+| Transactions | Strong, across tables | Often limited to one record |
+| Scaling writes | Hard — sharding is manual | Designed in from the start |
+| Query flexibility | Very high — ad-hoc queries | Limited to planned access patterns |
+| Best when | Relationships matter, correctness matters | One access pattern, enormous scale |
+
+<Callout type="info" title="Pick based on access patterns, not on fashion">
+Ask two questions:
+
+1. **Do entities relate to each other in ways you will query across?** Orders belong to users belong to companies — that is relational.
+2. **Do you know the one way you will read the data, and is the volume enormous?** That is when a key-value store earns its place.
+
+"NoSQL scales better" is true and usually irrelevant. Most systems never reach the point where it matters, and by then you know far more about your access patterns.
+</Callout>
+
+### The family of NoSQL stores
+
+| Type | Shape | Fits |
+|---|---|---|
+| **Key-value** (Redis, DynamoDB) | `key → blob` | Sessions, caches, counters |
+| **Document** (MongoDB) | `key → JSON` | Content with varying fields |
+| **Wide-column** (Cassandra) | `row key → many columns` | Time series, very heavy writes |
+| **Graph** (Neo4j) | Nodes and edges | Social graphs, recommendations |
+| **Search** (Elasticsearch) | Inverted index | Full-text search, log analysis |
+
+## Indexes
+
+An index is what turns a full table scan into a lookup. Without one, finding a row means reading every row.
+
+```text
+No index:    scan 10,000,000 rows          →  seconds
+With index:  ~23 steps of a B-tree         →  under a millisecond
+```
+
+Most indexes are **B-trees**, which stay balanced and keep values sorted — so they serve range queries (`WHERE age BETWEEN 20 AND 30`) as well as exact matches. This is [binary search](/docs/searching/binary-search) applied to disk pages.
+
+<Callout type="warn" title="Indexes are not free">
+Every index must be updated on every insert, update and delete. Five indexes mean five extra writes per row change.
+
+A table with many indexes reads quickly and writes slowly. On a write-heavy table, an unused index is a pure cost — and most databases can tell you which indexes are never used.
+</Callout>
+
+### What to index
+
+| Index this | Reason |
+|---|---|
+| Columns in `WHERE` | The whole point |
+| Columns in `JOIN` | Otherwise every join is a scan |
+| Columns in `ORDER BY` | Avoids sorting the result |
+| Foreign keys | Almost always queried |
+
+| Do not index | Reason |
+|---|---|
+| Low-cardinality columns | An index on a boolean rarely helps |
+| Rarely queried columns | Cost with no benefit |
+| Very wide columns | The index becomes huge |
+
+<Callout type="info" title="Composite indexes are order-sensitive">
+An index on `(country, city)` can serve a query filtering on `country`, or on `country AND city`.
+
+It **cannot** serve a query filtering on `city` alone — the same way a phone book sorted by surname then first name cannot help you find everyone called "Sara".
+
+Put the column you always filter on first.
+</Callout>
+
+## Replication: Copies of the Same Data
+
+Replication makes copies. It gives you read capacity and survivability. It does **not** help with writes.
+
+<ArchViz
+  title="Primary with read replicas"
+  height={260}
+  nodes={[
+    { id: "app", label: "App Servers", kind: "service", x: 0.0, y: 0.5 },
+    { id: "primary", label: "Primary", sublabel: "all writes", kind: "database", x: 0.42, y: 0.5 },
+    { id: "r1", label: "Replica 1", kind: "database", x: 0.85, y: 0.08 },
+    { id: "r2", label: "Replica 2", kind: "database", x: 0.85, y: 0.5 },
+    { id: "r3", label: "Replica 3", kind: "database", x: 0.85, y: 0.92 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "app", to: "primary", label: "WRITE", active: true },
+        { from: "primary", to: "r1", dashed: true },
+        { from: "primary", to: "r2", dashed: true },
+        { from: "primary", to: "r3", dashed: true },
+      ],
+      active: ["primary"],
+      vars: { writes: "primary only", reads: "any replica" },
+      note: "Every write goes to the primary. There is exactly one, which is why replication does not scale writes.",
+    },
+    {
+      edges: [
+        { from: "app", to: "primary" },
+        { from: "primary", to: "r1", label: "replicate", dashed: true, active: true },
+        { from: "primary", to: "r2", label: "replicate", dashed: true, active: true },
+        { from: "primary", to: "r3", label: "replicate", dashed: true, active: true },
+      ],
+      active: ["r1", "r2", "r3"],
+      vars: { lag: "typically 10-500 ms" },
+      note: "The change is streamed to the replicas. This takes time — during which the replicas hold older data.",
+    },
+    {
+      edges: [
+        { from: "app", to: "r1", label: "READ", active: true },
+        { from: "app", to: "r2", label: "READ", active: true },
+        { from: "app", to: "r3", label: "READ", active: true },
+      ],
+      active: ["r1", "r2", "r3"],
+      dimmed: ["primary"],
+      vars: { "read capacity": "3x" },
+      note: "Reads spread across replicas, tripling read throughput. The classic fix for a read-heavy system.",
+    },
+    {
+      edges: [
+        { from: "app", to: "r1", label: "READ", active: true },
+        { from: "app", to: "r2" },
+        { from: "app", to: "r3" },
+      ],
+      active: ["r1"],
+      dimmed: ["primary", "r2", "r3"],
+      vars: { problem: "read-after-write" },
+      note: "The catch: a user saves a change, then immediately reads from a lagging replica and sees the OLD value. Their edit appears to have vanished.",
+    },
+  ]}
+  caption="Replication buys read capacity and durability. The bill is replication lag."
+/>
+
+<Callout type="warn" title="Read-after-write is the bug users actually notice">
+A user edits their profile, the write goes to the primary, the page reloads, the read hits a replica that has not caught up — and their change is gone. They edit it again. Now there is a support ticket.
+
+Three standard fixes:
+
+- **Read your own writes from the primary** for a few seconds after a write.
+- **Sticky reads** — pin that user to the primary briefly.
+- **Wait for the replica** to confirm it has caught up before reading.
+
+The first is the most common and the simplest.
+</Callout>
+
+### Synchronous or asynchronous
+
+| | Synchronous | Asynchronous |
+|---|---|---|
+| Write confirmed when | Replicas have it too | The primary has it |
+| Write latency | Higher | Lower |
+| Data loss if the primary dies | None | Recent writes are lost |
+| Default in practice | Rare | Common |
+
+Most systems use asynchronous replication and accept a small window of possible loss, because the latency cost of synchronous replication is paid on **every single write**.
+
+## Sharding: Splitting the Data
+
+When writes exceed what one primary can take, the data itself must be split. Each shard holds a *different* slice — not a copy.
+
+<ArchDiagram
+  title="Sharding by user id"
+  height={230}
+  nodes={[
+    { id: "app", label: "App Servers", kind: "service", x: 0.0, y: 0.5 },
+    { id: "router", label: "Shard Router", sublabel: "hash(user_id)", kind: "edge", x: 0.36, y: 0.5 },
+    { id: "s1", label: "Shard A", sublabel: "users 0-33%", kind: "database", x: 0.8, y: 0.05 },
+    { id: "s2", label: "Shard B", sublabel: "users 34-66%", kind: "database", x: 0.8, y: 0.5 },
+    { id: "s3", label: "Shard C", sublabel: "users 67-99%", kind: "database", x: 0.8, y: 0.95 },
+  ]}
+  edges={[
+    { from: "app", to: "router" },
+    { from: "router", to: "s1" },
+    { from: "router", to: "s2" },
+    { from: "router", to: "s3" },
+  ]}
+  caption="Each shard holds a distinct third of the users. Together they accept three times the writes."
+/>
+
+| Strategy | How | Watch out for |
+|---|---|---|
+| **Range** | Users A–H, I–P, Q–Z | Uneven — surnames are not uniformly distributed |
+| **Hash** | `hash(id) % shards` | Even, but adding a shard reshuffles everything |
+| **Consistent hashing** | Hash onto a ring | Adding a shard moves only a small fraction |
+| **Directory** | A lookup table of key → shard | Flexible; the directory becomes a bottleneck |
+
+<Callout type="warn" title="What sharding takes away">
+**Joins across shards stop working.** A query touching two users on different shards must fetch both and join in application code.
+
+**Transactions across shards stop working.** Atomicity within one shard is fine; across shards you need distributed transactions, which are slow and complicated.
+
+**Unique constraints across shards stop working.** "This email must be unique" needs a separate global check.
+
+**Rebalancing is an operational project**, not a configuration change.
+
+This is why sharding is last on the ladder. Exhaust vertical scaling, caching and replicas first.
+</Callout>
+
+### Choosing the shard key
+
+This is the decision you cannot easily undo.
+
+| The key should be | Why |
+|---|---|
+| High cardinality | Many distinct values to spread across |
+| Evenly distributed | No shard should get disproportionate traffic |
+| Present in most queries | Otherwise every query hits every shard |
+
+<Callout type="info" title="Hot shards are the classic failure">
+Shard a social network by user id and it spreads evenly — until one account with 100 million followers puts all of its traffic on one shard.
+
+Sharding by *timestamp* is worse: every new write lands on the newest shard while the others sit idle.
+
+Watch for keys where activity is not uniform, which in practice is most human-generated data.
+</Callout>
+
+## Choosing, in Order
+
+```text
+1.  One database, indexed properly          →  further than most people expect
+2.  Add a cache                             →  removes most read load
+3.  Add read replicas                       →  read-heavy workloads
+4.  Split by feature (users / orders / logs) →  independent scaling
+5.  Shard                                   →  only when writes exceed one primary
+```
+
+<Callout type="info" title="Proper indexing beats most architecture changes">
+A missing index on a large table can make a query a thousand times slower. Adding it takes minutes.
+
+Before reaching for replicas or shards, confirm the queries are actually indexed. It is unglamorous and it is frequently the whole problem.
+</Callout>
+
+## Related Reading
+
+- [Consistency and CAP](/docs/system-design/consistency) — what replication does to correctness
+- [Caching](/docs/system-design/caching) — the layer that keeps load off the database
+- [Scaling](/docs/system-design/scaling) — where the database sits in the growth ladder
+- [Binary Search](/docs/searching/binary-search) — the idea underneath a B-tree index

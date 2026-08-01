@@ -1,0 +1,329 @@
+---
+title: Longest Increasing Subsequence
+description: Find the longest rising subsequence, first with the O(n²) table and then with the binary-search trick that makes it O(n log n)
+difficulty: medium
+pattern: Dynamic Programming
+variant: with a binary-search speedup
+tags: ["Array", "Dynamic Programming", "Binary Search"]
+leetcode: https://leetcode.com/problems/longest-increasing-subsequence/
+problemNumber: 300
+---
+
+## Problem Statement
+
+Given an integer array, return the length of the longest **strictly increasing subsequence**.
+
+A subsequence keeps the original order but may skip elements. It does **not** have to be contiguous.
+
+```text
+Input:  nums = [10, 9, 2, 5, 3, 7, 101, 18]
+Output: 4
+Why:    [2, 3, 7, 101] or [2, 3, 7, 18]
+
+Input:  nums = [0, 1, 0, 3, 2, 3]
+Output: 4
+Why:    [0, 1, 2, 3]
+```
+
+## Intuition
+
+Subsequences may skip elements, so a list of `n` numbers has `2ⁿ` subsequences. Checking all of them is hopeless for anything but tiny inputs.
+
+<Callout type="info" title="The key insight">
+Do not ask *"what is the longest increasing subsequence?"* — that requires seeing the whole array at once.
+
+Ask instead: **"what is the longest increasing subsequence that ENDS at position `i`?"**
+
+Pinning the ending down makes the question answerable from what came before. A subsequence ending at `i` is some subsequence ending at an earlier `j`, extended by `nums[i]` — and that extension is only legal when `nums[j] < nums[i]`.
+</Callout>
+
+```text
+length[i] = 1 + max( length[j] for every j < i where nums[j] < nums[i] )
+```
+
+If no earlier element is smaller, `nums[i]` starts a fresh subsequence of length `1`.
+
+<Callout type="warn" title="The answer is not length[n-1]">
+Unlike most DP problems, the final cell is **not** the answer.
+
+The longest subsequence might end anywhere. In `[1, 2, 3, 0]` the best ends at index 2, not at the last element. The answer is the **maximum over the whole table**.
+
+Returning `length[n-1]` is the most common bug here.
+</Callout>
+
+### The `O(n²)` table
+
+```text
+nums:   10   9   2   5   3   7  101  18
+length:  1   1   1   2   2   3   4    4
+                     ↑
+      5 > 2, so length[3] = 1 + length[2] = 2
+```
+
+Every position looks back at everything before it — `n` positions × `n` lookbacks = `O(n²)`.
+
+## The Faster Idea
+
+`O(n²)` is acceptable up to about `n = 5,000`. Beyond that a different angle is needed, and it is genuinely clever.
+
+<Callout type="info" title="The second insight">
+Keep an array `tails`, where `tails[k]` holds the **smallest possible ending value** of an increasing subsequence of length `k + 1`.
+
+A smaller ending is always at least as good: it is easier to extend. So for each length, remember only the best ending seen so far.
+
+`tails` stays **sorted**, which means each new number can be placed with binary search instead of a scan.
+</Callout>
+
+For each number `x`:
+
+- If `x` is bigger than everything in `tails`, it extends the longest run — append it.
+- Otherwise, find the first entry `≥ x` and **overwrite it**. That length is now achievable with a smaller ending.
+
+The answer is the length of `tails`.
+
+<Callout type="warn" title="`tails` is not the actual subsequence">
+This trips people up. `tails` may contain numbers that never appeared together in one valid subsequence.
+
+Its **length** is always correct. Its **contents** are not a real answer. If the problem asks you to return the subsequence itself, you need parent pointers alongside it.
+</Callout>
+
+### Why overwriting is safe
+
+Replacing `tails[k]` with a smaller value never shortens anything. The old subsequence of that length still exists — you are simply recording a better ending for future extensions.
+
+And a longer run is never lost, because entries after `k` are untouched.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start with an empty `tails`
+
+Its length will always equal the best subsequence length found so far.
+</Step>
+
+<Step>
+### For each number, binary search `tails`
+
+Find the leftmost position holding a value `≥ x`. This is the standard lower-bound search.
+</Step>
+
+<Step>
+### Append or overwrite
+
+If the search runs off the end, `x` is bigger than everything — append it and the answer grows.
+
+Otherwise overwrite that slot with `x`, keeping `tails` sorted and improving that length's ending.
+</Step>
+
+<Step>
+### Return the length of `tails`
+
+Not its contents.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [10, 9, 2, 5, 3, 7] — tails evolving"
+  frames={[
+    {
+      values: [10, 9, 2, 5, 3, 7],
+      states: ["active", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "x" }],
+      vars: { tails: "[10]", length: 1 },
+      note: "tails is empty, so 10 is appended. Best length so far: 1.",
+    },
+    {
+      values: [10, 9, 2, 5, 3, 7],
+      states: ["discard", "active", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "x" }],
+      vars: { tails: "[9]", length: 1 },
+      note: "9 < 10, so it overwrites slot 0. A length-1 run ending in 9 beats one ending in 10 — easier to extend.",
+    },
+    {
+      values: [10, 9, 2, 5, 3, 7],
+      states: ["discard", "discard", "active", "idle", "idle", "idle"],
+      pointers: [{ index: 2, label: "x" }],
+      vars: { tails: "[2]", length: 1 },
+      note: "2 overwrites again. Still length 1, but with the best possible ending.",
+    },
+    {
+      values: [10, 9, 2, 5, 3, 7],
+      states: ["discard", "discard", "match", "active", "idle", "idle"],
+      pointers: [{ index: 3, label: "x" }],
+      vars: { tails: "[2, 5]", length: 2 },
+      note: "5 > 2, bigger than everything in tails, so it is appended. Length grows to 2 — the run [2, 5].",
+    },
+    {
+      values: [10, 9, 2, 5, 3, 7],
+      states: ["discard", "discard", "match", "discard", "active", "idle"],
+      pointers: [{ index: 4, label: "x" }],
+      vars: { tails: "[2, 3]", length: 2 },
+      note: "3 overwrites the 5. Length stays 2, but a run of length 2 can now end at 3 instead of 5.",
+    },
+    {
+      values: [10, 9, 2, 5, 3, 7],
+      states: ["discard", "discard", "match", "discard", "match", "match"],
+      pointers: [{ index: 5, label: "x" }],
+      vars: { tails: "[2, 3, 7]", length: 3, answer: 3 },
+      note: "7 is bigger than everything, so it is appended. Length 3 — and that overwrite of 5 by 3 is exactly what made this possible.",
+    },
+  ]}
+  caption="Overwriting keeps each length's ending as small as it can be, leaving room to grow later."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from bisect import bisect_left
+
+
+def length_of_lis(nums: list[int]) -> int:
+    """O(n log n): tails[k] is the smallest tail of an increasing run of length k+1."""
+    tails: list[int] = []
+
+    for x in nums:
+        # Leftmost slot holding a value >= x.
+        position = bisect_left(tails, x)
+
+        if position == len(tails):
+            tails.append(x)      # x extends the longest run
+        else:
+            tails[position] = x  # x gives that length a smaller ending
+
+    # The LENGTH is the answer; the contents are not a real subsequence.
+    return len(tails)
+
+
+def length_of_lis_quadratic(nums: list[int]) -> int:
+    """O(n^2): the plain DP. Clearer, and fast enough up to about n = 5000."""
+    if not nums:
+        return 0
+
+    # length[i] = best increasing subsequence ENDING at i.
+    length = [1] * len(nums)
+
+    for i in range(1, len(nums)):
+        for j in range(i):
+            if nums[j] < nums[i]:  # strict: equal values cannot extend
+                length[i] = max(length[i], 1 + length[j])
+
+    # The best run may end anywhere, so take the max of the whole table.
+    return max(length)
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function lengthOfLIS(nums: number[]): number {
+  const tails: number[] = [];
+
+  for (const x of nums) {
+    // Leftmost slot holding a value >= x (lower bound).
+    let low = 0;
+    let high = tails.length;
+
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (tails[mid] < x) low = mid + 1;
+      else high = mid;
+    }
+
+    if (low === tails.length) {
+      tails.push(x); // x extends the longest run
+    } else {
+      tails[low] = x; // x gives that length a smaller ending
+    }
+  }
+
+  // The LENGTH is the answer; the contents are not a real subsequence.
+  return tails.length;
+}
+
+function lengthOfLISQuadratic(nums: number[]): number {
+  if (nums.length === 0) return 0;
+
+  // length[i] = best increasing subsequence ENDING at i.
+  const length = new Array<number>(nums.length).fill(1);
+
+  for (let i = 1; i < nums.length; i++) {
+    for (let j = 0; j < i; j++) {
+      if (nums[j] < nums[i]) {
+        // strict: equal values cannot extend
+        length[i] = Math.max(length[i], 1 + length[j]);
+      }
+    }
+  }
+
+  // The best run may end anywhere, so take the max of the whole table.
+  return Math.max(...length);
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="`bisect_left` vs `bisect_right` decides strict vs non-strict">
+`bisect_left` finds the first slot `>= x`, so an equal value gets **overwritten** — which enforces *strictly* increasing.
+
+`bisect_right` would find the first slot `> x`, letting equal values sit side by side and giving the *non-decreasing* answer instead.
+
+One function name is the entire difference between the two problems. The same applies to `<` versus `<=` in the quadratic version.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n log n)" space="O(n)" />
+
+- **Time** — one pass over `n` numbers, each doing a binary search over a `tails` array of at most `n` entries.
+- **Space** — `tails` holds at most one entry per achievable length, so `O(n)`.
+
+| Approach | Time | Space | Use when |
+|---|---|---|---|
+| Quadratic DP | `O(n²)` | `O(n)` | `n ≤ 5000`, or the subsequence itself is required |
+| Tails + binary search | `O(n log n)` | `O(n)` | Large `n`, and only the length matters |
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty array">
+Returns `0`. `tails` stays empty. The quadratic version needs an explicit guard, because `max()` on an empty list raises an error in Python and returns `-Infinity` in JavaScript.
+</Accordion>
+
+<Accordion title="A strictly decreasing array, e.g. [5, 4, 3, 2, 1]">
+Returns `1`. Every number overwrites slot 0, so `tails` never grows past one entry. Any single element is an increasing subsequence of length 1.
+</Accordion>
+
+<Accordion title="All equal, e.g. [7, 7, 7]">
+Returns `1`, because the requirement is *strictly* increasing. `bisect_left` finds the existing `7` and overwrites it rather than appending.
+
+With `bisect_right` the answer would be `3` — which is the non-decreasing variant.
+</Accordion>
+
+<Accordion title="An already sorted array">
+Returns `n`. Every number is bigger than everything in `tails`, so every step appends. This is the best case for the fast version and the worst case for the quadratic one.
+</Accordion>
+
+<Accordion title="How do I return the subsequence itself, not the length?">
+The `tails` array cannot give it to you — its contents may never have co-existed.
+
+Use the quadratic version and keep a `parent[i]` recording which `j` extended into `i`. Then walk backwards from the index holding the maximum. That keeps the `O(n²)` cost but yields a real subsequence.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Binary Search](/docs/searching/binary-search) — the lower-bound search used here
+- [House Robber](/docs/dynamic-programming/house-robber) — a DP where the last cell *is* the answer, unlike this one
+- [Coin Change](/docs/dynamic-programming/coin-change) — building answers up from smaller ones
+- [Dynamic Programming](/docs/dynamic-programming) — the four stages

@@ -1,0 +1,256 @@
+---
+title: Kth Largest Element in an Array
+description: Find the kth largest value without sorting everything, by keeping only the k best candidates in a heap
+difficulty: medium
+pattern: Heap
+variant: size-k min-heap
+tags: ["Array", "Heap", "Sorting", "Divide and Conquer"]
+leetcode: https://leetcode.com/problems/kth-largest-element-in-an-array/
+problemNumber: 215
+---
+
+## Problem Statement
+
+Given an integer array `nums` and an integer `k`, return the **kth largest** element.
+
+Note this is the kth largest in *sorted order*, not the kth *distinct* value.
+
+```text
+Input:  nums = [3, 2, 1, 5, 6, 4], k = 2
+Output: 5
+Why:    sorted descending → [6, 5, 4, 3, 2, 1], the 2nd is 5
+
+Input:  nums = [3, 2, 3, 1, 2, 4, 5, 5, 6], k = 4
+Output: 4
+Why:    duplicates count — sorted descending → [6, 5, 5, 4, ...], the 4th is 4
+```
+
+## Intuition
+
+The obvious solution is one line: sort descending, take index `k - 1`. That is `O(n log n)` and it is genuinely fine for most inputs.
+
+But look at what it wastes. If `n = 1,000,000` and `k = 5`, sorting carefully arranges all million values — and then you read five of them. The order of the other 999,995 was never needed.
+
+<Callout type="info" title="The key insight">
+You do not need to know the order of everything. You only need to know **which `k` values are the biggest**, and among those, which is the smallest.
+
+So carry a container that holds only the best `k` seen so far. Everything else can be thrown away the moment it arrives.
+</Callout>
+
+### Why a *min*-heap, when we want the largest?
+
+This is the part that feels backwards, so it is worth slowing down.
+
+Your container holds the current top `k`. When a new number arrives, you must answer one question: *does this newcomer deserve a place?*
+
+It deserves a place if it beats the **weakest** member of your current top `k`. And the weakest member of the top `k` is the **smallest** of them.
+
+So the value you need instant access to is the minimum — which is exactly what a min-heap gives you.
+
+<Callout type="info" title="Put another way">
+A min-heap of size `k` is a bouncer for a club with `k` places. The person standing nearest the door is the weakest one inside. When someone new turns up, you only compare against that one person.
+
+And when the club is full and correct, the person at the door **is** the kth largest.
+</Callout>
+
+### The real-world version
+
+Imagine judging a competition and you only care about the top 3. You do not rank all 500 entries. You keep three slots on your desk. Each new entry is compared against the *worst* of the three you are holding. If it beats it, it takes its place and the loser is thrown out.
+
+At the end, the worst of your three is the 3rd best overall.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Create an empty min-heap
+
+It will never be allowed to hold more than `k` items.
+</Step>
+
+<Step>
+### Push each number
+
+Walk `nums` once. Push every value in, without thinking.
+</Step>
+
+<Step>
+### If the heap now holds more than `k`, pop
+
+The pop removes the **smallest** item, which is by definition the one least likely to belong in the top `k`.
+
+The heap is back to size `k`.
+</Step>
+
+<Step>
+### The root is the answer
+
+After the whole array is processed, the heap holds exactly the `k` largest values, and its root is the smallest of them — the kth largest overall.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [3, 2, 1, 5, 6, 4], k = 2"
+  frames={[
+    {
+      values: [3, 2, 1, 5, 6, 4],
+      states: ["active", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "num" }],
+      vars: { heap: "[3]", size: 1 },
+      note: "Push 3. The heap holds 1 item, which is not more than k = 2, so nothing is evicted.",
+    },
+    {
+      values: [3, 2, 1, 5, 6, 4],
+      states: ["done", "active", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "num" }],
+      vars: { heap: "[2, 3]", size: 2 },
+      note: "Push 2. Size is exactly k. The root is 2 — the weaker of the two.",
+    },
+    {
+      values: [3, 2, 1, 5, 6, 4],
+      states: ["done", "done", "discard", "idle", "idle", "idle"],
+      pointers: [{ index: 2, label: "num" }],
+      vars: { heap: "[2, 3]", size: 2, evicted: 1 },
+      note: "Push 1, size becomes 3, so pop the minimum — which is the 1 we just added. It never stood a chance.",
+    },
+    {
+      values: [3, 2, 1, 5, 6, 4],
+      states: ["discard", "done", "discard", "active", "idle", "idle"],
+      pointers: [{ index: 3, label: "num" }],
+      vars: { heap: "[3, 5]", size: 2, evicted: 2 },
+      note: "Push 5, size becomes 3, pop the minimum — 2 is evicted. The top 2 so far are 3 and 5.",
+    },
+    {
+      values: [3, 2, 1, 5, 6, 4],
+      states: ["discard", "discard", "discard", "done", "active", "idle"],
+      pointers: [{ index: 4, label: "num" }],
+      vars: { heap: "[5, 6]", size: 2, evicted: 3 },
+      note: "Push 6, pop the minimum — 3 is evicted. The top 2 are now 5 and 6.",
+    },
+    {
+      values: [3, 2, 1, 5, 6, 4],
+      states: ["discard", "discard", "discard", "match", "match", "discard"],
+      pointers: [{ index: 5, label: "num" }],
+      vars: { heap: "[5, 6]", size: 2, answer: 5 },
+      note: "Push 4, pop the minimum — 4 is evicted immediately. The heap root is 5, the 2nd largest.",
+    },
+  ]}
+  caption="The heap never grew past 2, no matter how long the array was."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+import heapq
+
+
+def find_kth_largest(nums: list[int], k: int) -> int:
+    """Return the kth largest value using a min-heap of size k."""
+    heap: list[int] = []
+
+    for num in nums:
+        heapq.heappush(heap, num)
+
+        # Keep only the k best. The popped value is the current weakest.
+        if len(heap) > k:
+            heapq.heappop(heap)
+
+    # The root of a min-heap holding the top k is the kth largest.
+    return heap[0]
+
+
+def find_kth_largest_shortest(nums: list[int], k: int) -> int:
+    """The one-liner, for when clarity matters more than the constant factor."""
+    return heapq.nlargest(k, nums)[-1]
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+// Uses the MinHeap from the Heaps overview page.
+function findKthLargest(nums: number[], k: number): number {
+  const heap = new MinHeap<number>((a, b) => a - b);
+
+  for (const num of nums) {
+    heap.push(num);
+
+    // Keep only the k best. The popped value is the current weakest.
+    if (heap.size > k) {
+      heap.pop();
+    }
+  }
+
+  // The root of a min-heap holding the top k is the kth largest.
+  return heap.peek()!;
+}
+
+function findKthLargestBySorting(nums: number[], k: number): number {
+  // Note the comparator. Array.sort() without one sorts as STRINGS,
+  // so [10, 9, 100] would become [10, 100, 9].
+  return [...nums].sort((a, b) => b - a)[k - 1];
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n log k)" space="O(k)" />
+
+- **Time** — one pass over `n` values, and each push or pop costs `O(log k)` because the heap never exceeds `k` items. When `k` is small this is very close to `O(n)`.
+- **Space** — the heap holds at most `k` values, no matter how large `n` is. This is the real prize: it lets you handle a stream of numbers too large to hold in memory.
+
+### Compared with sorting
+
+| Approach | Time | Space | Best when |
+|---|---|---|---|
+| Sort, then index | `O(n log n)` | `O(n)` or `O(log n)` | `k` is close to `n`, or the code must be obvious |
+| Min-heap of size `k` | `O(n log k)` | `O(k)` | `k` is much smaller than `n`, or the input is a stream |
+| Quickselect | `O(n)` average | `O(1)` | You need the theoretical best and can accept `O(n²)` worst case |
+
+<Callout type="warn" title="Do not assume the heap always wins">
+When `k` is close to `n`, `O(n log k)` and `O(n log n)` are the same thing, and sorting has a much smaller constant factor. For `nums.length = 100`, sorting is faster in wall-clock time.
+
+The heap wins on **memory** and on **streams**, and on time only when `k ≪ n`.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="k equals the array length">
+Then you want the smallest value. The heap fills with every element and never evicts anything, so the root is the overall minimum. Correct, though a plain `min()` would be faster.
+</Accordion>
+
+<Accordion title="Duplicate values, e.g. nums = [5, 5, 5], k = 2">
+The answer is `5`. The problem asks for the kth largest in sorted order, not the kth *distinct* value — duplicates each take a slot. The heap handles this with no special code, since it never deduplicates.
+
+Watch for this: it is the single most common misreading of the problem.
+</Accordion>
+
+<Accordion title="Negative numbers">
+No special handling. A min-heap orders negatives correctly, and `-10 < -3` as expected.
+</Accordion>
+
+<Accordion title="Why not pop k times from a max-heap?">
+You can — build a max-heap in `O(n)` and pop `k` times for `O(n + k log n)`. That is actually *better* when `k` is tiny.
+
+The size-`k` min-heap wins when the input arrives as a stream you cannot store, because it only ever holds `k` items. Choose based on which resource is scarce.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Top K Frequent Elements](/docs/arrays/top-k-frequent-elements) — the same size-`k` idea, applied to counts instead of values
+- [Merge k Sorted Lists](/docs/heaps/merge-k-sorted-lists) — a heap where the items are list heads
+- [Heaps](/docs/heaps) — how sift-up and sift-down actually work

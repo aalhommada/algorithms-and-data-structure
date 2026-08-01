@@ -1,0 +1,11 @@
+{
+  "title": "Backtracking",
+  "icon": "Undo2",
+  "pages": [
+    "index",
+    "---Medium---",
+    "subsets",
+    "permutations",
+    "combination-sum"
+  ]
+}

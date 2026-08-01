@@ -8,6 +8,7 @@
     "---Medium---",
     "min-stack",
     "evaluate-reverse-polish-notation",
-    "simplify-path"
+    "simplify-path",
+    "daily-temperatures"
   ]
 }

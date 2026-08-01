@@ -1,0 +1,280 @@
+---
+title: Rate Limiter
+description: Four algorithms compared with their exact failure modes, and the distributed counting problem that makes this harder than it looks
+---
+
+A rate limiter decides whether a request is allowed right now. The algorithm choice matters, because three of the four common ones have a specific, exploitable weakness.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| Limit by what? | API key, with per-endpoint overrides |
+| Where does it run? | At the edge, before application servers |
+| What happens when exceeded? | `429` with `Retry-After` |
+| Must it be exact? | No — a small overshoot is acceptable |
+| Distributed? | Yes, many limiter nodes |
+
+That last pair matters more than it seems. **Exactness is expensive**, and accepting approximation unlocks much simpler designs.
+
+## 2. Put Numbers On It
+
+```text
+1 million API keys
+10,000 requests/sec at peak
+
+Per-key state:  key + counter + timestamp  ≈  50 bytes
+1M keys × 50 bytes                          =  50 MB      ← trivially fits in memory
+
+Latency budget: the limiter must add < 5 ms
+```
+
+<Callout type="info" title="50 MB is the finding that shapes everything">
+All the state fits in memory on one machine, several times over. That rules out anything database-backed and points straight at Redis.
+
+It also means the expensive algorithm — the sliding log — is *affordable* here, which is worth knowing before dismissing it.
+</Callout>
+
+## 3. The Four Algorithms
+
+### Fixed window
+
+Count requests per fixed clock interval. Reset at the boundary.
+
+```text
+Limit: 100 per minute
+
+10:00:00 – 10:00:59   count = 0 … 100
+10:01:00              count resets to 0
+```
+
+Simple and cheap — one counter per key. And it has a serious flaw.
+
+<Callout type="warn" title="Fixed windows allow double the limit">
+```text
+10:00:59   →  100 requests   (window 1, now full)
+10:01:00   →  100 requests   (window 2, fresh counter)
+
+200 requests in ONE SECOND, with a limit of 100 per minute.
+```
+
+A client that learns your boundary can sustain twice the intended rate indefinitely by clustering requests around it. This is not theoretical — it is the standard way rate limits get abused.
+</Callout>
+
+### Sliding log
+
+Store the timestamp of every request. To decide, drop timestamps older than the window and count what remains.
+
+```text
+Limit: 100 per minute.  Now = 10:01:30
+Keep timestamps after 10:00:30, count them.
+```
+
+Perfectly accurate, with no boundary problem at all. The cost is memory: 100 timestamps per key, so `1M × 100 × 8 bytes = 800 MB`. Affordable here, but it scales with the *limit*, which makes it fragile for generous limits.
+
+### Sliding window counter
+
+The practical compromise. Keep two counters — the current window and the previous — and weight the previous one by how much of it is still in view.
+
+```text
+Limit 100/min.  Now = 10:01:15, so 25% of the way into the current window.
+
+previous window (10:00–10:01):  80 requests
+current  window (10:01–10:02):  30 requests
+
+estimate = 30 + 80 × (1 − 0.25) = 30 + 60 = 90     →  allowed (90 < 100)
+```
+
+Two numbers per key. No boundary exploit. The estimate assumes requests were spread evenly through the previous window, which is slightly wrong but close enough in practice.
+
+### Token bucket
+
+A bucket holds tokens. Each request takes one. Tokens refill at a steady rate up to a maximum.
+
+```text
+Capacity 100, refill 10 tokens/sec
+
+Idle for a while  →  bucket fills to 100
+Burst of 100      →  all allowed instantly, bucket now empty
+Then              →  10 requests/sec sustained
+```
+
+<Callout type="info" title="Token bucket is usually the right choice">
+It is the only one of the four where **bursting is a feature rather than a bug**.
+
+Real clients are bursty: a page load fires eight API calls at once, then nothing for thirty seconds. A strict per-second limiter rejects that legitimate pattern; a token bucket absorbs it while still capping the sustained rate.
+
+Two numbers per key — token count and last refill time — and tokens are computed lazily on read, so no background timer is needed.
+</Callout>
+
+### Side by side
+
+| | Fixed window | Sliding log | Sliding counter | Token bucket |
+|---|---|---|---|---|
+| Memory per key | 1 number | 1 per request | 2 numbers | 2 numbers |
+| Boundary exploit | **Yes, 2×** | No | No | No |
+| Allows bursts | Accidentally | No | Slightly | **By design** |
+| Accuracy | Poor | Exact | Good | Good |
+| Complexity | Lowest | High | Medium | Low |
+
+## 4. The Distributed Problem
+
+One limiter node is easy. Several is where it gets interesting.
+
+<ArchViz
+  title="Why local counters fail"
+  height={280}
+  nodes={[
+    { id: "client", label: "Client", kind: "client", x: 0.0, y: 0.5 },
+    { id: "lb", label: "Load Balancer", kind: "edge", x: 0.22, y: 0.5 },
+    { id: "l1", label: "Limiter 1", kind: "service", x: 0.5, y: 0.08 },
+    { id: "l2", label: "Limiter 2", kind: "service", x: 0.5, y: 0.5 },
+    { id: "l3", label: "Limiter 3", kind: "service", x: 0.5, y: 0.92 },
+    { id: "redis", label: "Redis", sublabel: "shared counters", kind: "cache", x: 0.85, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "client", to: "lb", active: true },
+        { from: "lb", to: "l1", label: "34 req", active: true },
+        { from: "lb", to: "l2", label: "33 req", active: true },
+        { from: "lb", to: "l3", label: "33 req", active: true },
+      ],
+      active: ["l1", "l2", "l3"],
+      dimmed: ["redis"],
+      vars: { "limit": "100/min", "each node thinks": "34 of 100 used", "actual total": 100 },
+      note: "With local counters, each node sees only its own third. All three allow more — the client gets 300 requests against a limit of 100.",
+    },
+    {
+      edges: [
+        { from: "lb", to: "l1", active: true },
+        { from: "l1", to: "redis", label: "INCR", active: true },
+        { from: "l2", to: "redis", label: "INCR", active: true },
+        { from: "l3", to: "redis", label: "INCR", active: true },
+      ],
+      active: ["redis", "l1", "l2", "l3"],
+      vars: { "shared count": 100, decision: "correct" },
+      note: "A shared counter in Redis fixes it. INCR is atomic, so concurrent increments cannot lose updates.",
+    },
+    {
+      edges: [
+        { from: "l1", to: "redis", label: "check + incr", active: true },
+        { from: "l2", to: "redis", label: "check + incr", active: true },
+      ],
+      active: ["redis"],
+      vars: { problem: "race between read and write" },
+      note: "But a separate read then write is a race: two nodes both read 99, both allow, and the count becomes 101. The check and the increment must be ONE atomic operation.",
+    },
+    {
+      edges: [
+        { from: "l1", to: "redis", label: "Lua script", active: true },
+        { from: "l2", to: "redis", label: "Lua script", active: true },
+      ],
+      active: ["redis", "l1", "l2"],
+      vars: { solution: "atomic script", latency: "+1 ms" },
+      note: "A Lua script runs check-and-increment atomically inside Redis. One round trip, no race.",
+    },
+  ]}
+  caption="The hard part is not the algorithm — it is making check-and-decrement atomic across nodes."
+/>
+
+<Callout type="warn" title="Read-then-write is a race, and it is the classic bug">
+```text
+Node A: GET count → 99   Node B: GET count → 99
+Node A: 99 < 100, allow  Node B: 99 < 100, allow
+Node A: SET count 100    Node B: SET count 100
+
+Two requests allowed, and the counter says 100 instead of 101.
+```
+
+The fix is to make it one operation. Redis `INCR` returns the new value atomically, so you increment first and reject if the result exceeds the limit. For token buckets, which need arithmetic on two fields, use a Lua script — Redis runs scripts atomically.
+</Callout>
+
+### Trading accuracy for latency
+
+Calling Redis on every request adds a round trip. Two ways to avoid it:
+
+| Approach | How | Cost |
+|---|---|---|
+| **Local + sync** | Count locally, reconcile with Redis every few hundred ms | Brief overshoot |
+| **Divide the budget** | Each of `N` nodes gets `limit / N` | Under-utilised if load is uneven |
+
+<Callout type="info" title="Accepting a small overshoot is usually correct">
+Rate limits exist to stop abuse, not to be arithmetically perfect. Allowing 105 requests against a limit of 100 harms nothing.
+
+Say it explicitly: *"we allow a small overshoot in exchange for not making a network call per request — a hard limit would cost 1 ms on every request to prevent a 5% overage."* That is a trade-off, stated.
+</Callout>
+
+## 5. The Response
+
+```text
+HTTP 429 Too Many Requests
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1719000060
+Retry-After: 42
+```
+
+Send the headers on **successful** responses too, so well-behaved clients can slow down before being rejected.
+
+<Callout type="warn" title="Fail open, not closed">
+If Redis is unavailable, what should the limiter do?
+
+**Fail closed** — reject everything. Your rate limiter has just become a total outage.
+
+**Fail open** — allow everything. You are unprotected for the duration, but the service stays up.
+
+Almost always fail open. The limiter protects against abuse; it should not itself be able to take the system down. Pair it with a local fallback limit so you are not entirely unguarded.
+</Callout>
+
+## 6. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Token bucket | Legitimate bursts allowed | Not a strict per-second cap |
+| Shared Redis counters | Correct across nodes | +1 ms per request; a dependency |
+| Accepting overshoot | No sync on every request | Limits are approximate |
+| Fail open | Limiter cannot cause an outage | Unprotected while Redis is down |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="Different limits per endpoint?">
+Key the bucket by `(api_key, endpoint_class)` rather than `api_key` alone.
+
+Group endpoints into a few classes — cheap reads, normal writes, expensive searches — rather than configuring each one. Three buckets per key still fits easily in memory.
+</Accordion>
+
+<Accordion title="How do you handle clients behind one IP?">
+An office or mobile carrier NAT puts thousands of users behind one address. Limiting by IP punishes them all together.
+
+Prefer an authenticated key. Where anonymous traffic must be limited, use a generous IP limit as a blunt backstop and a tighter per-session limit above it.
+</Accordion>
+
+<Accordion title="Where should the limiter run?">
+As early as possible — an API gateway or a CDN edge. Work you reject before it enters the system is the cheapest work there is.
+
+Running it inside application servers means the request has already consumed a connection and a thread before being rejected, which is exactly what you were trying to avoid under load.
+</Accordion>
+
+<Accordion title="Why not just use a queue instead of rejecting?">
+Queuing excess requests sounds friendlier, but it converts a fast rejection into a slow response. Clients time out, retry, and add more load.
+
+Rejecting quickly with `Retry-After` gives the client accurate information and lets it back off. Fast failure beats slow failure — the same principle as a [circuit breaker](/docs/system-design/reliability).
+</Accordion>
+
+<Accordion title="How would you test that it works?">
+Unit-test the algorithm with a fake clock — real timing makes tests flaky.
+
+Then test the distributed behaviour: several nodes hitting one key concurrently, asserting the total allowed is within tolerance. That is where the race conditions live, and they will not show up in single-node tests.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [APIs and Rate Limiting](/docs/system-design/apis) — status codes and headers
+- [Caching](/docs/system-design/caching) — Redis, and what happens when it is unavailable
+- [Reliability](/docs/system-design/reliability) — failing open, and load shedding
+- [Consistency and CAP](/docs/system-design/consistency) — why atomic operations matter here

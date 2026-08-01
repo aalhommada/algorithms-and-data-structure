@@ -11,10 +11,14 @@
     "stacks-queues",
     "trees",
     "graphs",
+    "heaps",
     "---Techniques---",
     "searching",
+    "backtracking",
     "dynamic-programming",
     "greedy",
-    "design"
+    "design",
+    "---System Design---",
+    "system-design"
   ]
 }

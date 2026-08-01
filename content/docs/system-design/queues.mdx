@@ -1,0 +1,204 @@
+---
+title: Queues and Async Work
+description: Decoupling slow work from fast responses, delivery guarantees, back pressure, and why every consumer must be idempotent
+---
+
+A queue lets a request finish before its work does.
+
+The user uploads a photo. Resizing it into five formats takes eight seconds. Without a queue, they stare at a loading spinner for eight seconds. With one, they get a response in 50 ms and the resizing happens behind the scenes.
+
+## What a Queue Buys You
+
+<ArchViz
+  title="Moving slow work off the request path"
+  height={280}
+  nodes={[
+    { id: "client", label: "Client", kind: "client", x: 0.0, y: 0.5 },
+    { id: "api", label: "API Server", kind: "service", x: 0.28, y: 0.5 },
+    { id: "queue", label: "Queue", sublabel: "durable", kind: "queue", x: 0.56, y: 0.5 },
+    { id: "w1", label: "Worker 1", kind: "service", x: 0.85, y: 0.08 },
+    { id: "w2", label: "Worker 2", kind: "service", x: 0.85, y: 0.5 },
+    { id: "w3", label: "Worker 3", kind: "service", x: 0.85, y: 0.92 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "client", to: "api", label: "upload", active: true },
+        { from: "api", to: "queue", label: "enqueue job", active: true },
+      ],
+      active: ["client", "api", "queue"],
+      dimmed: ["w1", "w2", "w3"],
+      vars: { "response time": "50 ms", "queue depth": 1 },
+      note: "The API stores the file, drops a job on the queue, and replies immediately. The user is not waiting for the resize.",
+    },
+    {
+      edges: [
+        { from: "queue", to: "w1", label: "consume", active: true },
+        { from: "queue", to: "w2", active: true },
+        { from: "queue", to: "w3", active: true },
+      ],
+      active: ["queue", "w1", "w2", "w3"],
+      dimmed: ["client"],
+      vars: { "queue depth": 1, workers: 3 },
+      note: "Workers pull jobs at their own pace. Each job goes to exactly one worker.",
+    },
+    {
+      edges: [
+        { from: "client", to: "api", label: "10,000 uploads", active: true },
+        { from: "api", to: "queue", active: true },
+        { from: "queue", to: "w1" },
+        { from: "queue", to: "w2" },
+        { from: "queue", to: "w3" },
+      ],
+      active: ["queue"],
+      vars: { "queue depth": 9840, "response time": "still 50 ms" },
+      note: "A traffic spike. The queue absorbs it — depth grows, but responses stay fast. This is the buffering benefit.",
+    },
+    {
+      edges: [
+        { from: "queue", to: "w1", active: true },
+        { from: "queue", to: "w2", active: true },
+        { from: "queue", to: "w3", active: true },
+      ],
+      active: ["queue", "w1", "w2", "w3"],
+      dimmed: ["client", "api"],
+      vars: { "queue depth": 120, note: "scale workers, not the API" },
+      note: "Add workers and the backlog drains. The API tier never needed to change — that is the decoupling.",
+    },
+  ]}
+  caption="Four benefits in one picture: fast responses, spike absorption, independent scaling, and isolation from worker failure."
+/>
+
+| Benefit | What it means |
+|---|---|
+| **Fast responses** | The user waits for the enqueue, not the work |
+| **Spike absorption** | The queue buffers; the workers catch up |
+| **Independent scaling** | Add workers without touching the API |
+| **Failure isolation** | A worker crash retries the job rather than failing the request |
+
+<Callout type="warn" title="What a queue costs">
+**The work is now eventual.** The user is told "upload received", not "upload processed". The interface must reflect that — a progress state, a notification, something.
+
+**Failures become invisible.** A failed request returns a 500 the user sees. A failed job fails silently at 3 a.m. unless you are monitoring the dead-letter queue.
+
+**Ordering is not guaranteed** unless you arrange it.
+
+**Debugging is harder** — the work happens somewhere else, later.
+</Callout>
+
+## What Belongs on a Queue
+
+| Good fit | Why |
+|---|---|
+| Sending email and notifications | Slow, and nobody is watching |
+| Image and video processing | Very slow, CPU-heavy |
+| Report generation | Slow, not urgent |
+| Search index updates | Slight delay is invisible |
+| Analytics events | Enormous volume, no user waiting |
+| Third-party API calls | Their downtime should not be yours |
+
+| Poor fit | Why |
+|---|---|
+| Anything the response depends on | The user needs it *now* |
+| Authentication | Must be immediate and consistent |
+| Reads | There is nothing to defer |
+
+## Delivery Guarantees
+
+This is the part with real consequences.
+
+| Guarantee | Means | Reality |
+|---|---|---|
+| **At most once** | Never duplicated, may be lost | Rarely acceptable |
+| **At least once** | Never lost, may be duplicated | The practical default |
+| **Exactly once** | Never lost, never duplicated | Very hard, often faked |
+
+<Callout type="warn" title="At-least-once is what you will actually get">
+A worker takes a job, completes it, and crashes before acknowledging it. The queue never heard the acknowledgement, so it hands the job to another worker.
+
+The work happens **twice**. This is not a bug in the queue — it is the only safe behaviour available, because the queue cannot tell "finished but did not ack" from "died halfway".
+
+Therefore: **every consumer must be idempotent.** Not as a nicety — as a requirement.
+</Callout>
+
+```text
+NOT idempotent:  balance = balance + 10        ← runs twice, adds 20
+Idempotent:      if not processed(job_id):
+                     balance = balance + 10
+                     mark_processed(job_id)
+```
+
+"Exactly once" systems achieve their guarantee by doing exactly this — deduplicating on an id — rather than by preventing redelivery.
+
+## Back Pressure
+
+If producers are faster than consumers, the queue grows without limit. Eventually it runs out of memory or disk, and then it fails at the worst possible moment.
+
+| Response | What happens | Suits |
+|---|---|---|
+| **Scale consumers** | Drain faster | The default, if the work parallelises |
+| **Reject new work** | Producers get an error and back off | Protects the system honestly |
+| **Drop by priority** | Shed low-value work first | Analytics before payments |
+| **Slow the producers** | Rate-limit at the front door | When clients can retry |
+
+<Callout type="info" title="Queue depth is the metric to watch">
+A queue that is usually near empty is healthy — consumers keep up.
+
+A queue with **steadily rising** depth is a system already failing; it just has not noticed yet. The alert should fire on the trend, not on the absolute number.
+
+The useful question in any design with a queue: *"what happens when consumers cannot keep up?"* An answer of "the queue grows" is incomplete.
+</Callout>
+
+## Dead-Letter Queues
+
+Some jobs will never succeed — malformed input, a deleted record, a bug. Retrying them forever wastes capacity and hides the problem.
+
+```text
+attempt 1  →  fail  →  retry in 1s
+attempt 2  →  fail  →  retry in 4s
+attempt 3  →  fail  →  retry in 16s
+attempt 4  →  fail  →  move to DEAD LETTER QUEUE
+```
+
+The dead-letter queue is where broken jobs go to be looked at by a human. **Alert on it.** A silently filling dead-letter queue is lost work nobody knows about.
+
+Note the growing gaps — **exponential backoff**. Retrying immediately hammers a system that is probably already struggling.
+
+## Queue or Log
+
+Two shapes, often confused.
+
+| | Message queue (SQS, RabbitMQ) | Event log (Kafka) |
+|---|---|---|
+| After consumption | The message is removed | The event stays for days |
+| Consumers | One consumer gets each message | Many consumers read independently |
+| Replay | Not possible | Read from any past position |
+| Ordering | Weak or per-group | Strict within a partition |
+| Fits | Task distribution | Event streams, multiple subscribers |
+
+<Callout type="info" title="The deciding question: does more than one thing care?">
+"Resize this image" — one worker does it, then it is done. That is a **queue**.
+
+"A user just signed up" — the email service, the analytics pipeline and the recommendation engine all care, and next month a fourth service will too. That is a **log**.
+
+Retention is the other half: a log lets you fix a consumer bug and replay the last three days. A queue does not.
+</Callout>
+
+## Ordering
+
+Most queues do not guarantee order. Two workers pulling concurrently will finish in whatever order they finish.
+
+When order matters — "created" must be processed before "updated" — the standard fix is **partitioning by key**: all events for user 42 go to the same partition, and one consumer handles that partition in order.
+
+<Callout type="warn" title="Ordering costs parallelism">
+One consumer per partition means the throughput of a single key is the throughput of one consumer. Partition by a key with many values, or that consumer becomes the bottleneck.
+
+If order does not truly matter, do not ask for it. Many "ordering" requirements dissolve if events carry timestamps or version numbers and consumers ignore stale ones.
+</Callout>
+
+## Related Reading
+
+- [Consistency and CAP](/docs/system-design/consistency) — idempotency, and why retries make it mandatory
+- [Reliability](/docs/system-design/reliability) — backoff, circuit breakers and timeouts
+- [Scaling](/docs/system-design/scaling) — queues as the step that keeps responses fast
+- [News Feed](/docs/system-design/news-feed) — fan-out on write, which is a queue-driven design

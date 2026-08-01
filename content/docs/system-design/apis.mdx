@@ -1,0 +1,206 @@
+---
+title: APIs and Rate Limiting
+description: Designing the interface first, paginating safely, making writes retryable, and protecting the system from too much traffic
+---
+
+The API is the contract. Getting it right early is worth more than getting the internals right, because internals can be replaced and a public contract cannot.
+
+## Design the Interface Before the Boxes
+
+Writing down the operations forces the scope into the open. It is common to discover, while listing endpoints, that the design is doing two unrelated jobs.
+
+```text
+POST   /urls              create a short URL
+GET    /{code}            redirect to the original
+GET    /urls/{code}/stats click statistics
+```
+
+Three lines, and the whole system is now scoped. If a fourth endpoint feels necessary, that is a scope conversation to have deliberately.
+
+## REST, GraphQL, gRPC
+
+| | REST | GraphQL | gRPC |
+|---|---|---|---|
+| Shape | Resources and verbs | One endpoint, a query language | Typed remote calls |
+| Over-fetching | Common | Client picks fields | Defined per method |
+| Round trips | One per resource | One for everything | One per call |
+| Caching | Easy — plain HTTP | Hard | Hard |
+| Best for | Public APIs | Varied clients, mobile | Service-to-service |
+
+<Callout type="info" title="REST unless you can name why not">
+REST is cacheable at every layer, debuggable with a browser, and universally understood.
+
+Choose GraphQL when many different clients need different slices of the same data and mobile round trips are the bottleneck. Choose gRPC for internal service-to-service traffic where you control both ends and want speed and type safety.
+
+"We use GraphQL" is a weak answer. "Our mobile client was making seven calls to render one screen" is a strong one.
+</Callout>
+
+## Pagination
+
+Never return an unbounded list. The one time that table has ten million rows, the response is a heap dump.
+
+### Offset pagination
+
+```text
+GET /posts?limit=20&offset=40
+```
+
+Simple, allows jumping to page 5000 — and wrong at scale for two reasons.
+
+<Callout type="warn" title="Why offset pagination breaks">
+**It gets slower the deeper you go.** `OFFSET 1000000` makes the database count and discard a million rows before returning twenty.
+
+**It skips and repeats items.** If someone inserts a row while a user is paging, everything shifts by one — so an item on the boundary is either seen twice or never seen at all.
+</Callout>
+
+### Cursor pagination
+
+```text
+GET /posts?limit=20&after=eyJpZCI6MTIzfQ
+```
+
+The cursor encodes *where you stopped* — usually the last id or timestamp. The query becomes `WHERE id < last_id ORDER BY id DESC LIMIT 20`, which uses the index and stays fast at any depth. Inserts do not shift it.
+
+The cost: you cannot jump to an arbitrary page. For feeds and infinite scroll that is not a real loss.
+
+| | Offset | Cursor |
+|---|---|---|
+| Deep pages | Slow | Fast |
+| Stable under inserts | No | Yes |
+| Jump to page N | Yes | No |
+| Use for | Admin tables | Feeds, timelines, exports |
+
+## Idempotency for Writes
+
+A network drops the response. The client retries. The order is placed twice.
+
+```text
+POST /orders
+Idempotency-Key: 9f2c-41ab-7e
+
+first request  →  create the order, store the result under the key
+retry          →  key seen before  →  return the stored result, create nothing
+```
+
+| Method | Naturally idempotent | Note |
+|---|---|---|
+| `GET` | Yes | Reads change nothing |
+| `PUT` | Yes | Sets a value; repeating sets the same value |
+| `DELETE` | Yes | Already gone stays gone |
+| `POST` | **No** | Needs an idempotency key |
+| `PATCH` | Depends | `set x = 5` yes; `increment x` no |
+
+<Callout type="info" title="Keys should expire, and should be scoped">
+Store idempotency keys for around 24 hours — long enough to cover any realistic retry, short enough to bound storage.
+
+Scope the key to the user, so two clients cannot collide by generating the same value.
+</Callout>
+
+## Rate Limiting
+
+Rate limiting protects the system from a client that is abusive, buggy, or simply successful.
+
+<ArchDiagram
+  title="Where the limiter sits"
+  height={190}
+  nodes={[
+    { id: "client", label: "Clients", kind: "client", x: 0.0, y: 0.5 },
+    { id: "limiter", label: "Rate Limiter", sublabel: "at the edge", kind: "edge", x: 0.33, y: 0.5 },
+    { id: "counter", label: "Redis", sublabel: "shared counters", kind: "cache", x: 0.33, y: 0.02 },
+    { id: "api", label: "API Servers", kind: "service", x: 0.72, y: 0.5 },
+    { id: "db", label: "Database", kind: "database", x: 1.0, y: 0.5 },
+  ]}
+  edges={[
+    { from: "client", to: "limiter", label: "request" },
+    { from: "limiter", to: "counter", label: "count", dashed: true },
+    { from: "limiter", to: "api", label: "allowed" },
+    { from: "api", to: "db" },
+  ]}
+  caption="Reject as early as possible — work you never start is the cheapest kind."
+/>
+
+The four algorithms and their trade-offs are worked through in [Rate Limiter](/docs/system-design/rate-limiter). The short version:
+
+| Algorithm | Bursts | Memory | Accuracy |
+|---|---|---|---|
+| Fixed window | Allows 2× at the boundary | Tiny | Poor |
+| Sliding log | Exact | Heavy | Exact |
+| Sliding window counter | Good | Tiny | Good |
+| Token bucket | Controlled, by design | Tiny | Good |
+
+**Token bucket** is the usual choice: it permits a short burst, which real clients need, while capping the sustained rate.
+
+### Telling the client
+
+```text
+HTTP 429 Too Many Requests
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1719000000
+Retry-After: 30
+```
+
+<Callout type="warn" title="Without Retry-After, clients retry immediately">
+A client that gets a 429 with no guidance will try again straight away, and again, making the overload worse.
+
+`Retry-After` turns rejection into cooperation. It is one header and it materially changes system behaviour under load.
+</Callout>
+
+### What to limit by
+
+| Key | Catches | Watch out |
+|---|---|---|
+| API key / user id | Per-customer abuse | Requires authentication |
+| IP address | Anonymous traffic | Offices and mobile networks share IPs |
+| Endpoint | Expensive operations | Needs per-route configuration |
+| Combination | Most real abuse | More state to hold |
+
+Different endpoints deserve different limits. A search that scans an index should be limited far more tightly than a health check.
+
+## Status Codes That Mean Something
+
+| Code | Use for |
+|---|---|
+| `200` | Fine |
+| `201` | Created |
+| `400` | The request is malformed |
+| `401` | Not authenticated |
+| `403` | Authenticated, not allowed |
+| `404` | Not found |
+| `409` | Conflict — e.g. a version mismatch |
+| `429` | Rate limited |
+| `500` | We broke |
+| `503` | Temporarily unavailable — try later |
+
+<Callout type="info" title="The 4xx / 5xx split is a signal to the client">
+`4xx` means *the client should change something*. Retrying identically will fail again.
+
+`5xx` means *the server had a problem*. Retrying may well work.
+
+Returning `500` for invalid input causes well-behaved clients to retry forever against a request that can never succeed — and it pollutes your error rate, so real outages hide inside the noise.
+</Callout>
+
+## Versioning
+
+Once a client depends on your response shape, you cannot change it freely.
+
+| Approach | Example | Note |
+|---|---|---|
+| URL path | `/v1/users` | Obvious, easy to route, most common |
+| Header | `Accept: application/vnd.api.v2+json` | Cleaner URLs, easier to miss |
+| Query parameter | `/users?version=2` | Simple, easy to forget |
+
+<Callout type="info" title="Additive changes need no version">
+Adding a new **optional** field breaks nobody — clients ignore what they do not know.
+
+Removing a field, renaming one, or changing a type does break clients. Only those require a new version.
+
+Design responses as objects rather than bare arrays from the start: `{"items": [...]}` can gain a `total` field later, while `[...]` cannot.
+</Callout>
+
+## Related Reading
+
+- [Rate Limiter](/docs/system-design/rate-limiter) — the four algorithms worked through
+- [Consistency and CAP](/docs/system-design/consistency) — idempotency in depth
+- [Reliability](/docs/system-design/reliability) — timeouts, retries and load shedding
+- [Caching](/docs/system-design/caching) — why REST's cacheability matters

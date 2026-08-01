@@ -1,0 +1,316 @@
+---
+title: Validate Binary Search Tree
+description: Check that a tree is a valid BST, and understand why comparing each node to its parent is not enough
+difficulty: medium
+pattern: DFS
+variant: bounds passed down
+tags: ["Tree", "DFS", "BST", "Recursion"]
+leetcode: https://leetcode.com/problems/validate-binary-search-tree/
+problemNumber: 98
+---
+
+## Problem Statement
+
+Given the root of a binary tree, decide whether it is a valid **binary search tree** (BST).
+
+A valid BST requires:
+
+- Every node in the **left** subtree is **strictly less** than the node.
+- Every node in the **right** subtree is **strictly greater** than the node.
+- Both subtrees are themselves valid BSTs.
+
+```text
+Input:  root = [2, 1, 3]
+Output: true
+
+Input:  root = [5, 1, 4, null, null, 3, 6]
+Output: false
+Why:    4 is in 5's right subtree, but 4 < 5
+```
+
+## Intuition
+
+The obvious first attempt is to check each node against its parent:
+
+```text
+if node.left:  assert node.left.val  < node.val
+if node.right: assert node.right.val > node.val
+```
+
+This is wrong, and the counterexample is the whole lesson of the problem.
+
+<Callout type="warn" title="The tree that breaks the naive check">
+```text
+      5
+     / \
+    1   7
+       / \
+      3   9        ← 3 is less than 5, but sits in 5's RIGHT subtree
+```
+
+Check every parent–child pair and each one passes: `1 < 5`, `7 > 5`, `3 < 7`, `9 > 7`.
+
+But this is not a BST. Searching for `3` starts at `5`, sees `3 < 5`, and goes **left** — into a subtree that does not contain it. The tree lies about where its values are.
+</Callout>
+
+The naive check fails because the BST rule is not about parents. Read it again: *every node in the left subtree*, not *the left child*.
+
+<Callout type="info" title="The key insight">
+A node's legal range is decided by **every ancestor above it**, not just its parent.
+
+Going left tightens the ceiling. Going right raises the floor. So carry a `(low, high)` window down the tree, and check each node fits inside it.
+</Callout>
+
+### How the window narrows
+
+Start at the root with no constraints at all: `(-∞, +∞)`.
+
+| Move | What it means | New window |
+|---|---|---|
+| Go left from node `v` | Everything here must be `< v` | `(low, v)` |
+| Go right from node `v` | Everything here must be `> v` | `(v, high)` |
+
+Trace the broken tree above:
+
+```text
+5   window (-inf, +inf)   ok
+├─ left  1   window (-inf, 5)   ok    1 < 5
+└─ right 7   window (5, +inf)   ok    7 > 5
+   ├─ left  3   window (5, 7)   FAIL  3 is not > 5
+   └─ right 9   window (7, +inf) ok
+```
+
+Node `3` is caught. Its parent said "less than 7", but its grandparent had already said "greater than 5", and `3` cannot satisfy both.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start with an unbounded window
+
+The root may hold any value, so begin with `low = -∞` and `high = +∞`.
+</Step>
+
+<Step>
+### Reject a node outside its window
+
+If `node.val <= low` or `node.val >= high`, the tree is invalid. Both comparisons are strict — duplicates are not allowed.
+</Step>
+
+<Step>
+### Tighten and recurse left
+
+The left subtree keeps the same floor but takes this node as its new ceiling: `(low, node.val)`.
+</Step>
+
+<Step>
+### Tighten and recurse right
+
+The right subtree takes this node as its new floor and keeps the ceiling: `(node.val, high)`.
+</Step>
+
+<Step>
+### Valid only if both sides are valid
+
+An empty subtree is trivially valid, which gives the base case for free.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<TreeViz
+  title="root = [5, 1, 7, null, null, 3, 9] — the tree that fools the naive check"
+  frames={[
+    {
+      nodes: [5, 1, 7, null, null, 3, 9],
+      states: ["active", "idle", "idle", null, null, "idle", "idle"],
+      vars: { low: "-inf", high: "+inf" },
+      note: "The root may be anything. It passes.",
+    },
+    {
+      nodes: [5, 1, 7, null, null, 3, 9],
+      states: ["done", "match", "idle", null, null, "idle", "idle"],
+      vars: { low: "-inf", high: 5 },
+      note: "Go left. The ceiling becomes 5. Node 1 fits, and both its children are empty.",
+    },
+    {
+      nodes: [5, 1, 7, null, null, 3, 9],
+      states: ["done", "done", "match", null, null, "idle", "idle"],
+      vars: { low: 5, high: "+inf" },
+      note: "Go right from the root. The floor becomes 5. Node 7 fits.",
+    },
+    {
+      nodes: [5, 1, 7, null, null, 3, 9],
+      states: ["done", "done", "done", null, null, "compare", "idle"],
+      vars: { low: 5, high: 7 },
+      note: "Go left from 7. The window is now (5, 7) — the floor of 5 came from the ROOT, two levels up.",
+    },
+    {
+      nodes: [5, 1, 7, null, null, 3, 9],
+      states: ["done", "done", "done", null, null, "discard", "idle"],
+      vars: { low: 5, high: 7, node: 3 },
+      note: "3 is not greater than 5. Invalid — return false. A parent-only check would have missed this.",
+    },
+  ]}
+  caption="The floor of 5 was set by the root and survived two levels of descent."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+class TreeNode:
+    def __init__(self, val: int = 0, left: "TreeNode | None" = None,
+                 right: "TreeNode | None" = None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+
+def is_valid_bst(root: TreeNode | None) -> bool:
+    """Check the BST property by carrying an allowed range down the tree."""
+
+    def check(node: TreeNode | None, low: float, high: float) -> bool:
+        # An empty subtree breaks no rules.
+        if node is None:
+            return True
+
+        # Strict comparisons: equal values are not allowed in a BST.
+        if not (low < node.val < high):
+            return False
+
+        # Going left lowers the ceiling; going right raises the floor.
+        return check(node.left, low, node.val) and check(node.right, node.val, high)
+
+    return check(root, float("-inf"), float("inf"))
+
+
+def is_valid_bst_inorder(root: TreeNode | None) -> bool:
+    """Alternative: an inorder walk of a valid BST is strictly increasing."""
+    previous: float = float("-inf")
+    stack: list[TreeNode] = []
+    node = root
+
+    while stack or node:
+        while node:
+            stack.append(node)
+            node = node.left
+
+        node = stack.pop()
+
+        # Must be strictly greater — equality means a duplicate.
+        if node.val <= previous:
+            return False
+        previous = node.val
+
+        node = node.right
+
+    return True
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class TreeNode {
+  val: number;
+  left: TreeNode | null;
+  right: TreeNode | null;
+  constructor(val = 0, left: TreeNode | null = null, right: TreeNode | null = null) {
+    this.val = val;
+    this.left = left;
+    this.right = right;
+  }
+}
+
+function isValidBST(root: TreeNode | null): boolean {
+  function check(node: TreeNode | null, low: number, high: number): boolean {
+    // An empty subtree breaks no rules.
+    if (node === null) return true;
+
+    // Strict comparisons: equal values are not allowed in a BST.
+    if (node.val <= low || node.val >= high) return false;
+
+    // Going left lowers the ceiling; going right raises the floor.
+    return check(node.left, low, node.val) && check(node.right, node.val, high);
+  }
+
+  return check(root, -Infinity, Infinity);
+}
+
+function isValidBSTInorder(root: TreeNode | null): boolean {
+  let previous = -Infinity;
+  const stack: TreeNode[] = [];
+  let node = root;
+
+  while (stack.length > 0 || node !== null) {
+    while (node !== null) {
+      stack.push(node);
+      node = node.left;
+    }
+
+    node = stack.pop()!;
+
+    if (node.val <= previous) return false;
+    previous = node.val;
+
+    node = node.right;
+  }
+
+  return true;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="The inorder alternative">
+An inorder walk (left, node, right) of a valid BST produces values in **strictly increasing** order. So a second correct solution is: walk inorder, and check each value is bigger than the last.
+
+It needs only one variable instead of two bounds, but the comparison must be strict — `<=` catches duplicates, `<` would let them through.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(h)" />
+
+- **Time** — every node is visited once and compared against two bounds. The bounds version can exit early: it stops at the first violation, so a tree broken near the root costs far less than `n`.
+- **Space** — the recursion stack, one frame per level. `O(log n)` balanced, `O(n)` for a chain.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Duplicate values, e.g. [2, 2]">
+Invalid. The BST definition here requires strict inequality, so `<=` and `>=` are the correct rejection tests. Using `<` and `>` would wrongly accept duplicates.
+
+Some BST variants do allow duplicates on one side. Always check which definition the problem uses.
+</Accordion>
+
+<Accordion title="A node holding the smallest possible integer">
+This is why `float('-inf')` and `-Infinity` are used rather than a constant like `-2**31`. If a node legitimately holds `-2147483648`, a sentinel of the same value would reject it.
+
+Passing `None` bounds and skipping the comparison when a bound is absent also works.
+</Accordion>
+
+<Accordion title="A single node">
+Valid. It sits inside `(-∞, +∞)` and both subtrees are empty.
+</Accordion>
+
+<Accordion title="Why doesn't checking only the parent work?">
+Because the rule constrains whole subtrees, not immediate children. See the `[5, 1, 7, null, null, 3, 9]` example above — every parent–child pair is fine, yet the tree is invalid.
+
+This is the single most common wrong answer to this problem.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Lowest Common Ancestor of a BST](/docs/trees/lowest-common-ancestor-of-a-binary-search-tree) — exploits the same ordering, to navigate rather than to verify
+- [Maximum Depth of Binary Tree](/docs/trees/maximum-depth-of-binary-tree) — the recursive skeleton without the bounds
+- [Binary Search](/docs/searching/binary-search) — the same halving idea, on an array

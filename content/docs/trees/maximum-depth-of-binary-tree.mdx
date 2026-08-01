@@ -1,0 +1,277 @@
+---
+title: Maximum Depth of Binary Tree
+description: Count the levels of a tree, and meet the recursive shape that almost every other tree problem reuses
+difficulty: easy
+pattern: DFS
+variant: post-order
+tags: ["Tree", "DFS", "BFS", "Recursion"]
+leetcode: https://leetcode.com/problems/maximum-depth-of-binary-tree/
+problemNumber: 104
+---
+
+## Problem Statement
+
+Given the root of a binary tree, return its maximum depth — the number of nodes along the longest path from the root down to the furthest leaf.
+
+```text
+Input:  root = [3, 9, 20, null, null, 15, 7]
+Output: 3
+
+        3          ← level 1
+       / \
+      9   20       ← level 2
+         /  \
+        15   7     ← level 3
+
+Input:  root = []
+Output: 0
+```
+
+## Intuition
+
+This is the simplest tree problem there is, and it is worth studying carefully — not for the answer, but because **its shape is reused by almost every other tree problem**.
+
+Try to solve it by walking the tree and tracking a counter, and it gets fiddly fast: when do you increment? When do you decrement? What resets it?
+
+Now flip the question around.
+
+<Callout type="info" title="The key insight">
+Do not ask *"how deep is this tree?"* Ask **"how deep is this tree, given that I already know the depth of my two children?"**
+
+The answer is one line: `1 + the deeper of my two children`.
+</Callout>
+
+That single sentence is the whole algorithm. The recursion does the walking; you only describe the relationship between a node and its children.
+
+### Why this works without any bookkeeping
+
+Every recursive tree solution needs two things, and no more:
+
+| Part | For this problem |
+|---|---|
+| **Base case** — when do I stop? | An empty tree has depth `0` |
+| **Combine step** — how do I build my answer from my children's answers? | `1 + max(left, right)` |
+
+There is no counter to maintain and nothing to reset, because each call returns a finished answer for its own subtree. The call stack handles the position tracking for free.
+
+### The real-world version
+
+Imagine asking a company how many levels of management it has. The CEO does not count anything. They ask each direct report *"how many levels are under you?"*, wait for the answers, take the biggest, and add one for themselves.
+
+Every manager does the same. People with no reports answer "zero". The answer assembles itself from the bottom up.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Handle the empty case
+
+If the node is `null`, the depth is `0`. This is what stops the recursion, and it also handles an entirely empty tree with no extra code.
+</Step>
+
+<Step>
+### Ask both children for their depth
+
+Two recursive calls. Trust that each returns the correct depth for its own subtree — do not try to trace what happens inside.
+</Step>
+
+<Step>
+### Take the larger, add one
+
+The `+1` counts the current node. The `max` is what makes it the *longest* path rather than any path.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Why max and not min">
+Using `min` gives you the *minimum* depth — a different, and trickier, problem. Minimum depth has a trap this one does not: a node with only one child is not a leaf, so you cannot simply take the smaller side when one side is empty.
+</Callout>
+
+### Watch it run
+
+<TreeViz
+  title="root = [3, 9, 20, null, null, 15, 7]"
+  frames={[
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["active", "idle", "idle", null, null, "idle", "idle"],
+      note: "Start at the root. It cannot answer yet — it must hear from both children first.",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["idle", "active", "idle", null, null, "idle", "idle"],
+      note: "Descend to 9. Both of its children are empty, so both calls return 0.",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["idle", "done", "idle", null, null, "idle", "idle"],
+      vars: { "depth(9)": 1 },
+      note: "9 returns 1 + max(0, 0) = 1. The left branch is finished.",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["idle", "done", "active", null, null, "idle", "idle"],
+      note: "Now the right branch. Descend to 20, which also must wait for its children.",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["idle", "done", "idle", null, null, "done", "done"],
+      vars: { "depth(15)": 1, "depth(7)": 1 },
+      note: "15 and 7 are both leaves, so both return 1.",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["idle", "done", "done", null, null, "done", "done"],
+      vars: { "depth(9)": 1, "depth(20)": 2 },
+      note: "20 returns 1 + max(1, 1) = 2.",
+    },
+    {
+      nodes: [3, 9, 20, null, null, 15, 7],
+      states: ["match", "done", "done", null, null, "done", "done"],
+      vars: { "depth(9)": 1, "depth(20)": 2, answer: 3 },
+      note: "The root returns 1 + max(1, 2) = 3. The answer came together from the leaves upward.",
+    },
+  ]}
+  caption="Nothing is counted on the way down. Every answer is built on the way back up."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+class TreeNode:
+    def __init__(self, val: int = 0, left: "TreeNode | None" = None,
+                 right: "TreeNode | None" = None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+
+def max_depth(root: TreeNode | None) -> int:
+    """Return the number of nodes on the longest root-to-leaf path."""
+    # Base case: an empty tree has no levels.
+    if root is None:
+        return 0
+
+    # Combine step: my depth is one more than my deeper child's.
+    return 1 + max(max_depth(root.left), max_depth(root.right))
+
+
+def max_depth_iterative(root: TreeNode | None) -> int:
+    """BFS version — count how many levels the queue produces."""
+    from collections import deque
+
+    if root is None:
+        return 0
+
+    queue = deque([root])
+    depth = 0
+
+    while queue:
+        # Fixing the level size BEFORE the loop is what separates the levels.
+        for _ in range(len(queue)):
+            node = queue.popleft()
+            if node.left:
+                queue.append(node.left)
+            if node.right:
+                queue.append(node.right)
+        depth += 1
+
+    return depth
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class TreeNode {
+  val: number;
+  left: TreeNode | null;
+  right: TreeNode | null;
+  constructor(val = 0, left: TreeNode | null = null, right: TreeNode | null = null) {
+    this.val = val;
+    this.left = left;
+    this.right = right;
+  }
+}
+
+function maxDepth(root: TreeNode | null): number {
+  // Base case: an empty tree has no levels.
+  if (root === null) return 0;
+
+  // Combine step: my depth is one more than my deeper child's.
+  return 1 + Math.max(maxDepth(root.left), maxDepth(root.right));
+}
+
+function maxDepthIterative(root: TreeNode | null): number {
+  if (root === null) return 0;
+
+  let level: TreeNode[] = [root];
+  let depth = 0;
+
+  while (level.length > 0) {
+    const next: TreeNode[] = [];
+    for (const node of level) {
+      if (node.left) next.push(node.left);
+      if (node.right) next.push(node.right);
+    }
+    // Building a fresh array per level avoids shift(), which is O(n).
+    level = next;
+    depth++;
+  }
+
+  return depth;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(h)" />
+
+- **Time** — every node is visited exactly once, and each visit does constant work.
+- **Space** — the recursive version uses the call stack, which holds one frame per level on the current path. That is `O(h)` where `h` is the height: about `O(log n)` for a balanced tree, but `O(n)` for a tree that is one long chain.
+
+<Callout type="warn" title="The recursion depth trap">
+A tree of 10,000 nodes shaped like a straight line means 10,000 nested calls.
+
+**Python** raises `RecursionError` at around 1,000 frames by default.
+
+**JavaScript** throws `RangeError: Maximum call stack size exceeded`, typically somewhere around 10,000 frames — the exact limit varies by engine.
+
+When the input can be deeply unbalanced, use the iterative version. Its queue lives on the heap, limited only by memory.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty tree, root = null">
+Returns `0`, handled entirely by the base case. This is why the null check comes first rather than being special-cased at the top.
+</Accordion>
+
+<Accordion title="A single node">
+Both children are `null` and return `0`, so the node returns `1 + max(0, 0) = 1`. Correct.
+</Accordion>
+
+<Accordion title="A tree that is one long left chain">
+Depth equals the node count. The answer is right, but this is exactly the shape that overflows the call stack. Reach for the iterative version.
+</Accordion>
+
+<Accordion title="Why can't I just count nodes?">
+Depth is the longest *path*, not the total. A tree with 100 nodes spread wide across 3 levels has depth 3. Counting nodes answers a different question.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Invert Binary Tree](/docs/trees/invert-binary-tree) — the same recursive skeleton, doing something else at the combine step
+- [Diameter of Binary Tree](/docs/trees/diameter-of-binary-tree) — depth again, but tracking a second answer along the way
+- [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — the BFS version, keeping each level
+- [Trees](/docs/trees) — DFS and BFS side by side

@@ -4,6 +4,9 @@
   "pages": [
     "index",
     "---Easy---",
-    "find-the-town-judge"
+    "find-the-town-judge",
+    "---Medium---",
+    "number-of-islands",
+    "course-schedule"
   ]
 }

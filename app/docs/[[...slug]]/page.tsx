@@ -7,6 +7,8 @@ import {
 } from 'fumadocs-ui/page';
 import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/mdx-components';
+import { ProblemMeta } from '@/components/algorithm/ProblemMeta';
+import type { DifficultyLevel } from '@/lib/patterns';
 import type { MDXContent } from 'mdx/types';
 
 interface PageData {
@@ -14,6 +16,12 @@ interface PageData {
   description?: string;
   body: MDXContent;
   toc: Array<{ depth: number; url: string; title: string }>;
+  difficulty?: DifficultyLevel;
+  pattern?: string;
+  variant?: string;
+  tags?: string[];
+  leetcode?: string;
+  problemNumber?: number;
 }
 
 export default async function Page(props: {
@@ -31,6 +39,15 @@ export default async function Page(props: {
       <DocsTitle>{pageData.title}</DocsTitle>
       <DocsDescription>{pageData.description}</DocsDescription>
       <DocsBody>
+        {/* Renders only on pages whose frontmatter carries problem metadata. */}
+        <ProblemMeta
+          difficulty={pageData.difficulty}
+          pattern={pageData.pattern}
+          variant={pageData.variant}
+          tags={pageData.tags}
+          leetcode={pageData.leetcode}
+          problemNumber={pageData.problemNumber}
+        />
         <MDX components={getMDXComponents()} />
       </DocsBody>
     </DocsPage>

@@ -4,8 +4,13 @@
   "pages": [
     "index",
     "---Easy---",
+    "maximum-depth-of-binary-tree",
+    "invert-binary-tree",
+    "diameter-of-binary-tree",
     "n-ary-tree-preorder-traversal",
     "---Medium---",
-    "binary-tree-level-order-traversal"
+    "binary-tree-level-order-traversal",
+    "validate-binary-search-tree",
+    "lowest-common-ancestor-of-a-binary-search-tree"
   ]
 }

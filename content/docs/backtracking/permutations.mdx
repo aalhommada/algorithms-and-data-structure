@@ -1,0 +1,349 @@
+---
+title: Permutations
+description: Generate every ordering of a list, and see why permutations track used elements instead of a start index
+difficulty: medium
+pattern: Backtracking
+variant: used markers
+tags: ["Array", "Backtracking", "Recursion"]
+leetcode: https://leetcode.com/problems/permutations/
+problemNumber: 46
+---
+
+## Problem Statement
+
+Given an array of **distinct** integers, return all possible permutations — every ordering of all the elements. The answer may be in any order.
+
+```text
+Input:  nums = [1, 2, 3]
+Output: [[1,2,3], [1,3,2], [2,1,3], [2,3,1], [3,1,2], [3,2,1]]
+
+Input:  nums = [0, 1]
+Output: [[0,1], [1,0]]
+```
+
+## Intuition
+
+There are `3! = 6` permutations of three elements. Where does the factorial come from?
+
+Think about filling three slots. The first slot has 3 candidates. Once one is used, the second slot has 2 left. Then the third has only 1.
+
+```text
+3 × 2 × 1 = 6
+```
+
+<Callout type="info" title="The key insight">
+A permutation uses **every** element exactly once, and the **order matters**.
+
+So unlike [Subsets](/docs/backtracking/subsets), nothing is ever skipped — the only question at each slot is *which of the still-unused elements goes here*.
+</Callout>
+
+### Why the start-index trick does not work here
+
+In Subsets, a `start` index prevented duplicates by forcing increasing order. Here that would be fatal.
+
+```text
+Subsets:      [1,2] and [2,1] are the SAME     → forbid one, use start
+Permutations: [1,2] and [2,1] are DIFFERENT    → keep both, cannot use start
+```
+
+Forcing increasing order would produce only `[1,2,3]` and lose the other five. Permutations need every element available at every level — minus the ones already placed on this path.
+
+<Callout type="info" title="The one thing that changes">
+| | Subsets | Permutations |
+|---|---|---|
+| Candidates at each level | Only those after `start` | Every element not yet used |
+| How duplicates are avoided | Fixed increasing order | Nothing to avoid — order is meaningful |
+| When to record | At every node | Only when the path is full |
+</Callout>
+
+### The decision tree
+
+```text
+                  []
+        /          |          \
+      [1]         [2]         [3]
+      / \         / \         / \
+  [1,2] [1,3] [2,1] [2,3] [3,1] [3,2]
+    |     |     |     |     |     |
+ [1,2,3][1,3,2][2,1,3][2,3,1][3,1,2][3,2,1]
+```
+
+The tree gets **narrower** as it deepens — 3 branches, then 2, then 1 — which is exactly the factorial.
+
+Note the answers live only at the leaves. A half-built path like `[1, 2]` is not a permutation of `[1, 2, 3]`, so nothing is recorded until the path is full.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Record only when the path is full
+
+When `len(path) == len(nums)`, every element has been placed. Record a **copy** and return.
+</Step>
+
+<Step>
+### Loop over every element, every time
+
+Start at `0`, not at a `start` index. Any unused element is a legal choice for this slot.
+</Step>
+
+<Step>
+### Skip elements already on the path
+
+A `used` boolean array marks which indices are taken on the current path. Skip those.
+</Step>
+
+<Step>
+### Choose, explore, undo — including the marker
+
+Mark used, append, recurse, then **unmark and pop**. Forgetting to unmark is the defining bug of this problem.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Undo both things, or nothing works">
+```text
+used[i] = True
+path.append(nums[i])
+backtrack()
+path.pop()          ← easy to remember
+used[i] = False     ← easy to forget
+```
+
+Forget the second line and every element is permanently consumed after its first use. The search then finds exactly one permutation and stops, returning `[[1,2,3]]`.
+
+The symptom is a suspiciously short answer, with no error.
+</Callout>
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [1, 2, 3] — filling three slots"
+  frames={[
+    {
+      values: [1, 2, 3],
+      states: ["compare", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { path: "[]", used: "---" },
+      note: "Slot 1. All three elements are available. Try index 0 first.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "compare", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[1]", used: "X--" },
+      note: "1 is placed and marked used. Slot 2 may use 2 or 3, but not 1. Try 2.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "match", "match"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { path: "[1, 2, 3]", used: "XXX", results: 1 },
+      note: "Only 3 remains for slot 3. The path is full — record [1, 2, 3].",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "discard", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[1]", used: "X--", results: 1 },
+      note: "UNDO twice: pop 3 and unmark it, pop 2 and unmark it. Back to [1] with 2 and 3 free again.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "idle", "match"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { path: "[1, 3]", used: "X-X", results: 1 },
+      note: "The loop at slot 2 moves on to index 2. Place 3 — this is only possible because 3 was unmarked.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "match", "match"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[1, 3, 2]", used: "XXX", results: 2 },
+      note: "Slot 3 takes the last free element, 2. Record [1, 3, 2].",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["discard", "match", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[2]", used: "-X-", results: 2 },
+      note: "The entire [1, ...] branch is done. Everything is unmarked, and slot 1 tries index 1 instead.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["done", "done", "done"],
+      vars: { results: 6 },
+      note: "Each of the three first choices yields two orderings. 3 × 2 × 1 = 6 permutations.",
+    },
+  ]}
+  caption="The used markers shrink the candidate pool going down, and restore it coming back up."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def permute(nums: list[int]) -> list[list[int]]:
+    """Return every ordering of a list of distinct integers."""
+    results: list[list[int]] = []
+    path: list[int] = []
+    used = [False] * len(nums)
+
+    def backtrack() -> None:
+        # Only a FULL path is a permutation.
+        if len(path) == len(nums):
+            results.append(path[:])   # copy, not the live array
+            return
+
+        for i in range(len(nums)):
+            if used[i]:
+                continue              # already placed on this path
+
+            used[i] = True            # choose
+            path.append(nums[i])
+
+            backtrack()               # explore
+
+            path.pop()                # undo
+            used[i] = False           # undo the marker too
+
+    backtrack()
+    return results
+
+
+def permute_swap(nums: list[int]) -> list[list[int]]:
+    """Alternative: swap elements into place, avoiding the `used` array."""
+    results: list[list[int]] = []
+
+    def backtrack(first: int) -> None:
+        if first == len(nums):
+            results.append(nums[:])
+            return
+
+        for i in range(first, len(nums)):
+            nums[first], nums[i] = nums[i], nums[first]   # choose
+            backtrack(first + 1)                          # explore
+            nums[first], nums[i] = nums[i], nums[first]   # undo the swap
+
+    backtrack(0)
+    return results
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function permute(nums: number[]): number[][] {
+  const results: number[][] = [];
+  const path: number[] = [];
+  const used = new Array<boolean>(nums.length).fill(false);
+
+  function backtrack(): void {
+    // Only a FULL path is a permutation.
+    if (path.length === nums.length) {
+      results.push([...path]); // copy, not the live array
+      return;
+    }
+
+    for (let i = 0; i < nums.length; i++) {
+      if (used[i]) continue; // already placed on this path
+
+      used[i] = true; // choose
+      path.push(nums[i]);
+
+      backtrack(); // explore
+
+      path.pop(); // undo
+      used[i] = false; // undo the marker too
+    }
+  }
+
+  backtrack();
+  return results;
+}
+
+function permuteSwap(nums: number[]): number[][] {
+  const results: number[][] = [];
+
+  function backtrack(first: number): void {
+    if (first === nums.length) {
+      results.push([...nums]);
+      return;
+    }
+
+    for (let i = first; i < nums.length; i++) {
+      [nums[first], nums[i]] = [nums[i], nums[first]]; // choose
+      backtrack(first + 1); // explore
+      [nums[first], nums[i]] = [nums[i], nums[first]]; // undo the swap
+    }
+  }
+
+  backtrack(0);
+  return results;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="The swap version, and its one catch">
+Swapping avoids the `used` array entirely: everything from `first` onward is by definition still unplaced.
+
+The catch is that it **reorders the input**, so the results come out in a different (still complete) order, and the caller's array is temporarily scrambled. It also cannot be adapted to skip duplicates as cleanly, because the swaps destroy any sorting you set up.
+
+Use the `used` version by default; reach for swapping when memory is tight.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n · n!)" space="O(n)" />
+
+- **Time** — there are `n!` permutations and copying each costs `O(n)`. The tree has `n!` leaves, and the internal nodes add lower-order work.
+- **Space** — excluding the output: the `path`, the `used` array and the recursion stack, each `O(n)`. The output itself is `O(n · n!)`.
+
+<Callout type="warn" title="Factorials grow terrifyingly fast">
+| `n` | `n!` |
+|---|---|
+| 5 | 120 |
+| 8 | 40,320 |
+| 10 | 3,628,800 |
+| 12 | 479,001,600 |
+| 15 | 1,307,674,368,000 |
+
+This is why permutation problems come with `n ≤ 8` or so. If a problem allows `n = 100`, it is not asking you to enumerate orderings — look for a greedy or DP angle instead.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty input, nums = []">
+Returns `[[]]`. The base case fires immediately since `0 == 0`, recording one empty permutation. There is exactly one way to arrange nothing.
+</Accordion>
+
+<Accordion title="A single element">
+Returns `[[1]]`. One permutation, matching `1! = 1`.
+</Accordion>
+
+<Accordion title="What if the input had duplicates, e.g. [1, 1, 2]?">
+This version produces `[1,1,2]` twice, because it treats the two `1`s as distinct by index.
+
+That is Permutations II. The fix: sort first, then skip when `i > 0 and nums[i] == nums[i-1] and not used[i-1]`. The `not used[i-1]` is the subtle part — it allows a duplicate deeper on the path but blocks it as a sibling at the same level.
+</Accordion>
+
+<Accordion title="Why not reuse the start index from Subsets?">
+Because a start index forces increasing order, and permutations are precisely about *different* orders. It would return only the sorted permutation and drop the rest.
+
+Subsets and permutations look similar and differ in exactly this one place — which is why they are worth learning back to back.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Subsets](/docs/backtracking/subsets) — where order does not matter, so a start index applies
+- [Combination Sum](/docs/backtracking/combination-sum) — reuse allowed, with pruning
+- [Backtracking](/docs/backtracking) — the shared template

@@ -24,11 +24,16 @@ Start here. The wording of a problem usually points straight at the technique.
 | "how many ways / min cost" | Dynamic programming | [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) |
 | "can I reach / is it possible" | Greedy, if provable | [Jump Game](/docs/greedy/jump-game) |
 | "find the first X where…" | Binary search on a boundary | [First Bad Version](/docs/searching/first-bad-version) |
-| "`k` most frequent / largest" | Counting + bucket or heap | [Top K Frequent](/docs/arrays/top-k-frequent-elements) |
+| "`k` most frequent / largest" | Counting + bucket or heap | [Kth Largest](/docs/heaps/kth-largest-element-in-an-array) |
 | "group things that are equivalent" | Canonical key + hash map | [Group Anagrams](/docs/arrays/group-anagrams) |
 | "support these ops in `O(1)`" | Combine structures | [Insert Delete GetRandom](/docs/design/insert-delete-getrandom-o1) |
+| "return **all** subsets / orderings" | Backtracking | [Subsets](/docs/backtracking/subsets) |
+| "longest / shortest window such that…" | Variable sliding window | [Longest Substring Without Repeating](/docs/strings/longest-substring-without-repeating-characters) |
+| "next greater / warmer / smaller" | Monotonic stack | [Daily Temperatures](/docs/stacks-queues/daily-temperatures) |
+| "can these dependencies be ordered?" | Topological sort | [Course Schedule](/docs/graphs/course-schedule) |
+| "count connected groups in a grid" | Flood fill (DFS or BFS) | [Number of Islands](/docs/graphs/number-of-islands) |
 
-## The Ten Patterns
+## The Patterns
 
 ### 1. Hash Map / Set — trade memory for time
 
@@ -56,9 +61,13 @@ One pointer moves twice as fast. Finds middles, detects cycles, locates offsets.
 
 ### 5. Sliding Window
 
-A range that slides or grows across the data. Fixed size for "subarray of size `k`"; variable size for "longest such that…".
+A range that slides or grows across the data. The two kinds behave differently and are worth separating.
 
-[Maximum Average Subarray I](/docs/arrays/maximum-average-subarray-i)
+| | Fixed size | Variable size |
+|---|---|---|
+| Trigger | "subarray of size `k`" | "longest / shortest such that…" |
+| Left edge | Moves every step | Moves only when the rule breaks |
+| Example | [Maximum Average Subarray I](/docs/arrays/maximum-average-subarray-i) | [Longest Substring Without Repeating](/docs/strings/longest-substring-without-repeating-characters) |
 
 ### 6. Prefix / Suffix Precomputation
 
@@ -72,11 +81,17 @@ Last-in-first-out. Nesting, undo, deferred operands, depth-first traversal.
 
 [Valid Parentheses](/docs/stacks-queues/valid-parentheses) · [Min Stack](/docs/stacks-queues/min-stack) · [Evaluate RPN](/docs/stacks-queues/evaluate-reverse-polish-notation) · [Simplify Path](/docs/stacks-queues/simplify-path)
 
+#### Monotonic stack
+
+A stack deliberately kept sorted, so anything breaking the order is popped. Answers "next greater" questions in one pass instead of `O(n²)`.
+
+[Daily Temperatures](/docs/stacks-queues/daily-temperatures) · [Trapping Rain Water](/docs/arrays/trapping-rain-water)
+
 ### 8. BFS / DFS
 
 Queue for breadth, stack for depth. The choice determines both the visit order and the space cost.
 
-[Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) · [N-ary Preorder](/docs/trees/n-ary-tree-preorder-traversal) · [Jump Game II](/docs/greedy/jump-game-ii)
+[Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) · [N-ary Preorder](/docs/trees/n-ary-tree-preorder-traversal) · [Number of Islands](/docs/graphs/number-of-islands) · [Course Schedule](/docs/graphs/course-schedule) · [Maximum Depth](/docs/trees/maximum-depth-of-binary-tree) · [Jump Game II](/docs/greedy/jump-game-ii)
 
 ### 9. Binary Search
 
@@ -88,7 +103,25 @@ Halve the search space. Works for exact matches, for boundaries, and even when t
 
 Greedy when the local choice is provably safe; DP when it is not.
 
-[Jump Game](/docs/greedy/jump-game) · [Gas Station](/docs/greedy/gas-station) · [Candy](/docs/greedy/candy) · [Integer to Roman](/docs/strings/integer-to-roman) · [Climbing Stairs](/docs/dynamic-programming/climbing-stairs)
+[Jump Game](/docs/greedy/jump-game) · [Gas Station](/docs/greedy/gas-station) · [Candy](/docs/greedy/candy) · [Integer to Roman](/docs/strings/integer-to-roman) · [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) · [House Robber](/docs/dynamic-programming/house-robber) · [Coin Change](/docs/dynamic-programming/coin-change) · [Longest Increasing Subsequence](/docs/dynamic-programming/longest-increasing-subsequence)
+
+<Callout type="info" title="Coin Change is the clearest greedy-vs-DP boundary">
+With coins `[1, 3, 4]` and a target of `6`, greedy takes the `4` and needs three coins. The best answer is `3 + 3`, using two.
+
+Whenever a local choice can block a better option later, greedy is unsafe and DP is the answer.
+</Callout>
+
+### 11. Heap — keep the best k reachable
+
+A heap answers one question fast: what is the smallest right now? That is enough for "top k" and "next to process".
+
+[Kth Largest](/docs/heaps/kth-largest-element-in-an-array) · [Merge k Sorted Lists](/docs/heaps/merge-k-sorted-lists) · [Top K Frequent](/docs/arrays/top-k-frequent-elements)
+
+### 12. Backtracking — choose, explore, undo
+
+For problems asking for **all** arrangements. Always exponential, so the constraints will be small.
+
+[Subsets](/docs/backtracking/subsets) · [Permutations](/docs/backtracking/permutations) · [Combination Sum](/docs/backtracking/combination-sum)
 
 ## Complexity Cheat Sheet
 

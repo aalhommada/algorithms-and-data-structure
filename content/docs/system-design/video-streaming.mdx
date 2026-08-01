@@ -1,0 +1,241 @@
+---
+title: Video Streaming
+description: A transcoding pipeline, adaptive bitrate, and why moving bytes close to users is the whole problem
+---
+
+Video is the design where **bandwidth**, not compute or storage, is the constraint. The numbers are large enough that the usual instincts fail.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| Live or on-demand? | On-demand — live changes everything |
+| Who uploads? | Creators, moderated before publishing |
+| Quality options? | 240p to 4K, chosen automatically |
+| Offline download? | Out of scope |
+| Recommendations? | Out of scope — a separate system |
+
+## 2. Put Numbers On It
+
+```text
+UPLOADS
+  500,000 videos/day, average 10 minutes
+  ÷ 100,000 sec                       ≈  5 uploads/sec       ← small
+
+STORAGE (this is where it hurts)
+  1 minute of 1080p                   ≈  50 MB
+  10 min video                        ≈  500 MB source
+  transcoded into 6 qualities         ≈  1.5 GB total per video
+
+  500,000 × 1.5 GB                    =  750 TB/day
+  × 365                               ≈  270 PB/year
+
+VIEWING
+  100 million daily viewers × 5 videos =  500M views/day
+  ÷ 100,000                            ≈  5,000 concurrent starts/sec
+  Assume 2 million concurrent streams at peak
+
+BANDWIDTH
+  average stream                       ≈  3 Mbps
+  2M × 3 Mbps                          =  6 Tbps            ← the real problem
+```
+
+<Callout type="warn" title="6 Tbps is the number that decides everything">
+A well-provisioned datacentre connection is measured in the low hundreds of Gbps. Six terabits per second is roughly **thirty datacentres' worth of egress**, sustained.
+
+You cannot serve this from your own servers. Not by scaling up, not by adding replicas.
+
+The video bytes must be served from a CDN, from locations near the viewer. Everything else in this design is secondary to that fact.
+</Callout>
+
+Note the asymmetry: 5 uploads/sec against 2 million concurrent streams. Writes are trivial; reads are enormous. The upload path can be slow and careful; the playback path must be fast and cheap.
+
+## 3. Define the Interface
+
+```text
+POST /videos              start an upload, returns an upload URL and video id
+PUT  {upload_url}         the client uploads directly to object storage
+GET  /videos/{id}         metadata plus a manifest URL
+GET  {manifest_url}       the list of available qualities and segments
+GET  {segment_url}        one few-second chunk of video
+```
+
+<Callout type="info" title="Clients upload directly to storage, not through your servers">
+Routing a 500 MB upload through an application server ties up a connection for minutes and wastes bandwidth twice — in and back out.
+
+Instead, hand the client a **pre-signed URL** and let it write straight to object storage. Your server handles a tiny metadata request; the bytes never touch it.
+
+The same principle applies on the way out: your servers return *URLs*, and the CDN serves the bytes.
+</Callout>
+
+## 4. The Two Pipelines
+
+<ArchViz
+  title="Upload and playback are separate systems"
+  height={340}
+  nodes={[
+    { id: "creator", label: "Creator", kind: "client", x: 0.0, y: 0.05 },
+    { id: "api", label: "API", kind: "service", x: 0.24, y: 0.05 },
+    { id: "raw", label: "Raw Storage", sublabel: "object store", kind: "storage", x: 0.5, y: 0.05 },
+    { id: "queue", label: "Transcode Queue", kind: "queue", x: 0.72, y: 0.28 },
+    { id: "workers", label: "Transcode Workers", sublabel: "GPU fleet", kind: "service", x: 1.0, y: 0.28 },
+    { id: "segments", label: "Segment Storage", sublabel: "6 qualities", kind: "storage", x: 0.72, y: 0.62 },
+    { id: "cdn", label: "CDN", sublabel: "edge locations", kind: "edge", x: 0.4, y: 0.95 },
+    { id: "viewer", label: "Viewer", kind: "client", x: 0.0, y: 0.62 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "creator", to: "api", label: "start upload", active: true },
+        { from: "creator", to: "raw", label: "direct PUT", active: true },
+      ],
+      active: ["creator", "api", "raw"],
+      dimmed: ["queue", "workers", "segments", "cdn", "viewer"],
+      vars: { stage: "1. upload", rate: "5/sec" },
+      note: "The client writes bytes straight to object storage using a pre-signed URL. The API only records metadata.",
+    },
+    {
+      edges: [
+        { from: "raw", to: "queue", label: "job", dashed: true, active: true },
+        { from: "queue", to: "workers", label: "consume", active: true },
+      ],
+      active: ["queue", "workers"],
+      dimmed: ["creator", "api", "raw", "segments", "cdn", "viewer"],
+      vars: { stage: "2. transcode", duration: "minutes" },
+      note: "Transcoding is slow and CPU-heavy, so it goes on a queue. The creator is told 'processing', not made to wait.",
+    },
+    {
+      edges: [{ from: "workers", to: "segments", label: "write segments", active: true }],
+      active: ["workers", "segments"],
+      dimmed: ["creator", "api", "raw", "queue", "cdn", "viewer"],
+      vars: { stage: "3. output", produced: "6 qualities x N segments" },
+      note: "Each quality is cut into segments of a few seconds, plus a manifest listing them. This is what makes adaptive streaming possible.",
+    },
+    {
+      edges: [
+        { from: "viewer", to: "cdn", label: "GET segment", active: true },
+        { from: "cdn", to: "segments", label: "on miss only", dashed: true },
+      ],
+      active: ["viewer", "cdn"],
+      dimmed: ["creator", "api", "raw", "queue", "workers"],
+      vars: { stage: "4. playback", served: "from the edge" },
+      note: "Playback is entirely CDN. Origin is touched only on a cache miss, which for popular videos is almost never.",
+    },
+  ]}
+  caption="Upload is slow, careful and rare. Playback is fast, cheap and enormous. They share almost nothing."
+/>
+
+## 5. Adaptive Bitrate
+
+The reason video is cut into segments rather than served as one file.
+
+Each video is encoded at several qualities, and every quality is split into segments of two to ten seconds. A **manifest** lists them all. The player picks a quality **per segment**, based on how fast the last one arrived.
+
+```text
+manifest:
+  240p   →  segment_001.ts, segment_002.ts, ...
+  480p   →  segment_001.ts, segment_002.ts, ...
+  1080p  →  segment_001.ts, segment_002.ts, ...
+
+Player behaviour:
+  segment 1  →  1080p   (good connection)
+  segment 2  →  1080p
+  segment 3  →  480p    (network slowed — drop quality rather than stall)
+  segment 4  →  720p    (recovering)
+```
+
+<Callout type="info" title="Why segments beat one big file">
+**Quality can change mid-playback.** A single file locks the viewer into whatever they started with — so a train entering a tunnel means buffering instead of a brief quality dip.
+
+**Seeking is cheap.** Jumping to 8 minutes fetches the segments at that point, not the whole file.
+
+**Caching works properly.** Segments are small, immutable and independently cacheable. A CDN can hold the popular opening segments of a million videos rather than a few whole files.
+
+That last point matters more than it seems: most viewers watch the first 30 seconds and stop, so the early segments are far hotter than the rest.
+</Callout>
+
+## 6. Transcoding
+
+One upload becomes many outputs, and the work parallelises well.
+
+```text
+source.mp4
+   ├─ split into chunks
+   ├─ each chunk transcoded independently, in parallel
+   │     240p, 360p, 480p, 720p, 1080p, 4K
+   ├─ segment each output
+   └─ write manifest
+```
+
+<Callout type="warn" title="Transcoding is the expensive part of the whole system">
+Transcoding 10 minutes of video into six qualities can take longer than the video itself on a CPU. At 500,000 videos a day that is an enormous fleet.
+
+Three things make it manageable:
+
+**Split and parallelise.** Chunks transcode independently, so a 10-minute video finishes in the time of its longest chunk, not its total length.
+
+**Prioritise.** Produce 480p first and publish as soon as it is ready — viewers can watch while higher qualities finish.
+
+**Transcode lazily for the long tail.** Most videos are watched almost never. Generate 4K on first request rather than for every upload, and most of the work disappears.
+</Callout>
+
+## 7. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| CDN for all playback | The only way to serve 6 Tbps | Expensive; cache misses hit origin hard |
+| Direct-to-storage upload | Servers never carry large files | Pre-signed URLs must be scoped and expire |
+| Async transcoding | Uploads finish immediately | Video is not watchable for minutes |
+| Segmented adaptive streaming | No stalls, cheap seeking | More files, more complex players |
+| Lazy 4K generation | Large reduction in compute | First 4K viewer waits |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="How do you keep CDN costs under control?">
+Bandwidth is the dominant bill, so the levers are:
+
+**Raise the hit rate** — long TTLs, since segments are immutable and never change once written.
+
+**Encode efficiently** — a better codec cutting bitrate 30% cuts the bill 30%.
+
+**Default to a sensible quality** — do not start everyone at 1080p when most are on phones where 480p is indistinguishable.
+
+**Tier the storage** — popular videos on the CDN, the long tail served from origin, accepting slower starts for videos nobody watches.
+</Accordion>
+
+<Accordion title="What happens on a cache miss for a popular new video?">
+A release can put millions of viewers on the same segments at once, all missing simultaneously — a [cache stampede](/docs/system-design/caching) at CDN scale.
+
+Two defences: **pre-warm** the CDN by pushing segments to edges before publishing, and **request coalescing** at the edge so a thousand simultaneous misses become one origin fetch.
+</Accordion>
+
+<Accordion title="How would live streaming change this?">
+Substantially. There is no source file to transcode ahead of time, so encoding happens in real time on the incoming stream, and latency becomes a hard requirement rather than a preference.
+
+Segments shrink to one or two seconds to cut delay, the manifest is rewritten continuously as new segments appear, and there is no opportunity to pre-warm anything. Live is a different system that happens to share a delivery mechanism.
+</Accordion>
+
+<Accordion title="Where does the metadata live?">
+In a normal database — title, description, creator, duration, view count, manifest URL. It is small, relational, and queried in ordinary ways.
+
+The important separation: **the database holds URLs, not bytes.** A row is a few hundred bytes regardless of whether the video is 10 minutes or 3 hours.
+</Accordion>
+
+<Accordion title="How are view counts handled?">
+Not with an increment per view — that is millions of writes per second on hot rows.
+
+Emit view events to a queue, aggregate in batches, and update counts periodically. Counts become slightly stale, which nobody notices, and the write load drops by orders of magnitude.
+
+Same reasoning as click counting in the [URL shortener](/docs/system-design/url-shortener).
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Caching](/docs/system-design/caching) — CDN behaviour and stampedes
+- [Queues and Async Work](/docs/system-design/queues) — the transcoding pipeline
+- [Numbers Every Design Needs](/docs/system-design/numbers-to-know) — bandwidth arithmetic
+- [URL Shortener](/docs/system-design/url-shortener) — the same async-counting trick

@@ -1,0 +1,243 @@
+---
+title: Search Autocomplete
+description: Suggestions in under 100 ms — the trie, precomputing the top results at every prefix, and updating without rebuilding
+---
+
+Autocomplete is a latency problem disguised as a search problem. The suggestions must appear **between keystrokes**, which leaves almost no budget.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| How many suggestions? | Top 5 |
+| Ranked by what? | Historical search frequency |
+| Personalised? | No — a single global ranking |
+| How fresh? | New trends may take an hour to appear |
+| Spelling correction? | Out of scope |
+
+## 2. Put Numbers On It
+
+```text
+100 million searches/day
+Average query: 20 characters, so ~20 autocomplete requests per search
+
+REQUESTS
+  100M × 20                  =  2B autocomplete requests/day
+  ÷ 100,000 sec              ≈  20,000 req/sec
+  × 3 peak                   ≈  60,000 req/sec        ← 20× the search rate
+
+LATENCY BUDGET
+  target                     <  100 ms end to end
+  network round trip         ≈  40 ms
+  remaining for us           ≈  60 ms                 ← very tight
+
+DATA
+  ~10 million distinct queries worth suggesting
+  20 bytes each              ≈  200 MB raw
+```
+
+<Callout type="info" title="Two findings decide the whole design">
+**Autocomplete traffic is 20× search traffic.** Every keystroke is a request. This must be far cheaper per request than search itself.
+
+**60 ms leaves no room for a database query, ranking and sorting.** Anything computed at request time is too slow. The answers must already exist.
+
+Conclusion: **precompute everything, serve from memory.**
+</Callout>
+
+## 3. The Trie
+
+A trie stores strings by shared prefix. Each node is one character; walking down from the root spells a prefix.
+
+```text
+              (root)
+             /      \
+           c          d
+           |          |
+           a          o
+          / \         |
+         t   r        g
+         |   |        |
+       [cat][car]   [dog]
+```
+
+`cat` and `car` share the path `c → a`, stored once. Finding everything starting with `ca` means walking two nodes, then collecting what is below.
+
+| Operation | Cost |
+|---|---|
+| Walk to a prefix | `O(length of prefix)` |
+| Collect all completions | `O(number of completions)` |
+
+<Callout type="warn" title="A plain trie is still too slow">
+Walking to the prefix `a` is instant. Collecting everything beneath it is not — millions of queries start with `a`, and you would gather them all, sort by frequency, and return five.
+
+That is `O(n log n)` over millions of entries, per keystroke, at 60,000 requests/sec. Nowhere near 60 ms.
+</Callout>
+
+### Store the answer at every node
+
+The fix: at each node, **precompute and store the top 5 completions of that prefix**.
+
+```text
+node "ca"  →  top5: ["cat", "car", "camera", "candle", "call"]
+node "c"   →  top5: ["can", "cat", "car", "cheap", "chat"]
+```
+
+Now a request is: walk the prefix, read a list, return it. No collecting, no sorting.
+
+| | Compute on read | Precomputed top-k |
+|---|---|---|
+| Read cost | `O(subtree × log)` | `O(prefix length)` |
+| Memory | Small | 5 strings per node |
+| Update cost | Free | Must propagate upward |
+
+<Callout type="info" title="This is the trade the design turns on">
+Memory rises — five strings at every node, so roughly 5–10× the raw data, or a few GB. That fits in memory on one machine.
+
+In exchange, a read becomes about 20 pointer hops and one array read. Well inside 60 ms, and cheap enough for 60,000 requests/sec.
+
+Spending memory to buy latency is the same trade as [caching](/docs/system-design/caching), applied inside a data structure.
+</Callout>
+
+## 4. The Architecture
+
+<ArchViz
+  title="Serving reads from memory, updating in the background"
+  height={320}
+  nodes={[
+    { id: "user", label: "User typing", kind: "client", x: 0.0, y: 0.35 },
+    { id: "cdn", label: "CDN / Edge", kind: "edge", x: 0.22, y: 0.35 },
+    { id: "api", label: "Suggest Servers", sublabel: "trie in memory", kind: "service", x: 0.48, y: 0.35 },
+    { id: "snapshot", label: "Trie Snapshot", sublabel: "object storage", kind: "storage", x: 0.75, y: 0.05 },
+    { id: "logs", label: "Query Logs", kind: "queue", x: 0.3, y: 0.95 },
+    { id: "agg", label: "Aggregator", sublabel: "hourly batch", kind: "service", x: 0.62, y: 0.95 },
+    { id: "builder", label: "Trie Builder", kind: "service", x: 1.0, y: 0.6 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "user", to: "cdn", label: "prefix 'ca'", active: true },
+        { from: "cdn", to: "api", active: true },
+      ],
+      active: ["user", "cdn", "api"],
+      dimmed: ["snapshot", "logs", "agg", "builder"],
+      vars: { latency: "~15 ms", source: "in-memory trie" },
+      note: "The read path is one lookup in an in-memory trie. No database, no cache miss, no ranking at request time.",
+    },
+    {
+      edges: [{ from: "cdn", to: "user", label: "cached popular prefix", active: true }],
+      active: ["cdn", "user"],
+      dimmed: ["api", "snapshot", "logs", "agg", "builder"],
+      vars: { latency: "~5 ms", source: "CDN edge" },
+      note: "Short prefixes like 'a' or 'ca' are requested constantly and never change quickly. The CDN serves them without touching our servers at all.",
+    },
+    {
+      edges: [
+        { from: "user", to: "logs", label: "searches", dashed: true, active: true },
+        { from: "logs", to: "agg", label: "hourly", dashed: true, active: true },
+      ],
+      active: ["logs", "agg"],
+      dimmed: ["cdn", "api", "snapshot", "builder"],
+      vars: { path: "offline pipeline" },
+      note: "Actual searches are logged and aggregated into frequency counts on a schedule. Completely off the read path.",
+    },
+    {
+      edges: [
+        { from: "agg", to: "builder", label: "top queries", active: true },
+        { from: "builder", to: "snapshot", label: "write new trie", active: true },
+      ],
+      active: ["agg", "builder", "snapshot"],
+      dimmed: ["user", "cdn", "api", "logs"],
+      vars: { path: "rebuild" },
+      note: "A new trie is built from scratch with fresh top-5 lists at every node, then written as an immutable snapshot.",
+    },
+    {
+      edges: [{ from: "snapshot", to: "api", label: "load and swap", active: true }],
+      active: ["snapshot", "api"],
+      dimmed: ["user", "cdn", "logs", "agg", "builder"],
+      vars: { path: "atomic swap", downtime: "none" },
+      note: "Servers load the new snapshot into memory and swap the pointer atomically. Reads never see a half-updated trie.",
+    },
+  ]}
+  caption="Reads touch only memory. Everything expensive happens offline, on a schedule."
+/>
+
+<Callout type="info" title="Rebuild rather than update in place">
+Updating a live trie means changing the top-5 list at a node, then possibly at its parent, and its parent's parent — while reads are happening. That needs locking, and locking on a structure serving 60,000 requests/sec is a problem.
+
+Building a fresh immutable trie and swapping a pointer avoids all of it. Reads are lock-free; the swap is one atomic assignment. The cost is that updates arrive on a schedule rather than instantly.
+</Callout>
+
+## 5. Scaling and Freshness
+
+### Sharding the trie
+
+At a few GB the trie fits on one machine, so start by **replicating** it — every server holds the whole thing, and reads scale by adding servers.
+
+If it outgrows memory, shard by first character or first two characters: prefixes starting `a–f` on one group, `g–m` on another. Every query has a prefix, so routing is trivial and there are no cross-shard reads.
+
+### Making trends appear faster
+
+An hourly rebuild is fine for stable rankings and too slow for breaking news.
+
+<Callout type="info" title="A small hot layer beside the big cold one">
+Keep the large hourly-rebuilt trie for the long tail, and a small, frequently-updated structure holding just the last few minutes of surging queries.
+
+Merge the two at read time — check the hot layer first, fill from the main trie. The hot layer is tiny, so rebuilding it every minute is cheap.
+
+This is a general pattern: split by *rate of change*, not by size.
+</Callout>
+
+## 6. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Precomputed top-5 per node | Reads are `O(prefix length)` | 5–10× memory; updates propagate |
+| Offline hourly rebuild | Lock-free reads, no write path | Rankings lag by up to an hour |
+| Immutable snapshot + swap | No locking, safe deploys | Whole trie rebuilt each time |
+| CDN in front | Popular prefixes never reach us | Stale for the CDN TTL |
+| Global, not personalised | One trie serves everyone | Suggestions ignore the individual |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="How do you stop offensive suggestions appearing?">
+Filter at **build** time, not read time — a blocklist check while constructing the trie means the terms never enter it, and reads stay fast.
+
+Also filter at ingestion so they never reach the frequency counts. Doing it on the read path would add latency to every request to guard against a rare case.
+</Accordion>
+
+<Accordion title="Why not use a database with a LIKE 'ca%' query?">
+A prefix `LIKE` can use an index, so it is not absurd. But it still costs a network round trip, a query plan, a sort by frequency and a limit — realistically 10–50 ms under load, against a 60 ms total budget, at 60,000 requests/sec.
+
+The trie turns that into a memory access. When latency is the binding constraint, precomputation beats querying.
+</Accordion>
+
+<Accordion title="How much memory does the trie really need?">
+Roughly: 10 million queries × 20 characters means up to 200 million nodes, though prefix sharing cuts that substantially — perhaps 50 million real nodes.
+
+Each node holds children pointers plus five suggestion references. At around 100 bytes per node that is about 5 GB. Comfortable on a modern server, and compressible further by collapsing single-child chains into one node.
+</Accordion>
+
+<Accordion title="What if a user types a prefix nobody has searched?">
+The walk falls off the trie and returns nothing. That is correct — showing no suggestions is better than showing irrelevant ones.
+
+Handle it gracefully in the client: hide the dropdown rather than showing an empty box.
+</Accordion>
+
+<Accordion title="How would personalisation change the design?">
+It breaks the single shared trie, because the top 5 now differ per user.
+
+The usual approach keeps the global trie for candidate generation and adds a small personal re-ranking step: fetch the top 20 globally, reorder using the user's history, return 5. The expensive structure stays shared; only a cheap reorder is per-user.
+
+Same split as [news feed ranking](/docs/system-design/news-feed) — generate candidates cheaply and broadly, then personalise a small set.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Caching](/docs/system-design/caching) — the CDN layer, and precomputation as caching
+- [Numbers Every Design Needs](/docs/system-design/numbers-to-know) — where the 60 ms budget comes from
+- [Databases](/docs/system-design/databases) — why an index is not enough here
+- [Trees](/docs/trees) — a trie is a tree keyed by character

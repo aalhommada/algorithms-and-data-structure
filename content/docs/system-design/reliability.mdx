@@ -1,0 +1,228 @@
+---
+title: Reliability
+description: Failure is normal — timeouts, retries, circuit breakers, redundancy, and the handful of things worth monitoring
+---
+
+At small scale, failure is an event. At large scale, failure is a constant: with ten thousand machines, something is always broken.
+
+Reliable systems are not systems that do not fail. They are systems that **keep working while parts of them fail**.
+
+## Availability, in Practice
+
+| Availability | Downtime per year | Downtime per month |
+|---|---|---|
+| 99% | 3.65 days | 7.2 hours |
+| 99.9% ("three nines") | 8.8 hours | 43 minutes |
+| 99.99% | 53 minutes | 4.3 minutes |
+| 99.999% ("five nines") | 5.3 minutes | 26 seconds |
+
+<Callout type="warn" title="Dependencies multiply, and the result is worse than people expect">
+A service calling four dependencies, each 99.9% available, is at best:
+
+```text
+0.999⁴ = 0.996  →  99.6%  →  about 35 hours down per year
+```
+
+Adding services **reduces** availability unless each call is made survivable. This is the strongest argument for graceful degradation: a recommendation service being down should not take the product page with it.
+</Callout>
+
+## Timeouts
+
+<Callout type="warn" title="A missing timeout is the most common cause of a total outage">
+One slow dependency, no timeout, and this happens:
+
+```text
+Dependency slows to 30 seconds
+  → requests to your service pile up waiting
+  → your thread or connection pool fills
+  → your service stops answering ANY request
+  → callers of your service now hang too
+```
+
+One slow component becomes a site-wide outage. The failure spreads *because* nothing gave up.
+
+Every network call needs a timeout. Every one.
+</Callout>
+
+Rough starting points, tuned by measurement rather than guessed:
+
+| Call | Timeout |
+|---|---|
+| Cache read | 50–100 ms |
+| Database query | 1–5 s |
+| Internal service | 1–3 s |
+| Third-party API | 5–10 s |
+
+The rule that matters: a caller's timeout must be **longer** than its callee's, or the caller gives up while the work is still succeeding underneath.
+
+## Retries
+
+Retries fix transient failures — a dropped packet, a restarting instance. They also make outages worse if done naively.
+
+<Callout type="warn" title="Naive retries cause a retry storm">
+A service slows down. Every client retries three times. The service now receives **three times** the traffic while already struggling, and dies properly.
+
+Three rules make retries safe:
+
+**Exponential backoff** — wait 1s, 2s, 4s, 8s, not 1s, 1s, 1s.
+
+**Jitter** — add randomness. Without it, every client that failed at the same moment retries at the same moment, in synchronised waves.
+
+**A cap** — three attempts, then give up. Infinite retries turn a broken request into a permanent load source.
+</Callout>
+
+```text
+attempt 1  →  fail  →  wait 1s  ± random
+attempt 2  →  fail  →  wait 2s  ± random
+attempt 3  →  fail  →  give up, report the error
+```
+
+And only retry what is safe to repeat. Retrying a non-idempotent write is how a customer gets charged three times — see [idempotency](/docs/system-design/consistency).
+
+## Circuit Breakers
+
+If a dependency is down, continuing to call it wastes time and makes recovery harder. A circuit breaker notices and stops trying.
+
+<ArchViz
+  title="The three states of a circuit breaker"
+  height={240}
+  nodes={[
+    { id: "service", label: "Your Service", kind: "service", x: 0.0, y: 0.5 },
+    { id: "breaker", label: "Circuit Breaker", kind: "edge", x: 0.35, y: 0.5 },
+    { id: "dep", label: "Dependency", kind: "external", x: 0.72, y: 0.5 },
+    { id: "fallback", label: "Fallback", sublabel: "cached / default", kind: "cache", x: 0.72, y: 0.02 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "service", to: "breaker", active: true },
+        { from: "breaker", to: "dep", label: "pass through", active: true },
+      ],
+      active: ["service", "breaker", "dep"],
+      dimmed: ["fallback"],
+      vars: { state: "CLOSED", failures: "0 / 5" },
+      note: "CLOSED — the normal state. Calls pass straight through and failures are counted.",
+    },
+    {
+      edges: [
+        { from: "service", to: "breaker", active: true },
+        { from: "breaker", to: "dep", label: "failing", dashed: true, active: true },
+      ],
+      active: ["breaker"],
+      dimmed: ["fallback"],
+      vars: { state: "CLOSED", failures: "5 / 5" },
+      note: "The dependency starts failing. The breaker counts to its threshold.",
+    },
+    {
+      edges: [
+        { from: "service", to: "breaker", active: true },
+        { from: "breaker", to: "fallback", label: "fail fast", active: true },
+      ],
+      active: ["breaker", "fallback"],
+      dimmed: ["dep"],
+      vars: { state: "OPEN", "response time": "1 ms" },
+      note: "OPEN — the breaker trips. Calls fail instantly without touching the dependency. Fast failure beats slow failure, and the dependency gets room to recover.",
+    },
+    {
+      edges: [
+        { from: "service", to: "breaker" },
+        { from: "breaker", to: "dep", label: "one test call", active: true },
+      ],
+      active: ["breaker", "dep"],
+      dimmed: ["fallback"],
+      vars: { state: "HALF-OPEN" },
+      note: "After a cool-off, HALF-OPEN lets one request through. Success closes the circuit; failure opens it again.",
+    },
+  ]}
+  caption="Failing fast protects the caller and gives the failing dependency space to recover."
+/>
+
+## Graceful Degradation
+
+Not every feature is equally important. When something breaks, drop the least important thing rather than everything.
+
+```text
+Product page:
+  price and stock    →  essential   →  fail the page if unavailable
+  reviews            →  useful      →  show "reviews unavailable"
+  recommendations    →  nice        →  hide the section silently
+```
+
+<Callout type="info" title="Rank the features before you need to">
+The useful sentence in a design: *"if the recommendation service is down we hide that section; if the pricing service is down we return an error, because showing a wrong price is worse than showing nothing."*
+
+That single line demonstrates that failure has been thought about at the level of product behaviour, not just infrastructure.
+</Callout>
+
+## Redundancy
+
+Remove single points of failure. The test is to point at each box and ask *"what if this dies right now?"*
+
+| Level | Protects against | Cost |
+|---|---|---|
+| Several instances | One machine failing | Low |
+| Several availability zones | A datacentre failing | Moderate — cross-zone traffic |
+| Several regions | A whole region failing | High — data must be replicated far |
+
+| Pattern | Behaviour |
+|---|---|
+| **Active-active** | All handle traffic; a failure removes capacity |
+| **Active-passive** | Standby idles until needed; simpler, wastes capacity |
+
+<Callout type="warn" title="Untested failover does not work">
+A standby that has never taken traffic will fail when it finally does — stale configuration, expired credentials, missing capacity.
+
+The only way to know failover works is to trigger it deliberately and regularly.
+</Callout>
+
+## Load Shedding
+
+When overloaded, serving 80% of traffic well beats serving 100% badly. Past a threshold, reject early with `503` and `Retry-After` rather than accepting work you cannot finish.
+
+<Callout type="info" title="Queue depth predicts failure before latency does">
+By the time response times rise, the system is already in trouble. The internal queue starts growing earlier.
+
+Shedding based on queue depth catches the problem while there is still room to act.
+</Callout>
+
+## What to Monitor
+
+Four numbers cover most of it.
+
+| Signal | Question it answers |
+|---|---|
+| **Latency** | How slow, at p50, p95 and **p99** |
+| **Traffic** | How much is arriving |
+| **Errors** | What fraction is failing |
+| **Saturation** | How full — CPU, memory, connections, queue depth |
+
+<Callout type="warn" title="Averages hide the problem">
+An average response time of 200 ms sounds healthy. It is consistent with 95% of requests at 50 ms and 5% at 3 seconds.
+
+That 5% is not a rounding error — it is every twentieth request, and a page making 20 calls will almost certainly hit it. **Alert on p99, not the mean.**
+</Callout>
+
+Alert on things users feel — error rate, latency, queue depth trend. Do not alert on CPU at 80%; that is information, not an emergency, and alerts nobody acts on train people to ignore alerts that matter.
+
+## A Checklist
+
+Worth walking through for any design:
+
+```text
+□ Every network call has a timeout
+□ Retries use exponential backoff with jitter and a cap
+□ Retried operations are idempotent
+□ Circuit breakers guard external dependencies
+□ Every component has a redundant peer
+□ Non-essential features degrade instead of failing the request
+□ Overload sheds load rather than collapsing
+□ Alerts fire on p99 latency and error rate, not CPU
+□ Failover has actually been tested
+```
+
+## Related Reading
+
+- [Consistency and CAP](/docs/system-design/consistency) — idempotency, which retries depend on
+- [Queues and Async Work](/docs/system-design/queues) — dead-letter queues and back pressure
+- [Scaling](/docs/system-design/scaling) — health checks and removing dead servers
+- [APIs and Rate Limiting](/docs/system-design/apis) — status codes and `Retry-After`

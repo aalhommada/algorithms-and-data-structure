@@ -1,0 +1,197 @@
+---
+title: Scaling
+description: Vertical vs horizontal growth, why stateless servers are the precondition for everything, and how load balancing actually works
+---
+
+Scaling means handling more work than one machine can. There are only two ways to do it, and the choice between them shapes everything else.
+
+## The Two Directions
+
+<ArchDiagram
+  title="Vertical vs horizontal"
+  height={200}
+  nodes={[
+    { id: "small", label: "1 server", sublabel: "4 CPU / 16 GB", kind: "service", x: 0.0, y: 0.5 },
+    { id: "big", label: "1 server", sublabel: "64 CPU / 512 GB", kind: "service", x: 0.3, y: 0.5 },
+    { id: "a", label: "server A", kind: "service", x: 0.72, y: 0.05 },
+    { id: "b", label: "server B", kind: "service", x: 0.72, y: 0.5 },
+    { id: "c", label: "server C", kind: "service", x: 0.72, y: 0.95 },
+  ]}
+  edges={[{ from: "small", to: "big", label: "buy bigger" }]}
+  caption="Left: vertical — one machine, made stronger. Right: horizontal — many machines, working together."
+/>
+
+| | Vertical (scale up) | Horizontal (scale out) |
+|---|---|---|
+| What you do | Buy a bigger machine | Add more machines |
+| Complexity | None — the code is unchanged | Significant — work must be split |
+| Ceiling | Hard. The biggest machine sold | Effectively none |
+| Failure | The machine *is* the system | One machine dying is survivable |
+| Cost curve | Rises steeply at the top end | Roughly linear |
+
+<Callout type="info" title="Try vertical first, and do not be embarrassed by it">
+Vertical scaling has a bad reputation it does not deserve. A modern server with 64 cores and 512 GB of memory handles an enormous amount of traffic, and it requires **no change to your code**.
+
+Many successful products run on a handful of large machines. Reach for horizontal scaling when you hit the ceiling or when you need to survive a machine failing — not because it sounds more serious.
+</Callout>
+
+The real reason to go horizontal is usually not throughput. It is **availability**: one machine is one power supply away from total outage.
+
+## The Precondition: Stateless Servers
+
+You cannot spread traffic across several servers until they stop remembering things.
+
+<Callout type="warn" title="Why in-memory sessions break horizontal scaling">
+```text
+Request 1 → Server A  → A stores "logged in as Sara" in its memory
+Request 2 → Server B  → B has never heard of Sara  →  logged out
+```
+
+The user is bounced between logged-in and logged-out at random. Worse, it works perfectly in testing with one server and fails only in production.
+</Callout>
+
+**Stateless** means a server keeps nothing between requests that another server would need. Any server can handle any request, which is exactly what lets you add and remove them freely.
+
+The state has to live somewhere, so move it out:
+
+| State | Where it should live |
+|---|---|
+| Session / login | Shared cache (Redis), or a signed token held by the client |
+| Uploaded files | Object storage, not the server's local disk |
+| Application data | The database |
+| Background jobs | A queue |
+
+<Callout type="info" title="Sticky sessions are a trap worth naming">
+Load balancers can pin each user to one server, which makes in-memory sessions work again. It is tempting because it requires no code change.
+
+But it undoes the benefits: that server cannot be removed without logging people out, load spreads unevenly, and a crash loses every session on it.
+
+Prefer fixing the statelessness. Sticky sessions are a patch, not a solution.
+</Callout>
+
+## Load Balancing
+
+A load balancer sits in front of your servers and spreads requests across them. It also removes dead servers from rotation, which is where much of its value lies.
+
+<ArchViz
+  title="A load balancer at work"
+  height={260}
+  nodes={[
+    { id: "c1", label: "Clients", kind: "client", x: 0.0, y: 0.5 },
+    { id: "lb", label: "Load Balancer", kind: "edge", x: 0.32, y: 0.5 },
+    { id: "s1", label: "Server 1", kind: "service", x: 0.72, y: 0.05 },
+    { id: "s2", label: "Server 2", kind: "service", x: 0.72, y: 0.5 },
+    { id: "s3", label: "Server 3", kind: "service", x: 0.72, y: 0.95 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "c1", to: "lb", active: true },
+        { from: "lb", to: "s1", label: "req 1", active: true },
+        { from: "lb", to: "s2" },
+        { from: "lb", to: "s3" },
+      ],
+      active: ["s1"],
+      vars: { "health checks": "all passing" },
+      note: "Requests are handed out in turn. Every server is healthy, so each gets roughly a third.",
+    },
+    {
+      edges: [
+        { from: "c1", to: "lb", active: true },
+        { from: "lb", to: "s1" },
+        { from: "lb", to: "s2", label: "req 2", active: true },
+        { from: "lb", to: "s3" },
+      ],
+      active: ["s2"],
+      vars: { "health checks": "all passing" },
+      note: "The next request goes to server 2. Because servers are stateless, it does not matter which one answers.",
+    },
+    {
+      edges: [
+        { from: "c1", to: "lb", active: true },
+        { from: "lb", to: "s1" },
+        { from: "lb", to: "s2" },
+        { from: "lb", to: "s3", label: "no reply", dashed: true },
+      ],
+      dimmed: ["s3"],
+      vars: { "health checks": "server 3 FAILING" },
+      note: "Server 3 stops answering health checks. The load balancer notices within seconds.",
+    },
+    {
+      edges: [
+        { from: "c1", to: "lb", active: true },
+        { from: "lb", to: "s1", label: "50%", active: true },
+        { from: "lb", to: "s2", label: "50%", active: true },
+      ],
+      dimmed: ["s3"],
+      active: ["s1", "s2"],
+      vars: { "health checks": "2 of 3 healthy" },
+      note: "Server 3 is removed from rotation and traffic splits between the survivors. Users see nothing. This is the real value of a load balancer.",
+    },
+  ]}
+  caption="Spreading load is useful. Removing dead servers automatically is what keeps the system up."
+/>
+
+### Choosing where requests go
+
+| Strategy | How it works | Use when |
+|---|---|---|
+| **Round robin** | Each server in turn | Servers are identical and requests cost roughly the same |
+| **Least connections** | Whoever is least busy | Request durations vary a lot |
+| **Weighted** | Bigger servers get more | The fleet is a mix of machine sizes |
+| **Hash on a key** | Same user always to the same server | You genuinely need locality, e.g. a local cache |
+| **Geographic** | Nearest region | Users are worldwide and latency matters |
+
+Round robin is the sensible default. Reach for least-connections when some requests take much longer than others, because round robin will happily pile slow requests onto an already-busy server.
+
+<Callout type="info" title="The load balancer is now a single point of failure">
+You removed the risk of one app server dying and replaced it with one load balancer that can die.
+
+In practice this is solved by running two or more in an active-passive pair sharing a virtual IP address, or by using a managed service that does this for you. It is worth saying out loud when you draw one — it shows you are thinking about failure, not just throughput.
+</Callout>
+
+## Scaling Each Layer
+
+Different layers scale differently, and knowing which is easy matters.
+
+| Layer | Difficulty | How |
+|---|---|---|
+| Application servers | **Easy** | Add machines. They are stateless |
+| Cache | **Medium** | Shard by key across nodes |
+| Database reads | **Medium** | Read replicas |
+| Database writes | **Hard** | Sharding — and it complicates everything |
+| Object storage | **Easy** | Managed services scale for you |
+
+<Callout type="warn" title="Writes are always the hard part">
+Reads can be copied endlessly — a hundred replicas can serve the same row. Writes cannot, because they must agree on an order.
+
+This is why almost every scaling story ends at the write path, and why [sharding](/docs/system-design/databases) is the last resort rather than the first move.
+</Callout>
+
+## When to Do What
+
+A rough ladder. Climb it in order, and only when the current rung actually hurts.
+
+```text
+1.  One server, one database              →  hundreds of req/sec
+2.  Bigger server                         →  low thousands
+3.  Several app servers + load balancer   →  tens of thousands
+4.  Add a cache                           →  relieves the database
+5.  Read replicas                         →  read-heavy workloads
+6.  CDN for static files and media        →  relieves bandwidth
+7.  Queues for slow work                  →  keeps responses fast
+8.  Shard the database                    →  when writes exceed one primary
+```
+
+<Callout type="info" title="Each rung should be justified by a number">
+"We are at 8,000 requests per second and one server tops out near 5,000" is a reason.
+
+"Real systems have load balancers" is not.
+</Callout>
+
+## Related Reading
+
+- [Numbers Every Design Needs](/docs/system-design/numbers-to-know) — working out which rung you are on
+- [Caching](/docs/system-design/caching) — usually the highest-value single addition
+- [Databases](/docs/system-design/databases) — replication and sharding in detail
+- [Reliability](/docs/system-design/reliability) — health checks, timeouts and graceful failure

@@ -1,0 +1,401 @@
+---
+title: Number of Islands
+description: Count connected groups in a grid, and see why marking a cell as visited the moment you reach it is the whole algorithm
+difficulty: medium
+pattern: DFS
+variant: flood fill on a grid
+tags: ["Grid", "DFS", "BFS", "Union-Find", "Matrix"]
+leetcode: https://leetcode.com/problems/number-of-islands/
+problemNumber: 200
+---
+
+## Problem Statement
+
+Given a 2D grid of `'1'` (land) and `'0'` (water), count the number of islands.
+
+An island is land connected **horizontally or vertically** — diagonals do not connect. Assume the grid is surrounded by water on all sides.
+
+```text
+Input:
+  1 1 0 0 0
+  1 1 0 0 0
+  0 0 1 0 0
+  0 0 0 1 1
+Output: 3
+```
+
+## Intuition
+
+A grid is a graph in disguise. Each cell is a node, and each cell is connected to the neighbour above, below, left and right. Once you see that, this becomes a standard question: **how many connected groups are there?**
+
+And there is a simple way to count connected groups in any graph.
+
+<Callout type="info" title="The key insight">
+Walk the grid cell by cell. When you find land you have not seen before, you have found a **new island** — so add one to the count.
+
+Then immediately **erase that entire island**, by walking every piece of land connected to it and marking it visited.
+
+Because the whole island is now consumed, none of its other cells can ever start a second count.
+</Callout>
+
+The counting and the erasing work together. Without the erase, a 2×2 block of land would be counted four times. Without the count, you would just be wandering.
+
+### The real-world version
+
+You have a map and a marker pen. You scan it left to right, top to bottom. The first time you hit an unpainted patch of land, you shout "one!" and then paint that entire landmass solid — following it wherever it goes.
+
+You keep scanning. Painted land is ignored. Every shout is a new island.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Scan every cell
+
+Two nested loops over rows and columns. Most cells will do nothing.
+</Step>
+
+<Step>
+### If the cell is water or already visited, skip it
+
+This is what stops one island being counted more than once.
+</Step>
+
+<Step>
+### Otherwise, increment the count
+
+You have just discovered a new island. It has at least this one cell.
+</Step>
+
+<Step>
+### Flood the whole island
+
+From this cell, visit all four neighbours, and their neighbours, and so on — stopping at water and at the grid edge. Mark each one visited.
+
+When the flood finishes, the entire island is consumed.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Mark visited when you ENTER a cell, not when you leave">
+This one line decides whether the solution works.
+
+If you mark a cell only after exploring its neighbours, then cell A explores B, and B explores A right back — because A is not marked yet. The recursion bounces between them until the stack overflows.
+
+Marking on entry means a cell can never be entered twice, which both prevents the loop and makes the whole thing `O(rows × cols)`.
+</Callout>
+
+### Watch it run
+
+<GridViz
+  title="Counting islands in a 4×5 grid"
+  frames={[
+    {
+      cells: [
+        [1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 0, 1, 1],
+      ],
+      cursor: { row: 0, col: 0 },
+      vars: { count: 0 },
+      note: "Scanning from the top-left. Cell (0,0) is land and unvisited — a new island.",
+    },
+    {
+      cells: [
+        [1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 0, 1, 1],
+      ],
+      states: [
+        ["match", "active", "idle", "idle", "idle"],
+        ["active", "active", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "idle", "idle"],
+      ],
+      cursor: { row: 0, col: 0 },
+      vars: { count: 1 },
+      note: "Count = 1. Now flood: from (0,0) reach (0,1), (1,0) and (1,1). All four are marked visited.",
+    },
+    {
+      cells: [
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 0, 1, 1],
+      ],
+      states: [
+        ["discard", "discard", "idle", "idle", "idle"],
+        ["discard", "discard", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "idle", "idle"],
+      ],
+      vars: { count: 1 },
+      note: "The first island is erased. The scan continues past those cells without ever counting them again.",
+    },
+    {
+      cells: [
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 0, 1, 1],
+      ],
+      states: [
+        ["discard", "discard", "idle", "idle", "idle"],
+        ["discard", "discard", "idle", "idle", "idle"],
+        ["idle", "idle", "match", "idle", "idle"],
+        ["idle", "idle", "idle", "idle", "idle"],
+      ],
+      cursor: { row: 2, col: 2 },
+      vars: { count: 2 },
+      note: "Cell (2,2) is land and unvisited. Count = 2. It has no land neighbours, so the flood ends immediately — a one-cell island.",
+    },
+    {
+      cells: [
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 1, 1],
+      ],
+      states: [
+        ["discard", "discard", "idle", "idle", "idle"],
+        ["discard", "discard", "idle", "idle", "idle"],
+        ["idle", "idle", "discard", "idle", "idle"],
+        ["idle", "idle", "idle", "match", "active"],
+      ],
+      cursor: { row: 3, col: 3 },
+      vars: { count: 3 },
+      note: "Cell (3,3) is land. Count = 3. The flood spreads right to (3,4). Note (2,2) is diagonal to (3,3) — diagonals do NOT connect.",
+    },
+    {
+      cells: [
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+      ],
+      states: [
+        ["discard", "discard", "discard", "discard", "discard"],
+        ["discard", "discard", "discard", "discard", "discard"],
+        ["discard", "discard", "discard", "discard", "discard"],
+        ["discard", "discard", "discard", "discard", "discard"],
+      ],
+      vars: { count: 3, answer: 3 },
+      note: "The scan finishes. Every cell has been seen at most twice — once by the scan, once by a flood. The answer is 3.",
+    },
+  ]}
+  caption="Each island is counted exactly once, at the first cell the scan happens to reach."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def num_islands(grid: list[list[str]]) -> int:
+    """Count connected groups of '1' cells, joined horizontally or vertically."""
+    if not grid or not grid[0]:
+        return 0
+
+    rows, cols = len(grid), len(grid[0])
+    count = 0
+
+    def sink(row: int, col: int) -> None:
+        """Erase the island containing (row, col)."""
+        # One guard covers both the grid edge and water.
+        if row < 0 or row >= rows or col < 0 or col >= cols:
+            return
+        if grid[row][col] != "1":
+            return
+
+        # Mark visited on ENTRY, before recursing. This is what stops
+        # two adjacent cells exploring each other forever.
+        grid[row][col] = "0"
+
+        sink(row + 1, col)
+        sink(row - 1, col)
+        sink(row, col + 1)
+        sink(row, col - 1)
+
+    for row in range(rows):
+        for col in range(cols):
+            if grid[row][col] == "1":
+                count += 1     # a new island
+                sink(row, col)  # consume all of it
+
+    return count
+
+
+def num_islands_bfs(grid: list[list[str]]) -> int:
+    """BFS version — safe on very large grids, where recursion would overflow."""
+    from collections import deque
+
+    if not grid or not grid[0]:
+        return 0
+
+    rows, cols = len(grid), len(grid[0])
+    count = 0
+
+    for row in range(rows):
+        for col in range(cols):
+            if grid[row][col] != "1":
+                continue
+
+            count += 1
+            grid[row][col] = "0"
+            queue = deque([(row, col)])
+
+            while queue:
+                r, c = queue.popleft()
+                for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == "1":
+                        # Mark when ENQUEUEING, not when dequeueing — otherwise
+                        # the same cell can be added to the queue many times.
+                        grid[nr][nc] = "0"
+                        queue.append((nr, nc))
+
+    return count
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function numIslands(grid: string[][]): number {
+  if (grid.length === 0 || grid[0].length === 0) return 0;
+
+  const rows = grid.length;
+  const cols = grid[0].length;
+  let count = 0;
+
+  function sink(row: number, col: number): void {
+    // One guard covers both the grid edge and water.
+    if (row < 0 || row >= rows || col < 0 || col >= cols) return;
+    if (grid[row][col] !== '1') return;
+
+    // Mark visited on ENTRY, before recursing.
+    grid[row][col] = '0';
+
+    sink(row + 1, col);
+    sink(row - 1, col);
+    sink(row, col + 1);
+    sink(row, col - 1);
+  }
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      if (grid[row][col] === '1') {
+        count++; // a new island
+        sink(row, col); // consume all of it
+      }
+    }
+  }
+
+  return count;
+}
+
+function numIslandsBFS(grid: string[][]): number {
+  if (grid.length === 0 || grid[0].length === 0) return 0;
+
+  const rows = grid.length;
+  const cols = grid[0].length;
+  const directions = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+  let count = 0;
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      if (grid[row][col] !== '1') continue;
+
+      count++;
+      grid[row][col] = '0';
+
+      // A read index instead of shift(), which is O(n) per call.
+      const queue: Array<[number, number]> = [[row, col]];
+      let head = 0;
+
+      while (head < queue.length) {
+        const [r, c] = queue[head++];
+        for (const [dr, dc] of directions) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (
+            nr >= 0 && nr < rows && nc >= 0 && nc < cols &&
+            grid[nr][nc] === '1'
+          ) {
+            grid[nr][nc] = '0'; // mark when ENQUEUEING
+            queue.push([nr, nc]);
+          }
+        }
+      }
+    }
+  }
+
+  return count;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Mark on enqueue, not on dequeue">
+The BFS version has its own version of the same trap. If you mark a cell visited only when you pop it from the queue, the same cell can be pushed several times before it is ever popped — once by each neighbour.
+
+The result is still correct, but the queue can grow to many times the grid size, and on a large grid that is a memory blowout.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(rows × cols)" space="O(rows × cols)" />
+
+- **Time** — the outer scan touches every cell once, and the flood touches each land cell once. No cell is ever processed twice, because it is marked the instant it is reached. So the total is linear in the number of cells.
+- **Space** — for DFS this is the recursion stack. The worst case is a grid that is entirely land, where the flood can nest as deep as the cell count.
+
+<Callout type="info" title="When to prefer BFS here">
+For a 1000 × 1000 grid of solid land, the DFS version needs up to one million nested calls. Python raises `RecursionError` and JavaScript throws `RangeError`.
+
+The BFS version keeps its frontier in a queue on the heap, so it survives. When grid dimensions are large, reach for BFS.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty grid, or a grid with empty rows">
+The guard `if not grid or not grid[0]` handles both. Without the second half, `len(grid[0])` raises `IndexError` on `[[]]`.
+</Accordion>
+
+<Accordion title="All water">
+The scan never finds a `'1'`, so the count stays `0`. No floods run.
+</Accordion>
+
+<Accordion title="All land">
+One island. The very first cell triggers a flood that consumes the entire grid, and the remaining scan finds nothing. This is also the worst case for recursion depth.
+</Accordion>
+
+<Accordion title="Diagonal land, e.g. [['1','0'],['0','1']]">
+Two islands, not one. The four directions used are up, down, left and right only. Adding the four diagonals would give a different problem — worth checking which the question wants.
+</Accordion>
+
+<Accordion title="Is it acceptable to modify the input grid?">
+Here, usually yes, and it saves a whole visited array. But it destroys the caller's data.
+
+If the grid must survive, keep a separate `visited` set or boolean grid. That costs `O(rows × cols)` extra space but leaves the input untouched. Say which you are doing, rather than assuming.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Course Schedule](/docs/graphs/course-schedule) — a graph where the edges are given directly rather than implied by a grid
+- [Find the Town Judge](/docs/graphs/find-the-town-judge) — a graph problem needing no traversal at all
+- [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — the same BFS shape on a tree
+- [Graphs](/docs/graphs) — representations, and why a visited set is required

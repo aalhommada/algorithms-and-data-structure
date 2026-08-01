@@ -1,0 +1,313 @@
+---
+title: Coin Change
+description: Find the fewest coins that make a target amount, and see exactly why the obvious greedy approach is wrong
+difficulty: medium
+pattern: Dynamic Programming
+variant: unbounded knapsack
+tags: ["Array", "Dynamic Programming", "BFS"]
+leetcode: https://leetcode.com/problems/coin-change/
+problemNumber: 322
+---
+
+## Problem Statement
+
+Given coin denominations and a target `amount`, return the **fewest** coins needed to make that amount. You have an unlimited supply of each coin. If the amount cannot be made, return `-1`.
+
+```text
+Input:  coins = [1, 2, 5], amount = 11
+Output: 3
+Why:    11 = 5 + 5 + 1
+
+Input:  coins = [2], amount = 3
+Output: -1
+
+Input:  coins = [1], amount = 0
+Output: 0
+```
+
+## Intuition
+
+The instinct is to take the largest coin that fits, repeatedly. With real currency that works, which is exactly why it is such a dangerous habit.
+
+<Callout type="warn" title="The counterexample that kills greedy">
+```text
+coins = [1, 3, 4],  amount = 6
+
+Greedy: take 4  →  remaining 2
+        take 1  →  remaining 1
+        take 1  →  remaining 0
+        Total: 3 coins  (4 + 1 + 1)
+
+Best:   3 + 3  =  2 coins
+```
+
+Greedy takes the `4` because it is the biggest — and that single choice makes `3 + 3` unreachable.
+
+Real coin systems (1, 5, 10, 25) are designed so greedy works. Arbitrary denominations are not.
+</Callout>
+
+Since no local rule can be trusted, every option has to be considered.
+
+<Callout type="info" title="The key insight">
+Turn the question around. Instead of *"which coin should I take first?"*, ask:
+
+**"To make amount `a`, what if the last coin I add is coin `c`?"**
+
+Then the rest of the work is making `a - c`, which is a smaller version of the same question. Try every coin as the last one and keep the best:
+
+```text
+fewest(a) = 1 + min( fewest(a - c) for every coin c that fits )
+```
+</Callout>
+
+Because `fewest(a - c)` is reused by many different `a`, this is dynamic programming rather than plain recursion.
+
+### Building from the bottom
+
+Rather than recursing down from `amount`, build up from `0`. To make `0` you need `0` coins — that is the anchor. Every later answer leans on earlier ones that are already final.
+
+```text
+coins = [1, 2, 5]
+
+amount:  0   1   2   3   4   5   6  ...
+fewest:  0   1   1   2   2   1   2  ...
+                     ↑
+              3 = 2 + 1  →  1 + fewest(1) = 2
+```
+
+### The real-world version
+
+You are working out the fewest notes to pay a bill, and you have a notebook where you have already recorded the answer for every smaller amount.
+
+For £11 you check each note you own: *"if my last note is a £5, I still owe £6 — and I already know £6 takes 2 notes, so that path is 3."* Do that for every note and keep the smallest.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Make a table of size `amount + 1`
+
+`fewest[a]` will hold the minimum coins needed for amount `a`. You need index `amount` itself, hence the `+1`.
+</Step>
+
+<Step>
+### Fill it with an impossible value, except `fewest[0] = 0`
+
+Use `amount + 1` as the "impossible" marker — it is larger than any real answer, since even all-1-coins would need only `amount` of them.
+
+`fewest[0] = 0` is the anchor the rest is built on.
+</Step>
+
+<Step>
+### For each amount from 1 upward, try every coin
+
+If coin `c` fits inside `a`, then one candidate answer is `1 + fewest[a - c]`. Keep the smallest across all coins.
+</Step>
+
+<Step>
+### Read off `fewest[amount]`
+
+If it is still the impossible marker, no combination works — return `-1`.
+</Step>
+
+</Steps>
+
+<Callout type="info" title="Why the impossible marker beats infinity">
+Using `amount + 1` rather than `Infinity` keeps everything in plain integers and makes the final check a simple comparison.
+
+It works because the largest possible real answer is `amount` (all ones), so `amount + 1` can never be mistaken for a genuine result.
+</Callout>
+
+### Watch it run
+
+<ArrayViz
+  title="coins = [1, 2, 5], amount = 6 — the table being filled"
+  showIndices
+  frames={[
+    {
+      values: [0, "-", "-", "-", "-", "-", "-"],
+      states: ["match", "idle", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "a" }],
+      vars: { note: "anchor" },
+      note: "fewest[0] = 0. Making nothing takes no coins. Everything else is unknown.",
+    },
+    {
+      values: [0, 1, "-", "-", "-", "-", "-"],
+      states: ["done", "match", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "a" }],
+      vars: { "coin 1": "1 + fewest[0] = 1" },
+      note: "Amount 1. Only the 1-coin fits: 1 + fewest[0] = 1.",
+    },
+    {
+      values: [0, 1, 1, "-", "-", "-", "-"],
+      states: ["done", "done", "match", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 2, label: "a" }],
+      vars: { "coin 1": "1 + fewest[1] = 2", "coin 2": "1 + fewest[0] = 1" },
+      note: "Amount 2. The 1-coin gives 2, the 2-coin gives 1. Keep the smaller: 1.",
+    },
+    {
+      values: [0, 1, 1, 2, "-", "-", "-"],
+      states: ["done", "done", "done", "match", "idle", "idle", "idle"],
+      pointers: [{ index: 3, label: "a" }],
+      vars: { "coin 1": "1 + fewest[2] = 2", "coin 2": "1 + fewest[1] = 2" },
+      note: "Amount 3. Both routes give 2 coins (1+2 or 2+1). Either way the answer is 2.",
+    },
+    {
+      values: [0, 1, 1, 2, 2, "-", "-"],
+      states: ["done", "done", "done", "done", "match", "idle", "idle"],
+      pointers: [{ index: 4, label: "a" }],
+      vars: { "coin 2": "1 + fewest[2] = 2" },
+      note: "Amount 4. Best is 2 + 2, giving 2 coins. The 5-coin still does not fit.",
+    },
+    {
+      values: [0, 1, 1, 2, 2, 1, "-"],
+      states: ["done", "done", "done", "done", "done", "match", "idle"],
+      pointers: [{ index: 5, label: "a" }],
+      vars: { "coin 5": "1 + fewest[0] = 1" },
+      note: "Amount 5. The 5-coin fits exactly: 1 + fewest[0] = 1. A single coin.",
+    },
+    {
+      values: [0, 1, 1, 2, 2, 1, 2],
+      states: ["done", "match", "done", "done", "done", "match", "match"],
+      pointers: [{ index: 6, label: "a" }],
+      vars: { "coin 1": 3, "coin 2": 3, "coin 5": "1 + fewest[1] = 2", answer: 2 },
+      note: "Amount 6. The 5-coin route wins: 5 + 1 = 2 coins. Every earlier answer was already final when needed.",
+    },
+  ]}
+  caption="Each cell is computed once and reused by every larger amount that needs it."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def coin_change(coins: list[int], amount: int) -> int:
+    """Fewest coins summing to amount, or -1 if impossible."""
+    # amount + 1 is larger than any real answer, so it doubles as "impossible".
+    IMPOSSIBLE = amount + 1
+    fewest = [IMPOSSIBLE] * (amount + 1)
+
+    # Anchor: making 0 needs 0 coins.
+    fewest[0] = 0
+
+    for value in range(1, amount + 1):
+        for coin in coins:
+            if coin <= value:
+                # Use this coin as the last one, then reuse a solved subproblem.
+                fewest[value] = min(fewest[value], 1 + fewest[value - coin])
+
+    return fewest[amount] if fewest[amount] != IMPOSSIBLE else -1
+
+
+def coin_change_bfs(coins: list[int], amount: int) -> int:
+    """BFS view: each level is one more coin, so the first hit is the fewest."""
+    from collections import deque
+
+    if amount == 0:
+        return 0
+
+    queue = deque([0])
+    seen = {0}
+    steps = 0
+
+    while queue:
+        steps += 1
+        for _ in range(len(queue)):
+            total = queue.popleft()
+            for coin in coins:
+                nxt = total + coin
+                if nxt == amount:
+                    return steps
+                if nxt < amount and nxt not in seen:
+                    seen.add(nxt)
+                    queue.append(nxt)
+
+    return -1
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function coinChange(coins: number[], amount: number): number {
+  // amount + 1 is larger than any real answer, so it doubles as "impossible".
+  const IMPOSSIBLE = amount + 1;
+  const fewest = new Array<number>(amount + 1).fill(IMPOSSIBLE);
+
+  // Anchor: making 0 needs 0 coins.
+  fewest[0] = 0;
+
+  for (let value = 1; value <= amount; value++) {
+    for (const coin of coins) {
+      if (coin <= value) {
+        // Use this coin as the last one, then reuse a solved subproblem.
+        fewest[value] = Math.min(fewest[value], 1 + fewest[value - coin]);
+      }
+    }
+  }
+
+  return fewest[amount] !== IMPOSSIBLE ? fewest[amount] : -1;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why BFS also works">
+Picture amounts as nodes and coins as edges. Every edge costs one coin, so all edges have equal weight — and BFS finds the shortest path in an unweighted graph.
+
+The first time BFS reaches `amount`, it has used the fewest coins possible. It often runs faster than the table when the answer is small, because it stops the moment it arrives instead of filling every cell.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(amount × coins)" space="O(amount)" />
+
+- **Time** — the outer loop runs `amount` times and the inner loop once per coin. Every cell is computed exactly once.
+- **Space** — one array of `amount + 1` entries. This cannot collapse to a few variables like [House Robber](/docs/dynamic-programming/house-robber), because `fewest[a - c]` may reach far back for a large coin.
+
+<Callout type="warn" title="The complexity depends on a VALUE, not a size">
+`amount` is a number in the input, not the length of anything. Doubling `amount` doubles the work even though the input has not grown.
+
+This is called *pseudo-polynomial*. It matters in practice: `amount = 10⁹` is unusable here, even with only three coins.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="amount = 0">
+Returns `0`. The anchor `fewest[0] = 0` handles it, the loop never runs, and the final check sees `0`, not the impossible marker.
+</Accordion>
+
+<Accordion title="The amount cannot be made, e.g. coins = [2], amount = 3">
+Returns `-1`. Odd cells can never be reached from even ones, so `fewest[3]` keeps the impossible marker.
+
+This is why a marker is needed at all — `0` would be wrong, since `0` is a legitimate answer for `amount = 0`.
+</Accordion>
+
+<Accordion title="A coin larger than the amount">
+Skipped by the `coin <= value` guard. Without it, `fewest[value - coin]` would index negatively — silently wrong in Python, `undefined` in TypeScript.
+</Accordion>
+
+<Accordion title="Duplicate coins, e.g. [1, 1, 2]">
+Harmless. The duplicate simply repeats a comparison that yields the same value.
+</Accordion>
+
+<Accordion title="Why doesn't taking the biggest coin first work?">
+See `coins = [1, 3, 4], amount = 6` above: greedy gives 3 coins, the answer is 2.
+
+Greedy works only when the denominations have a special structure. Since the problem allows arbitrary coins, every option must be considered — which is what makes it DP.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) — the same build-up, counting ways instead of minimising
+- [House Robber](/docs/dynamic-programming/house-robber) — a DP whose window is small enough to collapse to two variables
+- [Combination Sum](/docs/backtracking/combination-sum) — the same reuse rule, but listing *every* combination rather than the best
+- [Greedy](/docs/greedy) — when taking the local best *is* provably safe

@@ -1,0 +1,289 @@
+---
+title: Subsets
+description: Generate every subset of a list, and meet the decision tree that all backtracking problems share
+difficulty: medium
+pattern: Backtracking
+variant: take or skip
+tags: ["Array", "Backtracking", "Bit Manipulation", "Recursion"]
+leetcode: https://leetcode.com/problems/subsets/
+problemNumber: 78
+---
+
+## Problem Statement
+
+Given an array of **distinct** integers, return all possible subsets (the power set). The answer may be in any order, and must not contain duplicates.
+
+```text
+Input:  nums = [1, 2, 3]
+Output: [[], [1], [2], [3], [1,2], [1,3], [2,3], [1,2,3]]
+
+Input:  nums = [0]
+Output: [[], [0]]
+```
+
+## Intuition
+
+There are `2³ = 8` subsets of a 3-element list, and that `2ⁿ` is the clue.
+
+Why exactly `2ⁿ`? Because building a subset means walking the list once and making **one yes/no decision per element**: is this element in, or out? Three elements, two options each, `2 × 2 × 2 = 8`.
+
+<Callout type="info" title="The key insight">
+A subset is not something you search for. It is the **record of a series of decisions** — one per element.
+
+So instead of hunting for subsets, walk through the elements making decisions, and every complete run of decisions *is* a subset.
+</Callout>
+
+### The decision tree
+
+```text
+                       []
+                 /            \
+            take 1            skip 1
+            /    \            /    \
+       take 2   skip 2   take 2   skip 2
+        /  \     /  \     /  \      /  \
+      t3  s3   t3  s3   t3  s3    t3  s3
+       |   |    |   |    |   |     |   |
+   [1,2,3][1,2][1,3][1] [2,3][2]  [3]  []
+```
+
+Eight leaves, eight subsets. Backtracking walks this tree depth-first.
+
+<Callout type="info" title="Why every node is an answer, not just the leaves">
+In many backtracking problems only complete paths count. Here, **every node on the way down is already a valid subset**.
+
+`[1]` is a subset. So is `[1, 2]`. So is the empty path at the root.
+
+That is why the recording happens at the top of the function rather than inside an "is it complete?" check — a detail that makes this the simplest backtracking problem there is.
+</Callout>
+
+### The start index, and why it exists
+
+Without care you would produce `[1, 2]` and `[2, 1]` — the same subset twice, since order does not matter in a set.
+
+The fix is a `start` index: when choosing the next element, only look at positions **after** the one just taken. That forces every subset into increasing order, so each one can be built exactly one way.
+
+```text
+With start:     [1,2]  produced once
+Without start:  [1,2]  and  [2,1]  — duplicates
+```
+
+## Approach
+
+<Steps>
+
+<Step>
+### Record the current path immediately
+
+Every path is a valid subset, including the empty one. Record a **copy** — not the array itself.
+</Step>
+
+<Step>
+### Loop over the remaining candidates
+
+Start at `start`, not at `0`. Everything before `start` was already decided by an ancestor call.
+</Step>
+
+<Step>
+### Choose, explore, undo
+
+Append `nums[i]`, recurse with `start = i + 1`, then pop.
+
+The `i + 1` is what prevents reusing an element and what keeps the ordering fixed.
+</Step>
+
+</Steps>
+
+### Watch it run
+
+<ArrayViz
+  title="nums = [1, 2, 3] — a depth-first walk of the decision tree"
+  frames={[
+    {
+      values: [1, 2, 3],
+      states: ["idle", "idle", "idle"],
+      vars: { path: "[]", results: 1 },
+      note: "The empty path is recorded straight away. That is the empty subset.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { path: "[1]", results: 2 },
+      note: "Take 1. The path [1] is itself a subset, so record it and go deeper.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "match", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[1, 2]", results: 3 },
+      note: "Take 2. Record [1, 2]. Note we started at index 1, never looking back at index 0.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "match", "match"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { path: "[1, 2, 3]", results: 4 },
+      note: "Take 3. Record [1, 2, 3]. There is nothing after index 2, so this branch is finished.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "match", "discard"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[1, 2]", results: 4 },
+      note: "UNDO 3. The path is back to [1, 2] and the loop at this level has no more candidates — so undo again.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["match", "discard", "match"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { path: "[1, 3]", results: 5 },
+      note: "Back at path [1], the loop moves on to index 2. Record [1, 3] — note 2 was skipped entirely.",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["discard", "match", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { path: "[2]", results: 6 },
+      note: "The whole [1, ...] branch is exhausted. Undo back to empty, then start fresh at index 1: record [2].",
+    },
+    {
+      values: [1, 2, 3],
+      states: ["discard", "discard", "match"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { path: "[3]", results: 8 },
+      note: "After [2, 3] and undoing, the last branch starts at index 2 giving [3]. Eight subsets in total.",
+    },
+  ]}
+  caption="Each element is taken on some paths and skipped on others. 2³ = 8 combinations."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def subsets(nums: list[int]) -> list[list[int]]:
+    """Return every subset of a list of distinct integers."""
+    results: list[list[int]] = []
+    path: list[int] = []
+
+    def backtrack(start: int) -> None:
+        # Every path is a valid subset — record a COPY, not the live array.
+        results.append(path[:])
+
+        for i in range(start, len(nums)):
+            path.append(nums[i])      # choose
+            backtrack(i + 1)          # explore, never looking back
+            path.pop()                # undo
+
+    backtrack(0)
+    return results
+
+
+def subsets_bitmask(nums: list[int]) -> list[list[int]]:
+    """Alternative: the bits of 0..2^n - 1 spell out the include/exclude choices."""
+    n = len(nums)
+    results: list[list[int]] = []
+
+    for mask in range(1 << n):  # 1 << n is 2^n
+        # Bit i set means "include nums[i]".
+        results.append([nums[i] for i in range(n) if mask & (1 << i)])
+
+    return results
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function subsets(nums: number[]): number[][] {
+  const results: number[][] = [];
+  const path: number[] = [];
+
+  function backtrack(start: number): void {
+    // Every path is a valid subset — record a COPY, not the live array.
+    results.push([...path]);
+
+    for (let i = start; i < nums.length; i++) {
+      path.push(nums[i]); // choose
+      backtrack(i + 1); // explore, never looking back
+      path.pop(); // undo
+    }
+  }
+
+  backtrack(0);
+  return results;
+}
+
+function subsetsBitmask(nums: number[]): number[][] {
+  const n = nums.length;
+  const results: number[][] = [];
+
+  for (let mask = 0; mask < 1 << n; mask++) {
+    const subset: number[] = [];
+    for (let i = 0; i < n; i++) {
+      // Bit i set means "include nums[i]".
+      if (mask & (1 << i)) subset.push(nums[i]);
+    }
+    results.push(subset);
+  }
+
+  return results;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="The bitmask version is worth knowing">
+Count from `0` to `2ⁿ - 1` and read each number's bits as the include/exclude decisions. For `n = 3`, the number `5` is binary `101`, meaning "take index 0, skip index 1, take index 2" — the subset `[1, 3]`.
+
+No recursion and no undo. It only works when `n ≤ 32` or so, and it is harder to adapt when a problem adds constraints — but for plain subsets it is short and fast.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n · 2ⁿ)" space="O(n)" />
+
+- **Time** — there are `2ⁿ` subsets, and copying each one into the results costs up to `O(n)`. The recursion itself does `O(2ⁿ)` work; the copying is what adds the factor of `n`.
+- **Space** — excluding the output, only the `path` array and the recursion stack, both at most `n` deep. Including the output, it is `O(n · 2ⁿ)` because that is simply how big the answer is.
+
+<Callout type="info" title="Why n is always small here">
+At `n = 20` there are about a million subsets. At `n = 30`, a billion. Constraints for this problem are typically `n ≤ 10`, which is the author signalling that exponential is the intended answer.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="An empty input, nums = []">
+Returns `[[]]` — a list containing one empty subset, not an empty list.
+
+The empty set does have exactly one subset: itself. The recursion records the empty path, the loop body never runs, and the answer is correct with no special case.
+</Accordion>
+
+<Accordion title="A single element">
+Returns `[[], [1]]`. Two subsets, matching `2¹ = 2`.
+</Accordion>
+
+<Accordion title="What if the input had duplicates, e.g. [1, 2, 2]?">
+This version would produce `[2]` twice. That is Subsets II, a different problem.
+
+The fix is to sort first, then inside the loop skip a candidate when `i > start and nums[i] == nums[i-1]`. That allows a duplicate to be used at a deeper level but not twice at the same level.
+</Accordion>
+
+<Accordion title="Why record at the top instead of at a base case?">
+Because every node in the decision tree is a valid subset, not just the leaves. Recording only at the leaves would return just `[[1,2,3]]` and the other seven would be lost.
+
+Most backtracking problems are the opposite — only complete paths count. This one being different is exactly what makes it the gentlest introduction.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Permutations](/docs/backtracking/permutations) — order matters, so every element stays available
+- [Combination Sum](/docs/backtracking/combination-sum) — the same start index, plus reuse and pruning
+- [Backtracking](/docs/backtracking) — the choose / explore / undo template

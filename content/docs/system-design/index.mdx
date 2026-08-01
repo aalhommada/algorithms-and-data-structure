@@ -1,0 +1,265 @@
+---
+title: System Design
+description: How to design a system that handles real traffic — the building blocks, the trade-offs, and a repeatable method for working through an unfamiliar problem
+---
+
+Algorithm problems have one right answer. System design does not.
+
+Ask ten engineers to design a photo-sharing service and you will get ten different diagrams, several of them good. What separates a strong design from a weak one is not the boxes — it is whether the person can explain **why** each box is there, what it costs, and what breaks when traffic grows ten times.
+
+That is what this section teaches.
+
+## What You Are Actually Being Asked
+
+A design question is deliberately vague. "Design a URL shortener" tells you almost nothing: how many users, how fast, read-heavy or write-heavy, does it need analytics?
+
+<Callout type="info" title="The vagueness is the point">
+A well-specified problem tests whether you can code. A vague one tests whether you can **find the important questions before answering**.
+
+The first five minutes should be spent narrowing the problem, not drawing. A design built on unstated assumptions is a design nobody can evaluate — including you.
+</Callout>
+
+## The Method
+
+Every problem in this section is worked with the same six steps. Follow them in order and an unfamiliar problem becomes a familiar procedure.
+
+<Steps>
+
+<Step>
+### Clarify and scope
+
+Ask what the system must do and, just as importantly, what it need not do. Write down the two or three features you will actually build.
+
+*"Shorten a URL and redirect. No custom aliases, no analytics, no expiry. Agreed?"*
+</Step>
+
+<Step>
+### Put numbers on it
+
+Estimate reads per second, writes per second, and storage growth per year. You are not aiming for accuracy — you are aiming for the **order of magnitude**, because that is what decides the architecture.
+
+100 writes per second and 100,000 writes per second are different systems.
+</Step>
+
+<Step>
+### Define the interface
+
+Name the handful of operations the system exposes. Two or three endpoints is usually enough.
+
+This is where you notice a design is doing too much.
+</Step>
+
+<Step>
+### Sketch the simplest thing that works
+
+One service, one database. No cache, no queue, no sharding.
+
+Starting simple is not naive — it gives you a baseline to improve, and it shows you understand that complexity must be *earned*.
+</Step>
+
+<Step>
+### Find the bottleneck, then fix that one thing
+
+Look at your numbers and ask what breaks first. Add exactly one component to fix it. Then ask again.
+
+Each addition should answer a specific pressure you have already named.
+</Step>
+
+<Step>
+### Say what you traded away
+
+Every choice costs something. A cache adds staleness. A queue adds delay. Sharding makes joins hard.
+
+Naming the cost is the single clearest signal that you understand your own design.
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="The most common mistake">
+Drawing the final architecture immediately — load balancer, cache, sharded database, message queue, CDN — before any numbers exist.
+
+It looks impressive and it is hollow. If you cannot say *what pressure* each component relieves, the design is memorised, not reasoned. Someone will ask "why the queue?" and there will be no answer.
+
+Start simple. Add under pressure. Always.
+</Callout>
+
+## From Simple to Scaled
+
+Here is the shape almost every design follows. The point is not that the final picture is correct — it is that each step is *caused* by the previous step's limit.
+
+<ArchViz
+  title="One system, growing under pressure"
+  height={320}
+  nodes={[
+    { id: "client", label: "Client", kind: "client", x: 0.0, y: 0.5 },
+    { id: "lb", label: "Load Balancer", kind: "edge", x: 0.22, y: 0.5 },
+    { id: "app", label: "App Servers", sublabel: "stateless ×N", kind: "service", x: 0.46, y: 0.5 },
+    { id: "cache", label: "Cache", sublabel: "Redis", kind: "cache", x: 0.7, y: 0.12 },
+    { id: "db", label: "Database", sublabel: "primary", kind: "database", x: 0.7, y: 0.5 },
+    { id: "replica", label: "Read Replicas", kind: "database", x: 0.7, y: 0.88 },
+    { id: "queue", label: "Queue", kind: "queue", x: 1.0, y: 0.12 },
+    { id: "worker", label: "Workers", kind: "service", x: 1.0, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [{ from: "client", to: "app", label: "HTTP", active: true }, { from: "app", to: "db", active: true }],
+      active: ["client", "app", "db"],
+      dimmed: ["lb", "cache", "replica", "queue", "worker"],
+      vars: { stage: "1. Simplest thing that works" },
+      note: "One server, one database. This genuinely handles a few hundred requests per second. Start here every time.",
+    },
+    {
+      edges: [
+        { from: "client", to: "lb", active: true },
+        { from: "lb", to: "app", label: "round robin", active: true },
+        { from: "app", to: "db" },
+      ],
+      active: ["client", "lb", "app"],
+      dimmed: ["cache", "replica", "queue", "worker"],
+      vars: { stage: "2. One server is not enough" },
+      note: "Pressure: CPU is saturated. Fix: run several app servers behind a load balancer. This only works because the servers hold no session state.",
+    },
+    {
+      edges: [
+        { from: "client", to: "lb" },
+        { from: "lb", to: "app" },
+        { from: "app", to: "cache", label: "check first", active: true },
+        { from: "app", to: "db", label: "on miss", active: true },
+      ],
+      active: ["app", "cache", "db"],
+      dimmed: ["replica", "queue", "worker"],
+      vars: { stage: "3. The database is the bottleneck" },
+      note: "Pressure: the same rows are read constantly. Fix: a cache in front. Cost: reads can now be stale.",
+    },
+    {
+      edges: [
+        { from: "client", to: "lb" },
+        { from: "lb", to: "app" },
+        { from: "app", to: "cache" },
+        { from: "app", to: "db", label: "writes", active: true },
+        { from: "app", to: "replica", label: "reads", active: true },
+        { from: "db", to: "replica", label: "replication", dashed: true, active: true },
+      ],
+      active: ["db", "replica"],
+      dimmed: ["queue", "worker"],
+      vars: { stage: "4. Still too many reads" },
+      note: "Pressure: reads outnumber writes 100 to 1. Fix: read replicas. Cost: a replica may lag behind the primary by milliseconds or more.",
+    },
+    {
+      edges: [
+        { from: "client", to: "lb" },
+        { from: "lb", to: "app" },
+        { from: "app", to: "cache" },
+        { from: "app", to: "db" },
+        { from: "app", to: "replica" },
+        { from: "db", to: "replica", dashed: true },
+        { from: "app", to: "queue", label: "enqueue", active: true },
+        { from: "queue", to: "worker", label: "consume", active: true },
+      ],
+      active: ["queue", "worker"],
+      vars: { stage: "5. Slow work blocks responses" },
+      note: "Pressure: sending email and resizing images makes requests slow. Fix: push that work onto a queue. Cost: it now happens eventually, not immediately.",
+    },
+  ]}
+  caption="Five steps, five named pressures. Never add a box without one."
+/>
+
+## What This Section Covers
+
+### Foundations
+
+<Cards>
+  <Card
+    title="Numbers Every Design Needs"
+    href="/docs/system-design/numbers-to-know"
+    description="Latency figures, capacity estimation, and how to turn 'a million users' into requests per second"
+  />
+  <Card
+    title="Scaling"
+    href="/docs/system-design/scaling"
+    description="Vertical vs horizontal, why stateless matters, and load balancing"
+  />
+  <Card
+    title="Caching"
+    href="/docs/system-design/caching"
+    description="Where to put a cache, eviction, invalidation, and the failure modes"
+  />
+  <Card
+    title="Databases"
+    href="/docs/system-design/databases"
+    description="SQL vs NoSQL, indexing, replication, and sharding"
+  />
+  <Card
+    title="Consistency and CAP"
+    href="/docs/system-design/consistency"
+    description="What you give up when data lives in more than one place"
+  />
+  <Card
+    title="Queues and Async Work"
+    href="/docs/system-design/queues"
+    description="Decoupling, back pressure, delivery guarantees, and idempotency"
+  />
+  <Card
+    title="APIs and Rate Limiting"
+    href="/docs/system-design/apis"
+    description="Endpoint design, pagination, idempotency keys, and protecting the system"
+  />
+  <Card
+    title="Reliability"
+    href="/docs/system-design/reliability"
+    description="Failure is normal — timeouts, retries, circuit breakers, and what to monitor"
+  />
+</Cards>
+
+### Worked Designs
+
+Each one applies the six steps end to end.
+
+<Cards>
+  <Card
+    title="URL Shortener"
+    href="/docs/system-design/url-shortener"
+    description="ID generation, read-heavy traffic, and the redirect path"
+  />
+  <Card
+    title="Rate Limiter"
+    href="/docs/system-design/rate-limiter"
+    description="Four algorithms compared, and the distributed counting problem"
+  />
+  <Card
+    title="News Feed"
+    href="/docs/system-design/news-feed"
+    description="Fan-out on write vs on read, and why celebrities break both"
+  />
+  <Card
+    title="Chat System"
+    href="/docs/system-design/chat-system"
+    description="Long-lived connections, delivery guarantees, and message ordering"
+  />
+  <Card
+    title="Search Autocomplete"
+    href="/docs/system-design/autocomplete"
+    description="Tries at scale, ranking, and serving suggestions in under 100ms"
+  />
+  <Card
+    title="Video Streaming"
+    href="/docs/system-design/video-streaming"
+    description="Transcoding pipelines, adaptive bitrate, and moving bytes close to users"
+  />
+</Cards>
+
+## How to Read This Section
+
+<Callout type="info" title="Read the foundations first, then one worked design">
+The foundation pages each explain one building block and, more importantly, **what it costs**. The worked designs then assemble those blocks under pressure.
+
+Reading a worked design without the foundations gives you a diagram to memorise. Reading the foundations first gives you the ability to derive the diagram — which is the actual skill.
+</Callout>
+
+There is no code in this section. System design is about trade-offs between components, not implementations, and a page full of code would hide that.
+
+## Related Reading
+
+- [Design](/docs/design) — the same combine-structures thinking, at the scale of a single machine
+- [Heaps](/docs/heaps) — the structure behind rate limiters and priority queues
+- [Hash Maps](/docs/arrays/two-sum) — consistent hashing, used for sharding, is built on this idea
