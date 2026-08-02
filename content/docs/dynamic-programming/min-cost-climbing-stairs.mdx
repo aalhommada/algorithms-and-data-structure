@@ -1,0 +1,197 @@
+---
+title: Min Cost Climbing Stairs
+description: The gentlest optimisation DP — the same recurrence as climbing stairs, but choosing a minimum instead of counting
+difficulty: easy
+pattern: Dynamic Programming
+variant: minimum over two choices
+tags: ["Array", "Dynamic Programming"]
+leetcode: https://leetcode.com/problems/min-cost-climbing-stairs/
+problemNumber: 746
+---
+
+## Problem Statement
+
+Each index of `cost` holds the price of stepping **off** that stair. You may climb one or two stairs at a time, and you may start at index 0 or index 1. Return the cheapest way to get past the top.
+
+```text
+Input:  cost = [10, 15, 20]
+Output: 15
+        start at index 1, pay 15, jump two → done
+
+Input:  cost = [1, 100, 1, 1, 1, 100, 1, 1, 100, 1]
+Output: 6
+        pay 1 at indices 0, 2, 4, 6, 7, 9
+```
+
+## Intuition
+
+The recursive statement is easy: to stand past the top you must have left either the last stair or the second-to-last. To reach *those*, the same question applies one step earlier.
+
+Written directly, that recursion recomputes the same stairs from both branches — the identical waste shown on the [dynamic programming](/docs/dynamic-programming) page.
+
+<Callout type="info" title="The insight">
+Ask *"what is the cheapest way to arrive at each stair?"* rather than *"where should I step next?"*
+
+You can only reach stair `i` from `i - 1` or `i - 2`. So:
+
+```text
+min_cost(i) = cost[i] + min( min_cost(i-1), min_cost(i-2) )
+              └ pay to     └ arrive as cheaply as possible
+                leave i
+```
+
+Both are smaller subproblems already answered. Work forwards and each is one lookup.
+</Callout>
+
+This is [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) with `+` swapped for `min`. Counting becomes optimising and nothing else changes — a substitution worth noticing, because it recurs across most of DP.
+
+### Where the answer lives
+
+The top is **past** the last stair. You can reach it from the last stair or the second-to-last, so the answer is `min(dp[n-1], dp[n-2])` — not simply the final cell.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Base cases: the first two stairs cost only themselves
+
+You may start at either, so arriving there is free beyond their own price.
+</Step>
+
+<Step>
+### For each later stair, take the cheaper arrival and add this stair's cost
+</Step>
+
+<Step>
+### The answer is the cheaper of the final two
+
+The top is beyond the array, reachable from either.
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title="cost = [10, 15, 20]"
+  frames={[
+    {
+      values: [10, 15, 20],
+      states: ["match", "match", "idle"],
+      pointers: [{ index: 0, label: "10" }, { index: 1, label: "15" }],
+      vars: { dp: "[10, 15, _]" },
+      note: "Base cases. Starting is free, so reaching stair 0 costs 10 and reaching stair 1 costs 15 — just their own prices.",
+    },
+    {
+      values: [10, 15, 20],
+      states: ["compare", "compare", "active"],
+      pointers: [{ index: 2, label: "i=2" }],
+      vars: { calc: "20 + min(15, 10) = 30", dp: "[10, 15, 30]" },
+      note: "Stair 2 is reachable from stair 1 (cost 15) or stair 0 (cost 10). Take the cheaper — 10 — then add this stair's own 20.",
+    },
+    {
+      values: [10, 15, 20],
+      states: ["discard", "match", "discard"],
+      vars: { answer: "min(30, 15) = 15" },
+      note: "The top is past index 2, reachable from stair 2 (30) or stair 1 (15). The answer is 15 — stair 2 is never stepped on at all.",
+    },
+  ]}
+  caption="The final answer skips the last stair entirely. Returning dp[n-1] would give 30 — the classic mistake on this problem."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def min_cost_climbing_stairs(cost: list[int]) -> int:
+    """Cheapest way to climb past the top of the staircase.
+
+    Only the previous two values are ever needed, so two variables
+    replace the table entirely.
+    """
+    prev2, prev1 = cost[0], cost[1]
+
+    for i in range(2, len(cost)):
+        prev2, prev1 = prev1, cost[i] + min(prev1, prev2)
+
+    return min(prev1, prev2)
+```
+
+The tuple assignment updates both at once. Written as two separate statements, `prev2` is overwritten before it is read — a bug that produces plausible-looking wrong answers.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function minCostClimbingStairs(cost: number[]): number {
+  let prev2 = cost[0];
+  let prev1 = cost[1];
+
+  for (let i = 2; i < cost.length; i++) {
+    const current = cost[i] + Math.min(prev1, prev2);
+    prev2 = prev1;
+    prev1 = current;
+  }
+
+  return Math.min(prev1, prev2);
+}
+```
+
+Without destructuring, the temporary `current` is what keeps the update order safe.
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="The full table version, for comparison">
+```text
+dp[0], dp[1] = cost[0], cost[1]
+for i in 2..n-1:
+    dp[i] = cost[i] + min(dp[i-1], dp[i-2])
+return min(dp[n-1], dp[n-2])
+```
+
+Identical logic, `O(n)` memory instead of `O(1)`. Write this first if the two-variable version feels like a trick — then notice only the last two entries are ever read, and collapse it.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+**Time** — one pass, one comparison and one addition per stair.
+
+**Space** — two variables. The table collapses because the recurrence never looks back further than two steps.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Two stairs: cost = [10, 15]">
+The loop never runs. The answer is `min(15, 10) = 10` — start at index 0, pay 10, jump two stairs to the top.
+</Accordion>
+
+<Accordion title="Why is the answer not dp[n-1]?">
+The destination is *past* the final stair, not on it. `[10, 15, 20]` gives `dp = [10, 15, 30]`, but the answer is 15 — jumping from stair 1 straight over stair 2.
+
+Returning `dp[n-1]` passes the second example and fails the first, which is what makes it easy to ship.
+</Accordion>
+
+<Accordion title="All costs equal: [1, 1, 1, 1]">
+`dp = [1, 1, 2, 2]`, answer `min(2, 2) = 2`. Two steps of two, paying at indices 0 and 2.
+</Accordion>
+
+<Accordion title="Why can we start at index 1 for free?">
+The problem says so explicitly. It is what makes both base cases the bare costs rather than one being built from the other — and why the answer checks the last two positions instead of one.
+</Accordion>
+
+<Accordion title="Would greedy work?">
+Not reliably. Greedy cannot see that a cheap step now leads into an expensive stretch, and no exchange argument is available — the test from [greedy](/docs/greedy). So DP is the correct tool.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) — the same recurrence, counting instead of minimising
+- [House Robber](/docs/dynamic-programming/house-robber) — another two-variable DP where the choice is skip or take
+- [Coin Change](/docs/dynamic-programming/coin-change) — minimising when greedy definitively fails

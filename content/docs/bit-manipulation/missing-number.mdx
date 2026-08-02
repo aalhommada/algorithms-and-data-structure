@@ -1,0 +1,228 @@
+---
+title: Missing Number
+description: Find the one number missing from 0..n, three different ways — and see why two of them cannot overflow
+difficulty: easy
+pattern: Bit Manipulation
+variant: XOR against the full range
+tags: ["Array", "Hash Table", "Math", "Bit Manipulation"]
+leetcode: https://leetcode.com/problems/missing-number/
+problemNumber: 268
+---
+
+## Problem Statement
+
+Given an array containing `n` distinct numbers taken from the range `0..n`, find the one number that is missing.
+
+```text
+Input:  nums = [3, 0, 1]          n = 3, range is 0..3
+Output: 2
+
+Input:  nums = [0, 1]             n = 2, range is 0..2
+Output: 2
+
+Input:  nums = [9,6,4,2,3,5,7,0,1]
+Output: 8
+```
+
+## Intuition
+
+Three solutions, and comparing them is the point of the problem.
+
+### The set
+
+Put everything in a set, then check `0..n` for the one that is absent. `O(n)` time, `O(n)` memory. Correct and unremarkable.
+
+### The sum
+
+The numbers `0..n` have a known total. Subtract what is actually there, and the difference is what is missing.
+
+```text
+nums = [3, 0, 1],  n = 3
+
+expected  0+1+2+3  =  6        (formula: n(n+1)/2)
+actual    3+0+1    =  4
+missing   6 - 4    =  2
+```
+
+`O(n)` time, `O(1)` memory, and it is genuinely elegant. But it builds a large intermediate value — for `n` = 100,000 the expected sum is about 5 billion — which overflows a 32-bit integer.
+
+### The XOR
+
+Same shape as the sum, but with an operation that cannot overflow.
+
+<Callout type="info" title="The insight">
+XOR everything in the array **and** every number in `0..n` into one running total.
+
+Every value that is present appears **twice** — once from the array, once from the range — and cancels itself. The missing number appears only once, from the range. It is the sole survivor.
+
+```text
+indices/range:  0 1 2 3
+array:          3 0 1
+
+0^1^2^3 ^ 3^0^1
+= (0^0) ^ (1^1) ^ (3^3) ^ 2
+=   0   ^   0   ^   0   ^ 2   =  2
+```
+</Callout>
+
+This is [Single Number](/docs/bit-manipulation/single-number) with a twist: there, the pairs were handed to you. Here you **create** the pairs by supplying the partners yourself.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start the total at `n`
+
+The range `0..n` has `n + 1` values but the array has only `n` slots. Seeding with `n` covers the extra one, so a single loop can then handle indices `0..n-1`.
+</Step>
+
+<Step>
+### For each index, XOR in both the index and the value there
+
+The index contributes a number from the range; the value contributes a number from the array.
+</Step>
+
+<Step>
+### Whatever is left is the missing number
+
+Everything present got XOR-ed exactly twice and cancelled. The absent value got XOR-ed once.
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title="nums = [3, 0, 1], missing from 0..3"
+  frames={[
+    {
+      values: [3, 0, 1],
+      states: ["idle", "idle", "idle"],
+      vars: { result: "3 (seeded with n)" },
+      note: "Seed with n = 3. The loop only covers indices 0, 1, 2 — so the value 3 from the range needs supplying up front.",
+    },
+    {
+      values: [3, 0, 1],
+      states: ["active", "idle", "idle"],
+      pointers: [{ index: 0, label: "i=0" }],
+      vars: { result: "3 ^ 0 ^ 3 = 0" },
+      note: "XOR in index 0 and value 3. The 3 meets the seeded 3 and cancels immediately.",
+    },
+    {
+      values: [3, 0, 1],
+      states: ["done", "active", "idle"],
+      pointers: [{ index: 1, label: "i=1" }],
+      vars: { result: "0 ^ 1 ^ 0 = 1" },
+      note: "XOR in index 1 and value 0. The 0s cancel each other.",
+    },
+    {
+      values: [3, 0, 1],
+      states: ["done", "done", "active"],
+      pointers: [{ index: 2, label: "i=2" }],
+      vars: { result: "1 ^ 2 ^ 1 = 2" },
+      note: "XOR in index 2 and value 1. The 1s cancel, and 2 — which is in the range but not the array — is left standing.",
+    },
+    {
+      values: [3, 0, 1],
+      states: ["discard", "discard", "discard"],
+      vars: { answer: 2 },
+      note: "Answer: 2. No sum was ever formed, so nothing could overflow however large n gets.",
+    },
+  ]}
+  caption="Every present value was XOR-ed exactly twice — once as a value, once as an index or seed."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def missing_number(nums: list[int]) -> int:
+    """Find the value missing from 0..n.
+
+    Every present value is XOR-ed twice (once as an index, once as a
+    value) and cancels. The missing one is XOR-ed only once.
+    """
+    result = len(nums)
+
+    for i, num in enumerate(nums):
+        result ^= i ^ num
+
+    return result
+```
+
+Python integers never overflow, so the sum version is also safe here:
+`n * (n + 1) // 2 - sum(nums)`. The XOR version is still preferable, because it ports to languages where the sum is not safe.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function missingNumber(nums: number[]): number {
+  let result = nums.length;
+
+  for (let i = 0; i < nums.length; i++) {
+    result ^= i ^ nums[i];
+  }
+
+  return result;
+}
+```
+
+Here the difference is real. JavaScript's bitwise operators use 32-bit integers, so XOR is exact — while `n * (n + 1) / 2` for large `n` runs into float precision.
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+**Time** — a single pass, two XORs per element.
+
+**Space** — one integer.
+
+<Callout type="info" title="The three solutions compared">
+| | Time | Space | Overflow risk | Needs sorting |
+|---|---|---|---|---|
+| Set | `O(n)` | `O(n)` | No | No |
+| Sum | `O(n)` | `O(1)` | **Yes** | No |
+| XOR | `O(n)` | `O(1)` | No | No |
+| Sort then scan | `O(n log n)` | `O(1)` | No | Yes |
+
+All four are correct. XOR is the only one with no cost and no caveat — which is why it is the answer worth remembering.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="The missing number is 0, e.g. [1]">
+`result` starts at `1` (the length). The loop XORs index `0` and value `1`: `1 ^ 0 ^ 1 = 0`. Returns `0`. Correct.
+</Accordion>
+
+<Accordion title="The missing number is n, e.g. [0, 1]">
+`result` starts at `2`. XOR-ing in `0^0` and `1^1` changes nothing, so `2` survives. Correct — and this is precisely why the seed is `n` rather than `0`.
+</Accordion>
+
+<Accordion title="A single element: [0]">
+Seed `1`, then `1 ^ 0 ^ 0 = 1`. Correct: the range is `0..1` and only `0` is present.
+</Accordion>
+
+<Accordion title="Why seed with n instead of starting at 0?">
+The array has `n` slots but the range has `n + 1` values. Looping over indices supplies `0..n-1`, leaving `n` unaccounted for. Seeding with it is cheaper than a second loop or an off-by-one adjustment.
+
+Try it with `nums = [0, 1]` seeded at `0` — the answer comes out `0`, not `2`.
+</Accordion>
+
+<Accordion title="Does the input order matter?">
+No. XOR is commutative, so the array can be shuffled arbitrarily. That is what makes this `O(n)` where a "check for gaps" solution would need sorting first.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Single Number](/docs/bit-manipulation/single-number) — the same cancellation, with the pairs already present
+- [Find Pivot Index](/docs/arrays/find-pivot-index) — another "expected total minus actual" argument
+- [Contains Duplicate](/docs/arrays/contains-duplicate) — the set-based approach, when memory is not restricted

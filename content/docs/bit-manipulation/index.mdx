@@ -1,0 +1,205 @@
+---
+title: Bit Manipulation
+description: Treating a number as a row of switches — the operators, what each one is actually for, and the tricks worth memorising
+---
+
+Every whole number is stored as a row of **bits** — switches that are either 0 or 1. Usually you ignore this and treat the number as a number. Bit manipulation is what happens when you stop ignoring it.
+
+The payoff is narrow but real: some problems that look like they need a hash map and `O(n)` memory collapse into a few operations and no memory at all.
+
+## What a Number Actually Looks Like
+
+<ArrayDiagram
+  title="The number 13, in bits"
+  values={[0, 0, 0, 0, 1, 1, 0, 1]}
+  states={["idle", "idle", "idle", "idle", "match", "match", "idle", "match"]}
+  caption="Reading right to left, each position is worth double the one before: 8 + 4 + 1 = 13."
+/>
+
+```text
+position:   7   6   5   4   3   2   1   0
+worth:    128  64  32  16   8   4   2   1
+bits:       0   0   0   0   1   1   0   1     =  8 + 4 + 1  =  13
+```
+
+Positions are counted **from the right, starting at 0** — the same reason array indices start at 0. Bit 0 is the rightmost, worth 1.
+
+<Callout type="info" title="Why binary at all">
+A wire is either carrying current or not. There is no reliable "a bit more than half" state, so hardware stores everything in twos. A 32-bit integer is 32 of these wires side by side.
+
+That is the whole reason this topic exists — you are working with the representation the machine actually uses.
+</Callout>
+
+## The Operators
+
+Five of them. Each one does the same thing to every position at once.
+
+### AND — `&`
+
+1 only where **both** are 1.
+
+```text
+  1 1 0 1     (13)
+& 1 0 1 1     (11)
+  -------
+  1 0 0 1     (9)
+```
+
+**What it is for:** checking or clearing bits. `n & 1` asks "is the last bit set?" — which is exactly "is `n` odd?"
+
+### OR — `|`
+
+1 where **either** is 1.
+
+```text
+  1 1 0 1     (13)
+| 1 0 1 1     (11)
+  -------
+  1 1 1 1     (15)
+```
+
+**What it is for:** turning bits on without disturbing the others.
+
+### XOR — `^`
+
+1 where the bits **differ**. This is the interesting one.
+
+```text
+  1 1 0 1     (13)
+^ 1 0 1 1     (11)
+  -------
+  0 1 1 0     (6)
+```
+
+**What it is for:** cancelling. See below — XOR carries most of this section.
+
+### NOT — `~`
+
+Flip every bit. In both languages this gives a negative number, because the leftmost bit signals the sign.
+
+### Shifts — `<<` and `>>`
+
+Slide every bit left or right.
+
+```text
+  1 1 0 1  = 13
+  1 1 0 1 << 1  →  1 1 0 1 0  = 26      left shift  = × 2
+  1 1 0 1 >> 1  →    1 1 0    = 6       right shift = ÷ 2, rounding down
+```
+
+**What it is for:** building a mask for a chosen position. `1 << 3` is a number with only bit 3 set.
+
+## XOR Is the One That Matters
+
+Three properties, and together they solve a surprising number of problems.
+
+<Callout type="info" title="The three rules">
+| Rule | Meaning |
+|---|---|
+| `x ^ x = 0` | Anything XOR itself cancels to nothing |
+| `x ^ 0 = x` | XOR with nothing changes nothing |
+| Order does not matter | `a ^ b ^ c` is the same in any order |
+
+Put them together: **XOR every number in a list, and anything appearing twice disappears.** Only the odd ones out survive.
+</Callout>
+
+<ArrayViz
+  title="XOR-ing [4, 1, 2, 1, 2] — the pairs cancel themselves"
+  frames={[
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["active", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { total: "0 ^ 4 = 4" },
+      note: "Start with 0 and XOR each value in turn.",
+    },
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["done", "active", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { total: "4 ^ 1 = 5" },
+      note: "The running total is a mixture of everything so far. It looks meaningless — that is fine.",
+    },
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["done", "done", "active", "idle", "idle"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { total: "5 ^ 2 = 7" },
+      note: "Still mixed.",
+    },
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["done", "discard", "done", "discard", "idle"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { total: "7 ^ 1 = 6" },
+      note: "The second 1 arrives and cancels the first — even though they were not next to each other. Order never mattered.",
+    },
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["match", "discard", "discard", "discard", "discard"],
+      pointers: [{ index: 4, label: "i" }],
+      vars: { total: "6 ^ 2 = 4" },
+      note: "The second 2 cancels the first. Every pair is gone and only 4 — the unpaired value — is left.",
+    },
+  ]}
+  caption="No hash map, no sorting, no extra memory. One variable and one pass."
+/>
+
+## Tricks Worth Memorising
+
+| Trick | Does | Why it works |
+|---|---|---|
+| `n & 1` | Is `n` odd? | Only the last bit decides oddness |
+| `n >> 1` | Divide by 2 | Every bit slides one place down |
+| `n & (n - 1)` | Clears the **lowest set bit** | See below |
+| `n & (n - 1) == 0` | Is `n` a power of two? | Powers of two have exactly one bit set |
+| `n & -n` | Isolates the lowest set bit | Leaves only the rightmost 1 |
+| `1 << k` | A mask for position `k` | A single 1, `k` places from the right |
+
+<Callout type="info" title="Why `n & (n - 1)` clears the lowest 1">
+Subtracting 1 flips the lowest set bit to 0 and turns every 0 below it into 1:
+
+```text
+n      = 1 0 1 1 0 0        (44)
+n - 1  = 1 0 1 0 1 1        (43)   ← lowest 1 flipped, zeros below became ones
+n&(n-1)= 1 0 1 0 0 0        (40)   ← ANDing keeps only what they agree on
+```
+
+The lowest 1 is the only bit they disagree about, so it is the only one removed. Everything above is untouched.
+
+This turns "count the set bits" into a loop that runs **once per set bit** instead of once per position.
+</Callout>
+
+## Language Notes
+
+<Callout type="warn" title="JavaScript bitwise operators are 32-bit">
+Numbers in JavaScript are 64-bit floats, but `&`, `|`, `^`, `<<` and `>>` convert to **32-bit signed integers** first. Values above 2³¹ - 1 wrap around and go negative.
+
+Use `>>>` (unsigned right shift) when you want to treat the value as unsigned — this is what most bit-counting loops need.
+
+Python integers are arbitrary precision, so they never overflow — but `~n` still gives a negative number, and a right shift on a negative number keeps the sign.
+</Callout>
+
+| Operation | Python | TypeScript |
+|---|---|---|
+| Count set bits | `bin(n).count("1")` | `n.toString(2).split("0").join("").length` |
+| Unsigned right shift | not needed | `n >>> 1` |
+| Integer division by 2 | `n // 2` | `Math.floor(n / 2)` or `n >> 1` |
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [Single Number](/docs/bit-manipulation/single-number) | Easy | XOR cancellation |
+| [Number of 1 Bits](/docs/bit-manipulation/number-of-1-bits) | Easy | Clearing the lowest bit |
+| [Counting Bits](/docs/bit-manipulation/counting-bits) | Easy | DP on bits |
+| [Missing Number](/docs/bit-manipulation/missing-number) | Easy | XOR against the full range |
+
+<Callout type="info" title="Suggested order">
+[Single Number](/docs/bit-manipulation/single-number) first — it teaches XOR cancellation, which [Missing Number](/docs/bit-manipulation/missing-number) then reuses in a cleverer way. [Number of 1 Bits](/docs/bit-manipulation/number-of-1-bits) introduces `n & (n - 1)`, and [Counting Bits](/docs/bit-manipulation/counting-bits) combines it with dynamic programming.
+</Callout>
+
+## Related Elsewhere
+
+- [Hash Map](/docs/arrays/two-sum) — the `O(n)`-memory solution that bit tricks replace
+- [Patterns](/docs/patterns) — where this technique sits among the others

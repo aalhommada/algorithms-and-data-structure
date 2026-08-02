@@ -162,6 +162,22 @@ When a greedy choice is provably safe, take it. DP is the fallback for when it i
 | Problem | Difficulty | Recurrence |
 |---|---|---|
 | [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) | Easy | `f(n) = f(n-1) + f(n-2)` |
+| [Min Cost Climbing Stairs](/docs/dynamic-programming/min-cost-climbing-stairs) | Easy | `f(i) = cost[i] + min(f(i-1), f(i-2))` |
+| [House Robber](/docs/dynamic-programming/house-robber) | Medium | `f(i) = max(f(i-1), f(i-2) + nums[i])` |
+| [Coin Change](/docs/dynamic-programming/coin-change) | Medium | `f(a) = 1 + min(f(a - c)) over coins c` |
+| [Longest Increasing Subsequence](/docs/dynamic-programming/longest-increasing-subsequence) | Medium | `f(i) = 1 + max(f(j)) where nums[j] < nums[i]` |
+| [Unique Paths](/docs/dynamic-programming/unique-paths) | Medium | `f(r,c) = f(r-1,c) + f(r,c-1)` |
+| [Longest Common Subsequence](/docs/dynamic-programming/longest-common-subsequence) | Medium | `f(i,j) = f(i-1,j-1)+1` or `max(f(i-1,j), f(i,j-1))` |
+| [Word Break](/docs/dynamic-programming/word-break) | Medium | `ok(i) = any(ok(j) and s[j:i] in words)` |
+
+<Callout type="info" title="One dimension or two">
+| Recurrence looks back at | Table | Examples |
+|---|---|---|
+| Earlier positions in **one** sequence | 1-D array | Climbing Stairs, House Robber, Coin Change |
+| Prefixes of **two** sequences, or a grid | 2-D table | Unique Paths, Longest Common Subsequence |
+
+The tell is in the problem statement. Two inputs to compare, or a grid to cross, almost always means two dimensions — because the subproblem needs a position in each.
+</Callout>
 
 ## Related Elsewhere
 

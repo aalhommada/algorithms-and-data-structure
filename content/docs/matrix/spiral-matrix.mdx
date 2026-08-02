@@ -1,0 +1,306 @@
+---
+title: Spiral Matrix
+description: Walk a grid in a spiral using four shrinking boundaries — and see why the last two walks need a guard
+difficulty: medium
+pattern: Matrix
+variant: shrinking boundaries
+tags: ["Array", "Matrix", "Simulation"]
+leetcode: https://leetcode.com/problems/spiral-matrix/
+problemNumber: 54
+---
+
+## Problem Statement
+
+Return all elements of the matrix in spiral order: across the top, down the right, back along the bottom, up the left, then inward.
+
+```text
+Input:  [[1, 2, 3],
+         [4, 5, 6],
+         [7, 8, 9]]
+
+Output: [1, 2, 3, 6, 9, 8, 7, 4, 5]
+
+Input:  [[1, 2, 3, 4],
+         [5, 6, 7, 8],
+         [9,10,11,12]]
+
+Output: [1,2,3,4,8,12,11,10,9,5,6,7]
+```
+
+## Intuition
+
+The tempting approach: track a direction, move until you hit a wall or a visited cell, then turn right. It works, but it needs a `visited` grid — `O(n²)` extra memory — and the turning logic is easy to get subtly wrong.
+
+<Callout type="info" title="The insight">
+Do not track a direction. Track **four boundaries** and shrink them.
+
+```text
+top, bottom, left, right
+
+walk the top row      left → right     then top++
+walk the right column top → bottom     then right--
+walk the bottom row   right → left     then bottom--
+walk the left column  bottom → top     then left++
+```
+
+Each walk consumes an entire edge, then that edge is removed from consideration by moving its boundary inward. The boundaries close in, and the loop ends when they cross.
+
+No visited grid, no direction variable, `O(1)` extra space.
+</Callout>
+
+The spiral is not a clever traversal — it is four straightforward walks, repeated on a shrinking rectangle.
+
+## The Guard That Everyone Misses
+
+After the first two walks, the rectangle may have collapsed to a single row or column. Walking back along it would emit the same values a second time.
+
+```text
+Single row [1, 2, 3]:
+
+  top row      → 1, 2, 3      top becomes 1, bottom is still 0
+  right column → nothing (top > bottom)
+  bottom row   → 3, 2, 1      WRONG — re-emits the same row backwards
+```
+
+<Callout type="warn" title="Check the boundaries again before the last two walks">
+```text
+if top <= bottom:    walk the bottom row
+if left <= right:    walk the left column
+```
+
+The first two walks need no guard, because the `while` condition already validated the rectangle. But `top++` and `right--` happen *inside* the iteration, so by the time the third and fourth walks run, the rectangle may no longer exist.
+
+Symptom: extra elements in the output, only on inputs with a single row or column, or an odd-sized centre.
+</Callout>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Set the four boundaries to the grid's edges
+</Step>
+
+<Step>
+### While `top <= bottom` and `left <= right`, do four walks
+
+Top row rightwards, right column downwards, bottom row leftwards, left column upwards.
+</Step>
+
+<Step>
+### Move each boundary inward immediately after its walk
+</Step>
+
+<Step>
+### Guard the third and fourth walks
+
+The rectangle may have collapsed since the loop condition was checked.
+</Step>
+
+</Steps>
+
+<GridViz
+  title="Spiralling a 3 × 3 grid"
+  frames={[
+    {
+      cells: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+      ],
+      states: [
+        ["match", "match", "match"],
+        ["idle", "idle", "idle"],
+        ["idle", "idle", "idle"],
+      ],
+      output: [1, 2, 3],
+      vars: { walk: "top row →", bounds: "top=1 bottom=2 left=0 right=2" },
+      note: "Walk the top row left to right, then move `top` down to 1. Row 0 is now out of play permanently.",
+    },
+    {
+      cells: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["idle", "idle", "match"],
+        ["idle", "idle", "match"],
+      ],
+      output: [1, 2, 3, 6, 9],
+      vars: { walk: "right column ↓", bounds: "right=1" },
+      note: "Walk the right column downwards, from the new top. Then move `right` inward to 1.",
+    },
+    {
+      cells: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["idle", "idle", "done"],
+        ["match", "match", "done"],
+      ],
+      output: [1, 2, 3, 6, 9, 8, 7],
+      vars: { walk: "bottom row ←", check: "top(1) <= bottom(2) ✓" },
+      note: "The guard passes, so walk the bottom row backwards. Then `bottom` moves up to 1.",
+    },
+    {
+      cells: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["match", "idle", "done"],
+        ["done", "done", "done"],
+      ],
+      output: [1, 2, 3, 6, 9, 8, 7, 4],
+      vars: { walk: "left column ↑", check: "left(0) <= right(1) ✓" },
+      note: "Walk the left column upwards — one cell, the 4. Then `left` moves right to 1.",
+    },
+    {
+      cells: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["done", "match", "done"],
+        ["done", "done", "done"],
+      ],
+      output: [1, 2, 3, 6, 9, 8, 7, 4, 5],
+      vars: { bounds: "top=1 bottom=1 left=1 right=1" },
+      note: "Second iteration: the rectangle is the single cell 5. The top-row walk takes it, and the guards then stop the other three walks from re-emitting it.",
+    },
+  ]}
+  caption="The final centre cell is exactly where the guards earn their place — without them, 5 would appear up to three times."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def spiral_order(matrix: list[list[int]]) -> list[int]:
+    """Return the matrix elements in spiral order."""
+    if not matrix or not matrix[0]:
+        return []
+
+    result: list[int] = []
+    top, bottom = 0, len(matrix) - 1
+    left, right = 0, len(matrix[0]) - 1
+
+    while top <= bottom and left <= right:
+        for c in range(left, right + 1):
+            result.append(matrix[top][c])
+        top += 1
+
+        for r in range(top, bottom + 1):
+            result.append(matrix[r][right])
+        right -= 1
+
+        # The rectangle may have collapsed since the while check.
+        if top <= bottom:
+            for c in range(right, left - 1, -1):
+                result.append(matrix[bottom][c])
+            bottom -= 1
+
+        if left <= right:
+            for r in range(bottom, top - 1, -1):
+                result.append(matrix[r][left])
+            left += 1
+
+    return result
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function spiralOrder(matrix: number[][]): number[] {
+  if (matrix.length === 0 || matrix[0].length === 0) return [];
+
+  const result: number[] = [];
+  let top = 0;
+  let bottom = matrix.length - 1;
+  let left = 0;
+  let right = matrix[0].length - 1;
+
+  while (top <= bottom && left <= right) {
+    for (let c = left; c <= right; c++) result.push(matrix[top][c]);
+    top++;
+
+    for (let r = top; r <= bottom; r++) result.push(matrix[r][right]);
+    right--;
+
+    if (top <= bottom) {
+      for (let c = right; c >= left; c--) result.push(matrix[bottom][c]);
+      bottom--;
+    }
+
+    if (left <= right) {
+      for (let r = bottom; r >= top; r--) result.push(matrix[r][left]);
+      left++;
+    }
+  }
+
+  return result;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(rows × cols)" space="O(1)" />
+
+**Time** — every cell is appended exactly once. That is optimal, since all of them appear in the output.
+
+**Space** — four integers. The output does not count as extra space, since it is what was asked for. Compare with the direction-tracking version, which needs an `O(rows × cols)` visited grid.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty matrix or empty rows">
+The guard returns `[]`. Without checking `matrix[0]`, an input like `[[]]` would throw when computing `right`.
+</Accordion>
+
+<Accordion title="A single row: [[1, 2, 3]]">
+The top walk emits all three and sets `top = 1`. The right-column walk emits nothing since `top > bottom`. The bottom guard `top <= bottom` is now **false**, so the row is not re-emitted.
+
+This input alone catches the missing-guard bug.
+</Accordion>
+
+<Accordion title="A single column: [[1], [2], [3]]">
+The top walk takes `1`. The right-column walk takes `2` and `3`, then `right` becomes -1. The `left <= right` guard is false, so the column is not walked back up.
+</Accordion>
+
+<Accordion title="A 1 × 1 matrix">
+The top walk takes the only cell, `top` becomes 1 and exceeds `bottom`. Both guards fail, the loop condition fails, and the single value is returned once.
+</Accordion>
+
+<Accordion title="An even-sized square, e.g. 4 × 4">
+The spiral closes cleanly with no lone centre cell, so the guards happen never to be needed. That is why testing only even squares hides the bug — always test a 3×3 and a single row.
+</Accordion>
+
+<Accordion title="Why does the right-column walk start at the new top?">
+`top` was already incremented, so the corner cell was emitted by the top-row walk. Starting at the old `top` would emit it twice.
+
+Each boundary move is what prevents the corners being double-counted.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Rotate Image](/docs/matrix/rotate-image) — another in-place grid transform built from simple steps
+- [Transpose Matrix](/docs/matrix/transpose-matrix) — the index arithmetic underneath
+- [Matrix](/docs/matrix) — the boundary technique in general

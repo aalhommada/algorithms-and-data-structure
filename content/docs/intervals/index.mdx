@@ -1,0 +1,155 @@
+---
+title: Intervals
+description: Ranges with a start and an end — sorting them, testing overlap, and the two rules that solve almost every interval problem
+---
+
+An interval is a pair: a start and an end. `[3, 7]` means "from 3 to 7". Meetings, bookings, time ranges and number ranges are all intervals, and they share a small set of techniques.
+
+Almost every problem here reduces to two questions: **do these two overlap?** and **what order should I look at them in?**
+
+## What an Interval Problem Looks Like
+
+<ArrayDiagram
+  title="Four intervals on a number line"
+  values={["[1,3]", "[2,6]", "[8,10]", "[15,18]"]}
+  states={["compare", "compare", "idle", "idle"]}
+  caption="The first two share the range 2 to 3 — they overlap. The others sit alone."
+/>
+
+```text
+0    2    4    6    8   10   12   14   16   18
+|----|----|----|----|----|----|----|----|----|
+ ███████                                          [1,3]
+     ████████████                                 [2,6]     ← overlaps [1,3]
+                     ██████                       [8,10]
+                                        ████████  [15,18]
+```
+
+Drawn on a line, the answer is usually obvious. The work is turning "obvious when drawn" into a rule a loop can apply.
+
+## The Overlap Test
+
+This is the one piece of logic every interval problem needs, and it is easier to get right backwards.
+
+<Callout type="info" title="Two intervals overlap unless one ends before the other starts">
+```text
+a = [a_start, a_end]
+b = [b_start, b_end]
+
+NO overlap if:   a_end < b_start        a is entirely left of b
+            or:  b_end < a_start        b is entirely left of a
+
+So they DO overlap when:
+     a_start <= b_end  AND  b_start <= a_end
+```
+
+Trying to enumerate the overlapping arrangements directly gives you four or five cases and at least one bug. There are only **two** ways to *not* overlap, so define it by exclusion.
+</Callout>
+
+```text
+CASE          PICTURE              OVERLAP?
+separate      ███      ███         no
+touching      ███████              yes, at one point
+partial       █████                yes
+                ██████
+contained     █████████            yes
+                ███
+identical     ██████               yes
+              ██████
+```
+
+<Callout type="warn" title="Decide whether touching counts">
+Do `[1, 3]` and `[3, 5]` overlap? It depends on what the numbers mean.
+
+| If the interval is | `[1,3]` and `[3,5]` | Use |
+|---|---|---|
+| A closed range of numbers | Overlap at the point 3 | `<=` |
+| A meeting from 1 to 3 o'clock | Do **not** clash — one ends as the other starts | `<` |
+
+The problem statement rarely says outright. Get it wrong and you fail exactly the test cases that touch at a boundary — which are the ones the author included on purpose.
+</Callout>
+
+## Rule One: Sort First, Almost Always
+
+An unsorted list of intervals forces you to compare every pair — `O(n²)`. Sorting by start time means **anything that overlaps the current interval must come next**, so one pass is enough.
+
+<Callout type="info" title="Why sorting by start is what makes one pass work">
+After sorting, if interval `i` does not overlap interval `i + 1`, it cannot overlap `i + 2` either — because `i + 2` starts even later.
+
+That is the guarantee that lets you stop looking. Without it you can never rule out a later interval, and the inner loop cannot be removed.
+</Callout>
+
+**Sort by start** for merging and combining. **Sort by end** for "how many can I fit" — see the greedy note below.
+
+## Rule Two: Keep One Interval Open
+
+The shape of a merge loop is always the same:
+
+```text
+sort by start
+current = first interval
+
+for each remaining interval:
+    if it overlaps current:
+        current.end = max(current.end, its end)      ← extend
+    else:
+        output current                                ← close and move on
+        current = it
+
+output current                                        ← don't forget the last one
+```
+
+<Callout type="warn" title="`max` is not optional">
+When extending, the new end must be `max(current.end, next.end)`.
+
+Consider `[1, 10]` and `[2, 3]`. The second is entirely inside the first. Writing `current.end = next.end` would shrink the merged interval to `[1, 3]` and silently lose everything from 3 to 10.
+
+The containment case is the one that catches people, and it is invisible unless a test includes it.
+</Callout>
+
+The final output after the loop is also easy to forget. The last interval is still open when the loop ends, and nothing inside the loop will ever close it.
+
+## When It Is a Greedy Problem
+
+Some interval questions ask *"what is the most I can fit without overlaps?"* — meeting rooms, non-overlapping intervals, activity selection.
+
+These are [greedy](/docs/greedy), and the safe choice is counter-intuitive:
+
+<Callout type="info" title="Sort by END time, then always take the earliest-ending option">
+Picking the interval that **finishes soonest** leaves the most room for everything after it.
+
+Sorting by start and taking the earliest start fails: one long early interval can swallow several short ones. Sorting by length also fails. Only "earliest end" is provably safe.
+
+The exchange argument: take any optimal answer. Its first interval ends no earlier than the greedy pick. Swapping the greedy one in cannot cause a conflict — it frees up at least as much space. So the greedy choice is never worse.
+</Callout>
+
+## The Recognition Table
+
+| The problem says | Sort by | Then |
+|---|---|---|
+| "merge overlapping…" | start | Extend or close, one pass |
+| "insert a new interval" | already sorted | Three phases: before, merge, after |
+| "minimum rooms needed" | start and end separately | Sweep line, or two pointers |
+| "maximum you can attend" | **end** | Greedy: take earliest end |
+| "minimum to remove" | **end** | Same greedy, count what you skip |
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [Summary Ranges](/docs/intervals/summary-ranges) | Easy | Building intervals from a run |
+| [Merge Intervals](/docs/intervals/merge-intervals) | Medium | Sort by start, then merge |
+| [Insert Interval](/docs/intervals/insert-interval) | Medium | Three-phase scan |
+| [Non-overlapping Intervals](/docs/intervals/non-overlapping-intervals) | Medium | Greedy on end times |
+
+<Callout type="info" title="Suggested order">
+[Summary Ranges](/docs/intervals/summary-ranges) first — it builds intervals rather than merging them, which makes the start/end bookkeeping obvious with nothing else going on.
+
+Then [Merge Intervals](/docs/intervals/merge-intervals), which is the archetype. [Insert Interval](/docs/intervals/insert-interval) is the same logic with the sort already done for you, and [Non-overlapping Intervals](/docs/intervals/non-overlapping-intervals) switches to the greedy sort-by-end family.
+</Callout>
+
+## Related Elsewhere
+
+- [Greedy](/docs/greedy) — why "earliest end first" is provably safe
+- [Sorting](/docs/patterns) — the preprocessing step that makes one pass possible
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — combining two ordered sequences in one walk

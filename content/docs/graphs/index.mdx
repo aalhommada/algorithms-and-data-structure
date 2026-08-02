@@ -443,6 +443,19 @@ Recognising this saves you from writing a traversal you did not need. When a pro
 | Problem | Difficulty | Pattern |
 |---|---|---|
 | [Find the Town Judge](/docs/graphs/find-the-town-judge) | Easy | Degree Counting |
+| [Flood Fill](/docs/graphs/flood-fill) | Easy | DFS on a grid |
+| [Number of Islands](/docs/graphs/number-of-islands) | Medium | Flood fill, repeated |
+| [Rotting Oranges](/docs/graphs/rotting-oranges) | Medium | Multi-source BFS |
+| [Clone Graph](/docs/graphs/clone-graph) | Medium | DFS with an identity map |
+| [Number of Provinces](/docs/graphs/number-of-provinces) | Medium | Union-Find |
+| [Redundant Connection](/docs/graphs/redundant-connection) | Medium | Union-Find |
+| [Course Schedule](/docs/graphs/course-schedule) | Medium | Topological sort |
+
+<Callout type="info" title="Suggested order">
+[Flood Fill](/docs/graphs/flood-fill) first — it is a grid traversal with nothing else going on, so the "mark it visited on arrival" rule is impossible to miss.
+
+Then [Number of Islands](/docs/graphs/number-of-islands), which is that same fill run repeatedly. [Rotting Oranges](/docs/graphs/rotting-oranges) forces BFS specifically, because the answer is a distance. [Clone Graph](/docs/graphs/clone-graph) shows where a visited *set* is not enough and a visited *map* is required.
+</Callout>
 
 ## Related Elsewhere
 

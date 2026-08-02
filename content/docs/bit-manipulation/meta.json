@@ -1,0 +1,12 @@
+{
+  "title": "Bit Manipulation",
+  "icon": "Binary",
+  "pages": [
+    "index",
+    "---Easy---",
+    "single-number",
+    "number-of-1-bits",
+    "counting-bits",
+    "missing-number"
+  ]
+}

@@ -1,0 +1,287 @@
+---
+title: Longest Common Subsequence
+description: The 2-D DP table that underlies diff tools — compare two strings by asking one question per character pair
+difficulty: medium
+pattern: Dynamic Programming
+variant: two-sequence table
+tags: ["String", "Dynamic Programming"]
+leetcode: https://leetcode.com/problems/longest-common-subsequence/
+problemNumber: 1143
+---
+
+## Problem Statement
+
+Return the length of the longest **subsequence** present in both strings. A subsequence keeps the original order but may skip characters.
+
+```text
+Input:  text1 = "abcde", text2 = "ace"
+Output: 3          "ace"
+
+Input:  text1 = "abc", text2 = "abc"
+Output: 3
+
+Input:  text1 = "abc", text2 = "def"
+Output: 0
+```
+
+<Callout type="warn" title="Subsequence, not substring">
+`"ace"` is a subsequence of `"abcde"` — the characters appear in order with gaps. It is **not** a substring, because substrings must be contiguous.
+
+That distinction decides the whole approach. Substring problems often yield to a [sliding window](/docs/patterns); subsequence problems almost never do, because gaps mean there are `2ⁿ` possibilities rather than `n²`.
+</Callout>
+
+## Intuition
+
+Brute force: generate every subsequence of the first string and check each against the second. There are `2ⁿ` of them. At 20 characters that is a million; at 1,000 it is beyond counting.
+
+Instead, look at just the **last character of each string**. There are only two cases.
+
+```text
+"abcde"  vs  "ace"
+      ↑          ↑
+      e          e      SAME
+```
+
+If the last characters match, that character is definitely in the answer — so the answer is `1 +` the LCS of both strings with that character removed.
+
+```text
+"abcd"  vs  "ace"
+     ↑         ↑
+     d         e        DIFFERENT
+```
+
+If they differ, at least one of them is not in the answer. Try dropping each and keep the better result: `max(LCS without d, LCS without e)`.
+
+<Callout type="info" title="The insight">
+```text
+if a[i] == b[j]:  lcs(i, j) = 1 + lcs(i-1, j-1)      ← both shrink
+else:             lcs(i, j) = max(lcs(i-1, j),        ← drop from a
+                                  lcs(i, j-1))        ← drop from b
+```
+
+Every subproblem is "some prefix of A against some prefix of B" — and there are only `m × n` such pairs. The `2ⁿ` explosion was almost entirely recomputation.
+</Callout>
+
+That is the move worth taking away: **when a problem compares two sequences, the subproblem is usually a pair of prefixes.** A 2-D table follows automatically.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Build an `(m+1) × (n+1)` table
+
+The extra row and column represent "an empty prefix", which makes the base cases free — an empty string shares nothing with anything, so those are all `0`.
+</Step>
+
+<Step>
+### Fill row by row
+
+Row `i`, column `j` answers: *what is the LCS of the first `i` characters of A and the first `j` of B?*
+</Step>
+
+<Step>
+### Characters match → take the diagonal plus one
+
+`table[i][j] = table[i-1][j-1] + 1`. The diagonal is "both strings one shorter".
+</Step>
+
+<Step>
+### Characters differ → take the better neighbour
+
+`table[i][j] = max(table[i-1][j], table[i][j-1])` — above means "skip A's character", left means "skip B's".
+</Step>
+
+<Step>
+### The bottom-right cell is the answer
+</Step>
+
+</Steps>
+
+<GridViz
+  title='text1 = "ace" (rows), text2 = "abcde" (columns)'
+  frames={[
+    {
+      cells: [
+        ["", "", "", "", "", ""],
+        ["", 0, 0, 0, 0, 0],
+        ["", 0, 0, 0, 0, 0],
+        ["", 0, 0, 0, 0, 0],
+      ],
+      states: [
+        ["idle", "idle", "idle", "idle", "idle", "idle"],
+        ["match", "idle", "idle", "idle", "idle", "idle"],
+        ["match", "idle", "idle", "idle", "idle", "idle"],
+        ["match", "idle", "idle", "idle", "idle", "idle"],
+      ],
+      vars: { setup: "row 0 and column 0 are all zero" },
+      note: "The padding row and column mean 'compared against an empty string'. Nothing is in common with nothing, so they are 0 — and no special case is needed later.",
+    },
+    {
+      cells: [
+        ["", "", "", "", "", ""],
+        ["", 1, 1, 1, 1, 1],
+        ["", 0, 0, 0, 0, 0],
+        ["", 0, 0, 0, 0, 0],
+      ],
+      states: [
+        ["idle", "idle", "idle", "idle", "idle", "idle"],
+        ["idle", "match", "compare", "compare", "compare", "compare"],
+        ["idle", "idle", "idle", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "idle", "idle", "idle"],
+      ],
+      cursor: { row: 1, col: 1 },
+      vars: { row: "'a' vs abcde" },
+      note: "'a' matches 'a' at the first column → 1. After that nothing new matches, so the value carries across unchanged.",
+    },
+    {
+      cells: [
+        ["", "", "", "", "", ""],
+        ["", 1, 1, 1, 1, 1],
+        ["", 1, 1, 2, 2, 2],
+        ["", 0, 0, 0, 0, 0],
+      ],
+      states: [
+        ["idle", "idle", "idle", "idle", "idle", "idle"],
+        ["idle", "idle", "compare", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "match", "compare", "compare"],
+        ["idle", "idle", "idle", "idle", "idle", "idle"],
+      ],
+      cursor: { row: 2, col: 3 },
+      vars: { calc: "'c' == 'c' → diagonal 1 + 1 = 2" },
+      note: "'c' matches 'c'. Take the DIAGONAL — the answer for 'a' vs 'ab' — and add one. Using the cell above would double-count.",
+    },
+    {
+      cells: [
+        ["", "", "", "", "", ""],
+        ["", 1, 1, 1, 1, 1],
+        ["", 1, 1, 2, 2, 2],
+        ["", 1, 1, 2, 2, 3],
+      ],
+      states: [
+        ["idle", "idle", "idle", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "idle", "compare", "idle"],
+        ["idle", "idle", "idle", "idle", "compare", "match"],
+      ],
+      cursor: { row: 3, col: 5 },
+      vars: { calc: "'e' == 'e' → 2 + 1 = 3", answer: 3 },
+      note: "'e' matches 'e' at the last column: diagonal 2 plus 1 = 3. The bottom-right cell holds the answer — 'ace', length 3.",
+    },
+  ]}
+  caption="15 cells, one comparison each. The brute force would have tested 8 subsequences of 'ace' against 32 of 'abcde'."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def longest_common_subsequence(text1: str, text2: str) -> int:
+    """Length of the longest subsequence common to both strings.
+
+    table[i][j] = LCS of text1[:i] and text2[:j]. The extra row and
+    column of zeros represent empty prefixes.
+    """
+    m, n = len(text1), len(text2)
+    table = [[0] * (n + 1) for _ in range(m + 1)]
+
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if text1[i - 1] == text2[j - 1]:
+                table[i][j] = table[i - 1][j - 1] + 1
+            else:
+                table[i][j] = max(table[i - 1][j], table[i][j - 1])
+
+    return table[m][n]
+```
+
+Note `text1[i - 1]`: the table is 1-indexed because of the padding row, while the string is 0-indexed. Mixing these up is the most common bug on this problem.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function longestCommonSubsequence(text1: string, text2: string): number {
+  const m = text1.length;
+  const n = text2.length;
+  const table: number[][] = Array.from({ length: m + 1 }, () =>
+    new Array<number>(n + 1).fill(0),
+  );
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (text1[i - 1] === text2[j - 1]) {
+        table[i][j] = table[i - 1][j - 1] + 1;
+      } else {
+        table[i][j] = Math.max(table[i - 1][j], table[i][j - 1]);
+      }
+    }
+  }
+
+  return table[m][n];
+}
+```
+
+Use `Array.from` — `new Array(m).fill(new Array(n))` shares one row object across every slot.
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why the padding row and column are worth the extra memory">
+Without them, every cell touching an edge needs a bounds check:
+
+```text
+top = table[i-1][j] if i > 0 else 0
+left = table[i][j-1] if j > 0 else 0
+```
+
+With them, `table[0][j]` and `table[i][0]` are real cells that already hold `0`. The loop body has no conditionals about position at all.
+
+Trading one row and one column for the removal of every edge case is nearly always worth it in 2-D DP.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(m × n)" space="O(m × n)" />
+
+**Time** — every cell filled once with one comparison. For two 1,000-character strings that is a million operations, against `2¹⁰⁰⁰` for the brute force.
+
+**Space** — the table. Reducible to `O(min(m, n))` by keeping two rows, since each row only reads the one above it. Not worth it unless memory is genuinely tight — the two-row version is noticeably harder to read.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Either string is empty">
+The table is all zeros and `table[m][n]` is 0. Handled by the padding, with no explicit guard.
+</Accordion>
+
+<Accordion title="No characters in common: 'abc' vs 'def'">
+No match ever fires, so every cell takes `max` of two zeros. Returns 0.
+</Accordion>
+
+<Accordion title="Identical strings">
+Every character matches along the diagonal, giving `n`. The `max` branch never runs.
+</Accordion>
+
+<Accordion title="Repeated characters: 'aaa' vs 'aa'">
+Returns 2, correctly. The diagonal step consumes one character from *each* string, so a single `a` in the shorter string cannot be matched twice.
+
+This is exactly why the match case uses the diagonal rather than the cell above or to the left.
+</Accordion>
+
+<Accordion title="How would you recover the actual subsequence, not just its length?">
+Walk backwards from `table[m][n]`. If the characters match, that character is in the answer — move diagonally. Otherwise move toward whichever neighbour holds the larger value. Reverse what you collected.
+
+This is how `diff` tools produce the aligned output rather than just a similarity score.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Unique Paths](/docs/dynamic-programming/unique-paths) — the other essential 2-D table, with an easier recurrence
+- [Longest Increasing Subsequence](/docs/dynamic-programming/longest-increasing-subsequence) — one sequence instead of two
+- [Is Subsequence](/docs/strings/is-subsequence) — the two-pointer check when you only need yes or no

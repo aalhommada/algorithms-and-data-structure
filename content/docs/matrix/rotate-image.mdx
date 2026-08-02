@@ -1,0 +1,253 @@
+---
+title: Rotate Image
+description: Rotate a square grid 90° in place, by composing two simple operations instead of deriving one hard formula
+difficulty: medium
+pattern: Matrix
+variant: transpose then reverse, in place
+tags: ["Array", "Math", "Matrix"]
+leetcode: https://leetcode.com/problems/rotate-image/
+problemNumber: 48
+---
+
+## Problem Statement
+
+Rotate an `n × n` matrix 90° clockwise, **in place**. You may not allocate another grid.
+
+```text
+Input:  [[1,2,3],          Output: [[7,4,1],
+         [4,5,6],                   [8,5,2],
+         [7,8,9]]                   [9,6,3]]
+
+The first COLUMN, read bottom to top, becomes the first ROW.
+```
+
+## Intuition
+
+The direct approach is to work out where each value lands and move it there:
+
+```text
+grid[r][c]  →  grid[c][n-1-r]
+```
+
+That formula is correct and awful to use. Moving one value overwrites another, so you must move four at a time around a cycle, holding one in a temporary — and getting all four index expressions right, first try, is genuinely difficult.
+
+<Callout type="info" title="The insight">
+Do not derive the rotation. **Build it from two operations you can each check by eye.**
+
+```text
+1 2 3      transpose      1 4 7      reverse rows      7 4 1
+4 5 6   ─────────────→    2 5 8   ──────────────→      8 5 2
+7 8 9                     3 6 9                        9 6 3
+```
+
+[Transpose](/docs/matrix/transpose-matrix) flips across the diagonal. Reversing each row then flips left-to-right. Together they are exactly a 90° clockwise rotation.
+
+Both steps are in place, so the whole thing is `O(1)` space.
+</Callout>
+
+This is a general habit worth taking away: **a transform that is hard to derive is often the composition of two that are not.** Verifying two easy steps beats debugging one hard formula.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Transpose — swap `grid[r][c]` with `grid[c][r]`
+
+Start the inner loop at `c = r`. Starting at `0` swaps every pair twice and leaves the grid unchanged.
+</Step>
+
+<Step>
+### Reverse each row
+
+A standard two-pointer reversal, or the language's built-in.
+</Step>
+
+</Steps>
+
+<GridViz
+  title="Rotating a 3 × 3 grid clockwise"
+  frames={[
+    {
+      cells: [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9],
+      ],
+      states: [
+        ["match", "idle", "idle"],
+        ["idle", "match", "idle"],
+        ["idle", "idle", "match"],
+      ],
+      vars: { step: "start" },
+      note: "The highlighted diagonal is the line we reflect across. Those three values never move.",
+    },
+    {
+      cells: [
+        [1, 4, 3],
+        [2, 5, 6],
+        [7, 8, 9],
+      ],
+      states: [
+        ["idle", "compare", "idle"],
+        ["compare", "idle", "idle"],
+        ["idle", "idle", "idle"],
+      ],
+      cursor: { row: 0, col: 1 },
+      vars: { swap: "grid[0][1] ↔ grid[1][0]" },
+      note: "First swap: 2 and 4 trade places. The inner loop starts at c = r, so this pair is visited once, not twice.",
+    },
+    {
+      cells: [
+        [1, 4, 7],
+        [2, 5, 8],
+        [3, 6, 9],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["done", "done", "done"],
+        ["done", "done", "done"],
+      ],
+      vars: { step: "transpose complete" },
+      note: "Transposed. Rows have become columns — but this is not the answer yet. Compare it with the target: the columns are in the wrong order.",
+    },
+    {
+      cells: [
+        [7, 4, 1],
+        [2, 5, 8],
+        [3, 6, 9],
+      ],
+      states: [
+        ["match", "match", "match"],
+        ["idle", "idle", "idle"],
+        ["idle", "idle", "idle"],
+      ],
+      cursor: { row: 0, col: 0 },
+      vars: { step: "reverse row 0" },
+      note: "Reverse the first row: [1,4,7] becomes [7,4,1]. That row is now exactly right.",
+    },
+    {
+      cells: [
+        [7, 4, 1],
+        [8, 5, 2],
+        [9, 6, 3],
+      ],
+      states: [
+        ["match", "match", "match"],
+        ["match", "match", "match"],
+        ["match", "match", "match"],
+      ],
+      vars: { step: "done" },
+      note: "Reverse the other two rows and the rotation is complete. No second grid was ever allocated.",
+    },
+  ]}
+  caption="Two operations, each simple enough to verify by looking. Neither required a four-way index formula."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def rotate(matrix: list[list[int]]) -> None:
+    """Rotate an n x n matrix 90 degrees clockwise, in place.
+
+    Transpose across the main diagonal, then reverse each row.
+    """
+    n = len(matrix)
+
+    # 1. Transpose. c starts at r so each pair is swapped once.
+    for r in range(n):
+        for c in range(r, n):
+            matrix[r][c], matrix[c][r] = matrix[c][r], matrix[r][c]
+
+    # 2. Reverse each row.
+    for row in matrix:
+        row.reverse()
+```
+
+`row.reverse()` mutates in place. Using `row = row[::-1]` would rebind the loop variable and leave the matrix untouched — a silent no-op.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function rotate(matrix: number[][]): void {
+  const n = matrix.length;
+
+  // 1. Transpose.
+  for (let r = 0; r < n; r++) {
+    for (let c = r; c < n; c++) {
+      [matrix[r][c], matrix[c][r]] = [matrix[c][r], matrix[r][c]];
+    }
+  }
+
+  // 2. Reverse each row.
+  for (const row of matrix) {
+    row.reverse();
+  }
+}
+```
+
+`Array.prototype.reverse()` mutates the array it is called on, which is what the in-place requirement needs.
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="`c` must start at `r`">
+```text
+for c in range(r, n):     ✓  each pair swapped once
+for c in range(n):        ✗  each pair swapped twice → unchanged
+```
+
+The second version visits `(0,1)` and swaps, then later visits `(1,0)` and swaps back. The matrix returns to its original state and the reversal alone produces a mirror image, not a rotation.
+
+The output looks structured, which makes it easy to mistake for a rotation done in the wrong direction.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n²)" space="O(1)" />
+
+**Time** — the transpose touches about half the cells, the reversal touches all of them. Both are `O(n²)`, which is the floor: every cell has to move.
+
+**Space** — only a temporary during each swap. This is the requirement that rules out the obvious "build a new grid" solution.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A 1 × 1 matrix">
+The transpose loop runs once on the diagonal, swapping the cell with itself. The reversal on a one-element row does nothing. Returned unchanged, which is correct.
+</Accordion>
+
+<Accordion title="A 2 × 2 matrix">
+One off-diagonal swap, then two row reversals. Small enough to verify entirely by hand — a good first test.
+</Accordion>
+
+<Accordion title="Rotating anticlockwise instead">
+Transpose, then reverse each **column** rather than each row. Equivalently: reverse the rows first (`matrix.reverse()`), then transpose.
+
+Confusing the two is common. Check with a 2×2 where all four values differ.
+</Accordion>
+
+<Accordion title="Why must the matrix be square?">
+A rectangle's transpose has a different shape, so it cannot be written back into the same storage — see [Transpose Matrix](/docs/matrix/transpose-matrix).
+
+The problem specifies `n × n` precisely so the in-place requirement is achievable.
+</Accordion>
+
+<Accordion title="What about the four-way cycle approach?">
+It works and is a single pass: move four values around a ring at a time, `layer` by `layer`.
+
+It is `O(n²)` and `O(1)` as well, so there is no efficiency gain — only four index expressions to get right instead of two obvious steps. Worth knowing it exists; not worth reaching for first.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Transpose Matrix](/docs/matrix/transpose-matrix) — the first half, on its own
+- [Spiral Matrix](/docs/matrix/spiral-matrix) — another problem about walking a grid precisely
+- [Matrix](/docs/matrix) — the rotation table and the in-place techniques

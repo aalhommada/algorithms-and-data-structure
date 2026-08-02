@@ -1,0 +1,275 @@
+---
+title: Unique Paths
+description: Count the routes across a grid — the clearest introduction to filling a 2-D table, where each cell is the sum of two neighbours
+difficulty: medium
+pattern: Dynamic Programming
+variant: 2-D grid table
+tags: ["Math", "Dynamic Programming", "Combinatorics"]
+leetcode: https://leetcode.com/problems/unique-paths/
+problemNumber: 62
+---
+
+## Problem Statement
+
+A robot starts at the top-left of an `m × n` grid. It can only move **right** or **down**. How many different paths reach the bottom-right corner?
+
+```text
+Input:  m = 3, n = 7
+Output: 28
+
+Input:  m = 3, n = 2
+Output: 3
+        down → down → right
+        down → right → down
+        right → down → down
+```
+
+## Intuition
+
+Try it by hand on a `3 × 2` grid and you get 3. Try `3 × 7` and counting by hand stops being possible — the answer is 28, and enumerating 28 routes to be sure is not a method.
+
+The recursive statement is easy: *"paths to a cell = paths to the cell above + paths to the cell on the left"*, because those are the only two squares that can lead here.
+
+That recursion alone is `O(2^(m+n))`. Same problem as [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) — the same cells get recomputed over and over from different directions.
+
+<Callout type="info" title="The insight">
+Turn the recursion around. Instead of asking "how do I reach the end", fill in **how many ways reach each cell**, starting from the corner you began at.
+
+```text
+paths[r][c] = paths[r-1][c] + paths[r][c-1]
+                 └ from above   └ from the left
+```
+
+Fill the grid top-left to bottom-right, and every cell you need has already been computed. No recursion, no cache — just a table filled in the right order.
+</Callout>
+
+This is the same idea as climbing stairs, one dimension up. Stairs looked back at two earlier *positions*; this looks back at two earlier *cells*.
+
+### The base cases matter
+
+The first row and first column are special. There is only one way to reach any cell in the top row — keep moving right, with no choice ever offered. Same for the first column going down.
+
+So they are all `1`, and they are what the rest of the table builds on.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Make an `m × n` table
+
+`paths[r][c]` will hold the number of ways to reach row `r`, column `c`.
+</Step>
+
+<Step>
+### Fill the first row and first column with 1
+
+Only one route exists along an edge — you never get a choice.
+</Step>
+
+<Step>
+### Fill the rest, row by row
+
+`paths[r][c] = paths[r-1][c] + paths[r][c-1]`. Both are already filled because you are moving down and right.
+</Step>
+
+<Step>
+### Return the bottom-right cell
+</Step>
+
+</Steps>
+
+<GridViz
+  title="Filling the table for a 3 × 4 grid"
+  frames={[
+    {
+      cells: [
+        [1, 1, 1, 1],
+        [1, 0, 0, 0],
+        [1, 0, 0, 0],
+      ],
+      states: [
+        ["match", "match", "match", "match"],
+        ["match", "idle", "idle", "idle"],
+        ["match", "idle", "idle", "idle"],
+      ],
+      vars: { step: "base cases" },
+      note: "The top row and left column are all 1 — along an edge there is only ever one route, because one of the two moves is blocked.",
+    },
+    {
+      cells: [
+        [1, 1, 1, 1],
+        [1, 2, 0, 0],
+        [1, 0, 0, 0],
+      ],
+      states: [
+        ["idle", "compare", "idle", "idle"],
+        ["compare", "active", "idle", "idle"],
+        ["idle", "idle", "idle", "idle"],
+      ],
+      cursor: { row: 1, col: 1 },
+      vars: { calc: "1 (above) + 1 (left) = 2" },
+      note: "The first real cell. You can arrive from above or from the left, and each offers 1 route — so 2.",
+    },
+    {
+      cells: [
+        [1, 1, 1, 1],
+        [1, 2, 3, 4],
+        [1, 0, 0, 0],
+      ],
+      states: [
+        ["idle", "idle", "idle", "compare"],
+        ["idle", "idle", "compare", "active"],
+        ["idle", "idle", "idle", "idle"],
+      ],
+      cursor: { row: 1, col: 3 },
+      vars: { calc: "1 (above) + 3 (left) = 4" },
+      note: "Finish the row. Each cell reuses the one just computed to its left — this is the overlap that made plain recursion so wasteful.",
+    },
+    {
+      cells: [
+        [1, 1, 1, 1],
+        [1, 2, 3, 4],
+        [1, 3, 6, 0],
+      ],
+      states: [
+        ["idle", "idle", "idle", "idle"],
+        ["idle", "idle", "compare", "idle"],
+        ["idle", "compare", "active", "idle"],
+      ],
+      cursor: { row: 2, col: 2 },
+      vars: { calc: "3 (above) + 3 (left) = 6" },
+      note: "Second row. Every value it needs was written during the first row, so nothing is ever recomputed.",
+    },
+    {
+      cells: [
+        [1, 1, 1, 1],
+        [1, 2, 3, 4],
+        [1, 3, 6, 10],
+      ],
+      states: [
+        ["idle", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "compare"],
+        ["idle", "idle", "compare", "match"],
+      ],
+      cursor: { row: 2, col: 3 },
+      vars: { answer: "6 + 4 = 10" },
+      note: "The bottom-right corner holds the answer: 10 paths. 12 cells filled, one addition each.",
+    },
+  ]}
+  caption="Each cell is computed once, from two neighbours that were computed before it."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def unique_paths(m: int, n: int) -> int:
+    """Count right/down paths across an m x n grid.
+
+    paths[r][c] = paths[r-1][c] + paths[r][c-1]
+    Filling top-left to bottom-right means both are already known.
+    """
+    paths = [[1] * n for _ in range(m)]
+
+    for row in range(1, m):
+        for col in range(1, n):
+            paths[row][col] = paths[row - 1][col] + paths[row][col - 1]
+
+    return paths[m - 1][n - 1]
+```
+
+Initialising everything to `1` handles both base cases at once — the loops then start at `1`, so the edges are never overwritten.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function uniquePaths(m: number, n: number): number {
+  const paths: number[][] = Array.from({ length: m }, () =>
+    new Array<number>(n).fill(1),
+  );
+
+  for (let row = 1; row < m; row++) {
+    for (let col = 1; col < n; col++) {
+      paths[row][col] = paths[row - 1][col] + paths[row][col - 1];
+    }
+  }
+
+  return paths[m - 1][n - 1];
+}
+```
+
+Use `Array.from` rather than `new Array(m).fill(new Array(n))` — the latter puts the **same** row array in every slot, so writing to one row writes to all of them.
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Shrinking to one row — O(n) space">
+A cell only needs the value above it and the value to its left. Once a row is complete, the row before it is never read again.
+
+So keep a single row and overwrite it in place:
+
+```text
+row = [1, 1, 1, 1]
+
+for each remaining row:
+    for col from 1:
+        row[col] = row[col] + row[col - 1]
+                   └ above    └ left (already updated this pass)
+```
+
+`row[col]` still holds the previous row's value at the moment you read it — that *is* "above". Memory drops from `O(m×n)` to `O(n)` with no loss of clarity once you see why.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(m × n)" space="O(m × n)" />
+
+**Time** — every cell is filled once with one addition. Compare the naive recursion at `O(2^(m+n))`: for a 3×7 grid that is thousands of calls instead of 21.
+
+**Space** — the table. Reducible to `O(n)` with the single-row version above, or `O(1)` with the combinatorics formula below.
+
+<Callout type="info" title="There is a closed-form answer">
+Every path is exactly `m - 1` downs and `n - 1` rights in some order. Choosing which positions are the downs gives:
+
+```text
+C(m + n - 2, m - 1)
+```
+
+For `m=3, n=7`: `C(8, 2) = 28`. ✓
+
+That is `O(min(m,n))` time and `O(1)` space — faster than the DP. It is worth knowing, but the table is the transferable skill: [Unique Paths II](https://leetcode.com/problems/unique-paths-ii/) adds obstacles and the formula collapses immediately, while the table needs one extra line.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A 1 × 1 grid">
+Start and end are the same cell. The table is `[[1]]`, the loops never run, and the answer is 1 — the empty path counts as one way.
+</Accordion>
+
+<Accordion title="A single row or single column: m = 1 or n = 1">
+The whole table is `1`s and the inner loop never runs. Returns 1, which is right: there is only one route along a corridor.
+</Accordion>
+
+<Accordion title="Why start the loops at 1 instead of 0?">
+Row 0 and column 0 are base cases with no cell above or to the left. Starting at 0 would index `paths[-1]` — which in Python silently wraps to the last row and produces wrong answers with no error at all.
+
+TypeScript gives `undefined` and the arithmetic yields `NaN`, which at least fails loudly.
+</Accordion>
+
+<Accordion title="Do the numbers get large?">
+Yes, fast. A 20×20 grid gives about 35 billion. Python integers grow without limit; JavaScript stays exact up to 2⁵³, which covers the constraints for this problem but is worth remembering.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) — the same recurrence in one dimension
+- [Longest Common Subsequence](/docs/dynamic-programming/longest-common-subsequence) — the other essential 2-D table
+- [Dynamic Programming](/docs/dynamic-programming) — why filling in the right order removes recursion entirely

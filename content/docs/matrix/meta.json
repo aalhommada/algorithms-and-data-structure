@@ -1,0 +1,13 @@
+{
+  "title": "Matrix",
+  "icon": "Grid3x3",
+  "pages": [
+    "index",
+    "---Easy---",
+    "transpose-matrix",
+    "---Medium---",
+    "rotate-image",
+    "spiral-matrix",
+    "set-matrix-zeroes"
+  ]
+}

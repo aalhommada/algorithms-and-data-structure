@@ -1,0 +1,13 @@
+{
+  "title": "Intervals",
+  "icon": "GitCommitHorizontal",
+  "pages": [
+    "index",
+    "---Easy---",
+    "summary-ranges",
+    "---Medium---",
+    "merge-intervals",
+    "insert-interval",
+    "non-overlapping-intervals"
+  ]
+}

@@ -1,0 +1,293 @@
+---
+title: Set Matrix Zeroes
+description: Clear the row and column of every zero — using the grid itself as the notepad, so no extra memory is needed
+difficulty: medium
+pattern: Matrix
+variant: the grid as its own storage
+tags: ["Array", "Hash Table", "Matrix"]
+leetcode: https://leetcode.com/problems/set-matrix-zeroes/
+problemNumber: 73
+---
+
+## Problem Statement
+
+If an element is `0`, set its entire row and column to `0`. Do it **in place**.
+
+```text
+Input:  [[1,1,1],          Output: [[1,0,1],
+         [1,0,1],                   [0,0,0],
+         [1,1,1]]                   [1,0,1]]
+
+Input:  [[0,1,2,0],        Output: [[0,0,0,0],
+         [3,4,5,2],                 [0,4,5,0],
+         [1,3,1,5]]                 [0,3,1,0]]
+```
+
+## Intuition
+
+The trap is clearing as you go. Set a row to zero and the new zeros look exactly like original zeros — so the next pass clears their columns too, and the whole grid collapses.
+
+```text
+[[1,1,1],        clear row 1 immediately        [[1,0,1],
+ [1,0,1],   →    then see the new zeros    →     [0,0,0],   → everything
+ [1,1,1]]        and clear their columns          [1,0,1]]     eventually 0
+```
+
+So the work must happen in two phases: **find every zero first, then clear.**
+
+The obvious way is two sets — which rows, which columns — costing `O(rows + cols)` memory. That is a fine answer. But the problem wants `O(1)`.
+
+<Callout type="info" title="The insight">
+There is already somewhere to write: **the first row and first column of the grid itself.**
+
+If `grid[r][c]` is zero, mark `grid[r][0] = 0` and `grid[0][c] = 0`. Those marks live exactly where the clearing will happen anyway — a row that needs clearing will have its first cell zeroed regardless.
+
+The two sets become two lines of the grid you already have.
+</Callout>
+
+The catch: `grid[0][0]` sits in both the row markers and the column markers. It cannot mean two things at once — so one extra boolean tracks the first column separately.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Record whether the first column contains a zero
+
+One boolean. This is the piece `grid[0][0]` cannot represent, because it is doing duty as a row marker.
+</Step>
+
+<Step>
+### Mark: scan from `(0, 1)` onwards
+
+For each zero found, set `grid[r][0] = 0` and `grid[0][c] = 0`.
+</Step>
+
+<Step>
+### Clear the interior, working from `(1, 1)`
+
+A cell is zeroed if its row marker or its column marker is zero. Do the interior **before** the markers, or you erase the information you are reading.
+</Step>
+
+<Step>
+### Handle row 0, then column 0 — in that order
+
+If `grid[0][0]` is zero, clear the first row. Then if the boolean was set, clear the first column.
+</Step>
+
+</Steps>
+
+<GridViz
+  title="Marking, then clearing"
+  frames={[
+    {
+      cells: [
+        [1, 1, 2, 0],
+        [3, 4, 5, 2],
+        [1, 3, 1, 5],
+      ],
+      states: [
+        ["idle", "idle", "idle", "match"],
+        ["idle", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "idle"],
+      ],
+      cursor: { row: 0, col: 3 },
+      vars: { first_col_zero: false },
+      note: "One zero, at (0,3). First record that the first column has no zero — that boolean is needed later.",
+    },
+    {
+      cells: [
+        [0, 1, 2, 0],
+        [3, 4, 5, 2],
+        [1, 3, 1, 5],
+      ],
+      states: [
+        ["compare", "idle", "idle", "match"],
+        ["idle", "idle", "idle", "idle"],
+        ["idle", "idle", "idle", "idle"],
+      ],
+      cursor: { row: 0, col: 0 },
+      vars: { marks: "row 0, column 3" },
+      note: "Mark grid[0][0] = 0 for the row, and grid[0][3] is already 0 for the column. The markers live inside the grid.",
+    },
+    {
+      cells: [
+        [0, 1, 2, 0],
+        [3, 4, 5, 0],
+        [1, 3, 1, 0],
+      ],
+      states: [
+        ["compare", "idle", "idle", "compare"],
+        ["idle", "idle", "idle", "match"],
+        ["idle", "idle", "idle", "match"],
+      ],
+      vars: { phase: "clear interior" },
+      note: "Clear the interior from (1,1). Column 3's marker is 0, so those cells go. Row markers for rows 1 and 2 are untouched, so nothing else changes.",
+    },
+    {
+      cells: [
+        [0, 0, 0, 0],
+        [3, 4, 5, 0],
+        [1, 3, 1, 0],
+      ],
+      states: [
+        ["match", "match", "match", "match"],
+        ["idle", "idle", "idle", "done"],
+        ["idle", "idle", "idle", "done"],
+      ],
+      vars: { check: "grid[0][0] == 0" },
+      note: "Now the markers themselves. grid[0][0] is 0, so clear the whole first row. This must come after the interior — doing it first would erase the column markers.",
+    },
+    {
+      cells: [
+        [0, 0, 0, 0],
+        [3, 4, 5, 0],
+        [1, 3, 1, 0],
+      ],
+      states: [
+        ["done", "done", "done", "done"],
+        ["match", "idle", "idle", "done"],
+        ["match", "idle", "idle", "done"],
+      ],
+      vars: { first_col_zero: false },
+      note: "Finally the first column — but the boolean was false, so it stays. Without that boolean, grid[0][0]=0 would have wrongly cleared it.",
+    },
+  ]}
+  caption="Order is everything: mark, clear the interior, then clear the two marker lines last."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def set_zeroes(matrix: list[list[int]]) -> None:
+    """Zero the row and column of every zero, in place, O(1) space.
+
+    The first row and column store which rows/columns to clear.
+    """
+    rows, cols = len(matrix), len(matrix[0])
+    first_col_has_zero = any(matrix[r][0] == 0 for r in range(rows))
+
+    # Mark. Skip column 0 — the boolean above owns it.
+    for r in range(rows):
+        for c in range(1, cols):
+            if matrix[r][c] == 0:
+                matrix[r][0] = 0
+                matrix[0][c] = 0
+
+    # Clear the interior, reading the markers.
+    for r in range(1, rows):
+        for c in range(1, cols):
+            if matrix[r][0] == 0 or matrix[0][c] == 0:
+                matrix[r][c] = 0
+
+    # Now the markers themselves — row 0 first.
+    if matrix[0][0] == 0:
+        for c in range(cols):
+            matrix[0][c] = 0
+
+    if first_col_has_zero:
+        for r in range(rows):
+            matrix[r][0] = 0
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function setZeroes(matrix: number[][]): void {
+  const rows = matrix.length;
+  const cols = matrix[0].length;
+
+  let firstColHasZero = false;
+  for (let r = 0; r < rows; r++) {
+    if (matrix[r][0] === 0) firstColHasZero = true;
+  }
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 1; c < cols; c++) {
+      if (matrix[r][c] === 0) {
+        matrix[r][0] = 0;
+        matrix[0][c] = 0;
+      }
+    }
+  }
+
+  for (let r = 1; r < rows; r++) {
+    for (let c = 1; c < cols; c++) {
+      if (matrix[r][0] === 0 || matrix[0][c] === 0) {
+        matrix[r][c] = 0;
+      }
+    }
+  }
+
+  if (matrix[0][0] === 0) {
+    for (let c = 0; c < cols; c++) matrix[0][c] = 0;
+  }
+
+  if (firstColHasZero) {
+    for (let r = 0; r < rows; r++) matrix[r][0] = 0;
+  }
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Three ordering rules, all load-bearing">
+| Rule | Break it and… |
+|---|---|
+| Clear the interior **before** the marker lines | You erase the markers, then read them as "no zero here" |
+| Handle row 0 **before** column 0 | `grid[0][0]` gets cleared, losing the row-0 signal |
+| Track the first column with a **separate boolean** | `grid[0][0]` cannot mean both "row 0 has a zero" and "column 0 has a zero" |
+
+Each of these fails on a specific input rather than all of them, which is what makes this problem harder than it looks.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(rows × cols)" space="O(1)" />
+
+**Time** — a constant number of passes over the grid.
+
+**Space** — one boolean. The `O(rows + cols)` version using two sets is easier to write and correct; this one is what the problem is actually testing.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="No zeros at all">
+No markers are ever set, the interior loop finds nothing, `grid[0][0]` is non-zero, and the boolean is false. The grid is returned untouched.
+</Accordion>
+
+<Accordion title="A zero at (0, 0)">
+The boolean catches it for the column. `grid[0][0]` is already 0, so the row is cleared too. Both lines go — correct, and the reason the boolean exists.
+</Accordion>
+
+<Accordion title="A single row: [[1, 0, 1]]">
+The zero at (0,1) sets `grid[0][0] = 0` and `grid[0][1] = 0`. The interior loop does not run. `grid[0][0]` is zero, so the whole row clears. Correct.
+</Accordion>
+
+<Accordion title="A single column: [[1], [0], [1]]">
+The boolean is true from the start. The marking loop never runs, since it begins at column 1. The final step clears the column. Correct.
+</Accordion>
+
+<Accordion title="Every element is zero">
+Everything is marked and everything clears. No change, since it was already all zeros.
+</Accordion>
+
+<Accordion title="Why not just use two sets?">
+You can, and it is the right answer if `O(rows + cols)` memory is acceptable — it is far easier to get right.
+
+This version exists because the problem asks for `O(1)`. The transferable idea is **using the data structure you already have as scratch space**, which shows up again whenever memory is the binding constraint.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Rotate Image](/docs/matrix/rotate-image) — another in-place transform where write order matters
+- [Product of Array Except Self](/docs/arrays/product-of-array-except-self) — using the output array as working storage
+- [Matrix](/docs/matrix) — the in-place techniques compared

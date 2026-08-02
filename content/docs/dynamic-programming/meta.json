@@ -5,9 +5,13 @@
     "index",
     "---Easy---",
     "climbing-stairs",
+    "min-cost-climbing-stairs",
     "---Medium---",
     "house-robber",
     "coin-change",
-    "longest-increasing-subsequence"
+    "longest-increasing-subsequence",
+    "unique-paths",
+    "longest-common-subsequence",
+    "word-break"
   ]
 }

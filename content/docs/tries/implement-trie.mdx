@@ -1,0 +1,258 @@
+---
+title: Implement Trie
+description: Build the prefix tree from scratch — three operations sharing one walk, and the flag that separates a word from a prefix
+difficulty: medium
+pattern: Trie
+variant: building the structure
+tags: ["Hash Table", "String", "Design", "Trie"]
+leetcode: https://leetcode.com/problems/implement-trie-prefix-tree/
+problemNumber: 208
+---
+
+## Problem Statement
+
+Implement a trie supporting three operations:
+
+| Operation | Returns |
+|---|---|
+| `insert(word)` | nothing |
+| `search(word)` | `true` if the exact word was inserted |
+| `startsWith(prefix)` | `true` if any inserted word begins with it |
+
+```text
+insert("apple")
+search("apple")      → true
+search("app")        → false      inserted as a prefix only
+startsWith("app")    → true
+insert("app")
+search("app")        → true       now it is a word in its own right
+```
+
+## Intuition
+
+The example is the whole problem. After `insert("apple")`, the string `"app"` exists **as a path** but was never inserted **as a word**. `search("app")` must be `false` while `startsWith("app")` must be `true`.
+
+A hash map cannot do this. It knows `"apple"` is present and nothing about prefixes without scanning every key.
+
+<Callout type="info" title="The insight">
+Store one character per edge, and give every node a boolean: *does a word end here?*
+
+All three operations are the same walk from the root, one character at a time. They differ only in what happens on failure and what is checked at the end:
+
+| Operation | Missing child | On arrival |
+|---|---|---|
+| `insert` | Create it | Set the flag |
+| `search` | Return false | Return the flag |
+| `startsWith` | Return false | Return true |
+
+Write the walk once as a helper and the three methods become two lines each.
+</Callout>
+
+## Approach
+
+<Steps>
+
+<Step>
+### A node holds children and a flag
+
+`children` maps a character to the next node. `is_word` marks a complete word ending here.
+</Step>
+
+<Step>
+### The root is an empty node
+
+It represents the empty string and carries no character.
+</Step>
+
+<Step>
+### Walk, creating as you go — that is insert
+
+For each character, create the child if absent, then descend. Set the flag at the end.
+</Step>
+
+<Step>
+### Walk, failing on absence — that is search and startsWith
+
+Identical traversal. `search` returns the flag; `startsWith` returns true simply for having arrived.
+</Step>
+
+</Steps>
+
+<TreeViz
+  title='insert("apple"), then insert("app")'
+  frames={[
+    {
+      nodes: ["root", "a", null, "p", null, null, null],
+      states: ["match", "active", "idle", "idle", "idle", "idle", "idle"],
+      vars: { op: 'insert("apple")', at: "a" },
+      note: "Start at the root. No child 'a' exists, so create it and descend. Every insert builds only what is missing.",
+    },
+    {
+      nodes: ["root", "a", null, "p", null, null, null],
+      states: ["done", "done", "idle", "match", "idle", "idle", "idle"],
+      vars: { op: 'insert("apple")', path: "a → p → p → l → e" },
+      note: "Continue through p, p, l, e — each one created in turn. The final node gets is_word = true.",
+    },
+    {
+      nodes: ["root", "a", null, "p", null, null, null],
+      states: ["done", "compare", "idle", "compare", "idle", "idle", "idle"],
+      vars: { op: 'search("app")', found: "path exists" },
+      note: "Searching for 'app' walks a → p → p successfully — the path is there, because 'apple' created it.",
+    },
+    {
+      nodes: ["root", "a", null, "p", null, null, null],
+      states: ["done", "done", "idle", "discard", "idle", "idle", "idle"],
+      vars: { is_word: false, result: "search → false" },
+      note: "But the node at the end of 'app' has is_word = false. Nothing ended here. search returns false; startsWith would return true.",
+    },
+    {
+      nodes: ["root", "a", null, "p", null, null, null],
+      states: ["done", "done", "idle", "match", "idle", "idle", "idle"],
+      vars: { op: 'insert("app")', is_word: true },
+      note: "Now insert 'app'. No new nodes are created — the path already exists. Only the flag flips, and search('app') becomes true.",
+    },
+  ]}
+  caption="Inserting 'app' after 'apple' adds zero nodes. The flag is the entire difference."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+class TrieNode:
+    def __init__(self) -> None:
+        self.children: dict[str, "TrieNode"] = {}
+        self.is_word = False
+
+
+class Trie:
+    def __init__(self) -> None:
+        self.root = TrieNode()
+
+    def insert(self, word: str) -> None:
+        node = self.root
+        for char in word:
+            if char not in node.children:
+                node.children[char] = TrieNode()
+            node = node.children[char]
+        node.is_word = True
+
+    def search(self, word: str) -> bool:
+        node = self._walk(word)
+        return node is not None and node.is_word
+
+    def starts_with(self, prefix: str) -> bool:
+        return self._walk(prefix) is not None
+
+    def _walk(self, text: str) -> TrieNode | None:
+        """Follow text from the root. None if the path breaks."""
+        node = self.root
+        for char in text:
+            if char not in node.children:
+                return None
+            node = node.children[char]
+        return node
+```
+
+`search` and `starts_with` share `_walk` entirely. The only difference is the extra `is_word` check — which is exactly the distinction the problem is testing.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class TrieNode {
+  children = new Map<string, TrieNode>();
+  isWord = false;
+}
+
+class Trie {
+  private root = new TrieNode();
+
+  insert(word: string): void {
+    let node = this.root;
+    for (const char of word) {
+      let next = node.children.get(char);
+      if (next === undefined) {
+        next = new TrieNode();
+        node.children.set(char, next);
+      }
+      node = next;
+    }
+    node.isWord = true;
+  }
+
+  search(word: string): boolean {
+    const node = this.walk(word);
+    return node !== null && node.isWord;
+  }
+
+  startsWith(prefix: string): boolean {
+    return this.walk(prefix) !== null;
+  }
+
+  private walk(text: string): TrieNode | null {
+    let node = this.root;
+    for (const char of text) {
+      const next = node.children.get(char);
+      if (next === undefined) return null;
+      node = next;
+    }
+    return node;
+  }
+}
+```
+
+Use a `Map`, not a plain object — object keys inherit from the prototype, so a child named `"constructor"` would appear to exist without ever being inserted.
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(L) per operation" space="O(total characters)" />
+
+**Time** — `L` is the length of the word or prefix. Every operation walks it once. Crucially this does **not** depend on how many words the trie holds: a five-letter lookup takes five steps whether the trie stores ten words or ten million.
+
+**Space** — one node per distinct character position across all words. Shared prefixes are stored once, so a dictionary of related words is much cheaper than storing each string.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Inserting the empty string">
+The loop never runs, so `root.is_word` becomes true. `search("")` then returns true, which is consistent — the empty string was inserted.
+</Accordion>
+
+<Accordion title="Searching an empty trie">
+The first character is missing from the root's children, `_walk` returns `None`, and both queries return false.
+</Accordion>
+
+<Accordion title="Inserting the same word twice">
+The second insert creates nothing and sets an already-true flag. Harmless. A trie stores a *set* of words — it does not count duplicates unless you add a counter.
+</Accordion>
+
+<Accordion title="Inserting a word that is a prefix of an existing one">
+The path exists, so no nodes are created; only the flag changes. This is the `insert("app")` case in the example, and the reason the flag cannot be replaced by "is this node a leaf?" — `app` is not a leaf.
+</Accordion>
+
+<Accordion title="Why not use `children` being empty to mean end-of-word?">
+Because a word can end in the middle of the tree. `"app"` ends at a node that still has children leading to `"apple"`.
+
+"Is a leaf" and "is a word" are different properties. Conflating them makes every prefix-word invisible.
+</Accordion>
+
+<Accordion title="Dictionary of children versus a 26-slot array">
+A 26-slot array indexed by `ord(c) - ord('a')` is faster — no hashing — and is the usual choice when the alphabet is guaranteed lowercase English.
+
+It wastes memory when nodes have few children, and breaks entirely on unicode. The dictionary is the safer default.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Replace Words](/docs/tries/replace-words) — applying a trie to shortest-prefix matching
+- [Tries](/docs/tries) — why prefixes are the only reason to prefer this over a hash map
+- [Search Autocomplete](/docs/system-design/autocomplete) — the same structure at scale

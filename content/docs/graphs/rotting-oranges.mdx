@@ -1,0 +1,301 @@
+---
+title: Rotting Oranges
+description: Spread rot one minute at a time — the problem that shows why BFS, not DFS, answers questions about time and distance
+difficulty: medium
+pattern: BFS
+variant: multi-source, level by level
+tags: ["Array", "BFS", "Matrix"]
+leetcode: https://leetcode.com/problems/rotting-oranges/
+problemNumber: 994
+---
+
+## Problem Statement
+
+A grid holds `0` (empty), `1` (fresh orange) and `2` (rotten orange). Every minute, any fresh orange **touching a rotten one on an edge** becomes rotten.
+
+Return the minutes until no fresh orange remains, or `-1` if that never happens.
+
+```text
+Input:  [[2,1,1],
+         [1,1,0],
+         [0,1,1]]
+Output: 4
+
+Input:  [[2,1,1],
+         [0,1,1],
+         [1,0,1]]
+Output: -1
+        the bottom-left 1 is cut off — nothing ever reaches it
+```
+
+## Intuition
+
+Two things make this different from [Flood Fill](/docs/graphs/flood-fill), and both point at BFS.
+
+**It asks about time.** Not "which oranges rot" but "how long". Time here means *number of steps from a rotten orange* — which is distance. [BFS](/docs/graphs) is the traversal that arrives in distance order; DFS is not.
+
+**Rot starts everywhere at once.** There may be several rotten oranges, and they all spread simultaneously. This is a **multi-source** BFS.
+
+<Callout type="info" title="The insight">
+Put **every** rotten orange in the queue before starting.
+
+BFS then expands from all of them together, in lockstep. Each orange is reached by whichever source is nearest, which is exactly what "they spread at the same time" means.
+
+Running BFS once per rotten orange and taking the minimum would give the same answer at many times the cost. Seeding the queue with all starting points is the trick worth remembering.
+</Callout>
+
+Then process the queue **one level at a time**. Each level is one minute.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Scan the grid once
+
+Queue every rotten orange. Count the fresh ones — that counter is how you detect the unreachable case at the end.
+</Step>
+
+<Step>
+### If there are no fresh oranges, return 0
+
+Nothing needs to happen. This must be checked before the loop, or the level counting reports 1 minute too many.
+</Step>
+
+<Step>
+### BFS, processing a whole level per iteration
+
+Record the queue's size before the inner loop, and process exactly that many. Everything added during it belongs to the *next* minute.
+</Step>
+
+<Step>
+### Rot each fresh neighbour, decrement the counter, queue it
+</Step>
+
+<Step>
+### Return the minutes — or `-1` if fresh oranges remain
+</Step>
+
+</Steps>
+
+<GridViz
+  title="Rot spreading through the grid"
+  frames={[
+    {
+      cells: [
+        [2, 1, 1],
+        [1, 1, 0],
+        [0, 1, 1],
+      ],
+      states: [
+        ["match", "idle", "idle"],
+        ["idle", "idle", "discard"],
+        ["discard", "idle", "idle"],
+      ],
+      vars: { minute: 0, fresh: 6, queue: "[(0,0)]" },
+      note: "One rotten orange at (0,0), six fresh. Seed the queue with every rotten orange — here there is only one.",
+    },
+    {
+      cells: [
+        [2, 2, 1],
+        [2, 1, 0],
+        [0, 1, 1],
+      ],
+      states: [
+        ["done", "match", "idle"],
+        ["match", "idle", "discard"],
+        ["discard", "idle", "idle"],
+      ],
+      vars: { minute: 1, fresh: 4, queue: "[(0,1), (1,0)]" },
+      note: "Minute 1. Both edge neighbours of (0,0) rot. They go on the queue for the next round, not this one.",
+    },
+    {
+      cells: [
+        [2, 2, 2],
+        [2, 2, 0],
+        [0, 1, 1],
+      ],
+      states: [
+        ["done", "done", "match"],
+        ["done", "match", "discard"],
+        ["discard", "idle", "idle"],
+      ],
+      vars: { minute: 2, fresh: 2, queue: "[(0,2), (1,1)]" },
+      note: "Minute 2. Processing exactly the two oranges queued last round — that is what makes one iteration equal one minute.",
+    },
+    {
+      cells: [
+        [2, 2, 2],
+        [2, 2, 0],
+        [0, 2, 1],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["done", "done", "discard"],
+        ["discard", "match", "idle"],
+      ],
+      vars: { minute: 3, fresh: 1, queue: "[(2,1)]" },
+      note: "Minute 3. The rot reaches (2,1) from above. Note it could not cut the corner — (1,2) is empty.",
+    },
+    {
+      cells: [
+        [2, 2, 2],
+        [2, 2, 0],
+        [0, 2, 2],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["done", "done", "discard"],
+        ["discard", "done", "match"],
+      ],
+      vars: { minute: 4, fresh: 0, queue: "[]" },
+      note: "Minute 4. The last orange rots. fresh is 0, so the answer is 4 — the number of levels BFS took.",
+    },
+  ]}
+  caption="Each frame is one BFS level. DFS would visit the same squares in an order that says nothing about elapsed time."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+from collections import deque
+
+
+def oranges_rotting(grid: list[list[int]]) -> int:
+    """Minutes until no fresh orange remains, or -1 if impossible."""
+    rows, cols = len(grid), len(grid[0])
+    queue: deque[tuple[int, int]] = deque()
+    fresh = 0
+
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == 2:
+                queue.append((r, c))     # every source, queued up front
+            elif grid[r][c] == 1:
+                fresh += 1
+
+    if fresh == 0:
+        return 0
+
+    minutes = 0
+    directions = ((-1, 0), (1, 0), (0, -1), (0, 1))
+
+    while queue and fresh > 0:
+        # Everything currently queued rots in the SAME minute.
+        for _ in range(len(queue)):
+            r, c = queue.popleft()
+
+            for dr, dc in directions:
+                nr, nc = r + dr, c + dc
+
+                if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == 1:
+                    grid[nr][nc] = 2
+                    fresh -= 1
+                    queue.append((nr, nc))
+
+        minutes += 1
+
+    return minutes if fresh == 0 else -1
+```
+
+`for _ in range(len(queue))` captures the size **before** the loop begins. Iterating the queue directly while appending to it would merge every minute into one.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function orangesRotting(grid: number[][]): number {
+  const rows = grid.length;
+  const cols = grid[0].length;
+  let queue: [number, number][] = [];
+  let fresh = 0;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (grid[r][c] === 2) queue.push([r, c]);
+      else if (grid[r][c] === 1) fresh++;
+    }
+  }
+
+  if (fresh === 0) return 0;
+
+  let minutes = 0;
+  const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+  while (queue.length > 0 && fresh > 0) {
+    const next: [number, number][] = [];
+
+    for (const [r, c] of queue) {
+      for (const [dr, dc] of directions) {
+        const nr = r + dr;
+        const nc = c + dc;
+
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] === 1) {
+          grid[nr][nc] = 2;
+          fresh--;
+          next.push([nr, nc]);
+        }
+      }
+    }
+
+    queue = next;
+    minutes++;
+  }
+
+  return fresh === 0 ? minutes : -1;
+}
+```
+
+Building a fresh `next` array per level avoids `shift()`, which is `O(n)` in JavaScript and would make the whole traversal `O(n²)`.
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(rows × cols)" space="O(rows × cols)" />
+
+**Time** — one scan to seed, then each orange enters and leaves the queue at most once, checking four neighbours.
+
+**Space** — the queue. In the worst case every cell is rotten at the start and all of them are queued together.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="No fresh oranges at all">
+Returns 0 via the early check. Without it, the loop is skipped anyway and `minutes` stays 0 — but the guard makes the intent explicit and protects the level counting.
+</Accordion>
+
+<Accordion title="No rotten oranges, but fresh ones exist">
+The queue starts empty, the loop never runs, and `fresh > 0` at the end. Returns `-1`. Correct — nothing can start the rot.
+</Accordion>
+
+<Accordion title="A fresh orange is walled off">
+The second example. BFS exhausts the queue with `fresh` still above zero, so `-1` is returned.
+
+This is why the counter exists. Without it you would have to rescan the grid at the end to find out.
+</Accordion>
+
+<Accordion title="Why `while queue and fresh > 0` rather than just `while queue`?">
+Without the `fresh > 0` condition, the final level still runs, finds nothing to rot, and increments `minutes` one time too many.
+
+Stopping as soon as the last orange rots is what makes the count exact.
+</Accordion>
+
+<Accordion title="Why not DFS?">
+DFS visits every reachable orange too, so it would correctly determine *whether* everything rots. But it arrives via whatever path it happened to take, so the depth it records is not the minimum distance.
+
+The question is about elapsed time, and only BFS answers in distance order. See the [graphs](/docs/graphs) page for the two traversals side by side.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Flood Fill](/docs/graphs/flood-fill) — the same grid traversal when order does not matter
+- [Number of Islands](/docs/graphs/number-of-islands) — counting regions instead of measuring distance
+- [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — the same level-size trick, on a tree

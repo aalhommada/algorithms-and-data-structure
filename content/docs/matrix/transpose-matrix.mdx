@@ -1,0 +1,238 @@
+---
+title: Transpose Matrix
+description: Flip a grid over its diagonal — the index swap that underlies rotation, and the loop bound that makes it work
+difficulty: easy
+pattern: Matrix
+variant: reflect across the main diagonal
+tags: ["Array", "Matrix", "Simulation"]
+leetcode: https://leetcode.com/problems/transpose-matrix/
+problemNumber: 867
+---
+
+## Problem Statement
+
+Return the transpose of a matrix: rows become columns and columns become rows.
+
+```text
+Input:  [[1,2,3],
+         [4,5,6],
+         [7,8,9]]
+
+Output: [[1,4,7],
+         [2,5,8],
+         [3,6,9]]
+
+Input:  [[1,2,3],
+         [4,5,6]]          2 rows, 3 columns
+
+Output: [[1,4],
+         [2,5],
+         [3,6]]            3 rows, 2 columns
+```
+
+## Intuition
+
+The rule is one line: **`result[c][r] = grid[r][c]`**. Swap the two indices.
+
+Visually, it is a reflection across the **main diagonal** — the line from top-left to bottom-right. Values on that diagonal do not move, because swapping `r` and `c` when they are equal changes nothing.
+
+```text
+1 2 3          1 . .
+4 5 6    →     . 5 .        the diagonal stays put
+7 8 9          . . 9
+```
+
+<Callout type="info" title="The shape changes too">
+An `m × n` matrix transposes into an `n × m` one. For a 2×3 input the output has 3 rows and 2 columns.
+
+This is why the general solution builds a new grid: you cannot reshape a rectangle in place. Only a **square** matrix can be transposed in place, which is the case [Rotate Image](/docs/matrix/rotate-image) relies on.
+</Callout>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Measure both dimensions
+
+`rows = len(grid)`, `cols = len(grid[0])`. Do this first — the output uses them the other way round.
+</Step>
+
+<Step>
+### Build a `cols × rows` grid
+
+Note the reversal. Using `rows × cols` fails on any non-square input.
+</Step>
+
+<Step>
+### Copy every cell to its swapped position
+
+`result[c][r] = grid[r][c]`.
+</Step>
+
+</Steps>
+
+<GridViz
+  title="Transposing a 2 × 3 matrix"
+  frames={[
+    {
+      cells: [
+        [1, 2, 3],
+        [4, 5, 6],
+      ],
+      states: [
+        ["match", "idle", "idle"],
+        ["idle", "idle", "idle"],
+      ],
+      cursor: { row: 0, col: 0 },
+      vars: { source: "grid[0][0] = 1", target: "result[0][0]" },
+      note: "Start at the top-left. Row 0, column 0 swaps to row 0, column 0 — unchanged, because it is on the diagonal.",
+    },
+    {
+      cells: [
+        [1, 2, 3],
+        [4, 5, 6],
+      ],
+      states: [
+        ["done", "match", "idle"],
+        ["idle", "idle", "idle"],
+      ],
+      cursor: { row: 0, col: 1 },
+      vars: { source: "grid[0][1] = 2", target: "result[1][0]" },
+      note: "The value 2 sits at row 0, column 1. It moves to row 1, column 0 — the indices simply swap places.",
+    },
+    {
+      cells: [
+        [1, 2, 3],
+        [4, 5, 6],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["match", "idle", "idle"],
+      ],
+      cursor: { row: 1, col: 0 },
+      vars: { source: "grid[1][0] = 4", target: "result[0][1]" },
+      note: "Second row. The value 4 at row 1, column 0 lands at row 0, column 1 — swapping with where 2 came from.",
+    },
+    {
+      cells: [
+        [1, 4],
+        [2, 5],
+        [3, 6],
+      ],
+      states: [
+        ["match", "match"],
+        ["match", "match"],
+        ["match", "match"],
+      ],
+      vars: { shape: "2×3 became 3×2" },
+      note: "Finished. The first ROW of the input has become the first COLUMN of the output, and the shape flipped.",
+    },
+  ]}
+  caption="Six cells, six copies. Each value moves to the position with its indices reversed."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def transpose(matrix: list[list[int]]) -> list[list[int]]:
+    """Return the transpose: result[c][r] = matrix[r][c]."""
+    rows, cols = len(matrix), len(matrix[0])
+    result = [[0] * rows for _ in range(cols)]
+
+    for r in range(rows):
+        for c in range(cols):
+            result[c][r] = matrix[r][c]
+
+    return result
+```
+
+The output is built with `[[0] * rows for _ in range(cols)]` — `cols` rows of length `rows`. Getting these the wrong way round is the main trap.
+
+A one-liner exists: `[list(row) for row in zip(*matrix)]`. It is idiomatic and correct; the explicit loop is what shows the index swap.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function transpose(matrix: number[][]): number[][] {
+  const rows = matrix.length;
+  const cols = matrix[0].length;
+
+  const result: number[][] = Array.from({ length: cols }, () =>
+    new Array<number>(rows).fill(0),
+  );
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      result[c][r] = matrix[r][c];
+    }
+  }
+
+  return result;
+}
+```
+
+`Array.from` with a factory is required — `new Array(cols).fill(new Array(rows))` would share one row across every slot.
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="The in-place version, and why `c` starts at `r`">
+For a **square** matrix you can swap pairs directly with no new grid:
+
+```text
+for r in range(n):
+    for c in range(r, n):          ← starts at r, not 0
+        grid[r][c], grid[c][r] = grid[c][r], grid[r][c]
+```
+
+Starting `c` at `0` swaps every pair **twice** — once as `(r,c)` and again as `(c,r)` — returning the matrix exactly as it began.
+
+That bug produces no error and no visible symptom except the output being the input. Starting at `r` visits each pair once and skips the diagonal, which never needs moving.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(rows × cols)" space="O(rows × cols)" />
+
+**Time** — every cell is copied once. There is no way to do better; the output has that many cells.
+
+**Space** — the new grid. The in-place square version is `O(1)`, but it cannot handle rectangles.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A single row: [[1, 2, 3]]">
+Becomes `[[1], [2], [3]]` — three rows of one column. This is the case that breaks any solution assuming a square input.
+</Accordion>
+
+<Accordion title="A single column: [[1], [2], [3]]">
+Becomes `[[1, 2, 3]]`. The reverse of the above.
+</Accordion>
+
+<Accordion title="A 1 × 1 matrix">
+Returned unchanged. The only cell is on the diagonal.
+</Accordion>
+
+<Accordion title="Why can't a rectangle be transposed in place?">
+The result has a different shape. A 2×3 grid has 2 row-arrays of length 3; the answer needs 3 row-arrays of length 2. There is nowhere to put the extra row without allocating.
+
+Square matrices keep their shape, which is what makes the swap-in-place version possible.
+</Accordion>
+
+<Accordion title="Is the transpose of a transpose the original?">
+Yes. Swapping the indices twice returns each value to where it started — a useful self-check when testing.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Rotate Image](/docs/matrix/rotate-image) — transpose plus a row reversal gives a 90° rotation
+- [Spiral Matrix](/docs/matrix/spiral-matrix) — a different way of walking the same grid
+- [Matrix](/docs/matrix) — the index conventions and the reference trap

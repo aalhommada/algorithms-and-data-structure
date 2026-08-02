@@ -1,0 +1,169 @@
+---
+title: Matrix
+description: Reasoning about a grid by its rows, columns and layers — index arithmetic, in-place transforms, and the traps of shared references
+---
+
+A matrix is a grid of values: an array of arrays. `grid[r][c]` is row `r`, column `c`.
+
+Most matrix problems are not about clever algorithms. They are about **index arithmetic done carefully**, and about changing a grid in place without destroying values you still need.
+
+## Reading the Coordinates
+
+<GridDiagram
+  title="A 3 × 4 grid"
+  cells={[
+    ["a", "b", "c", "d"],
+    ["e", "f", "g", "h"],
+    ["i", "j", "k", "l"],
+  ]}
+  states={[
+    ["idle", "idle", "idle", "idle"],
+    ["idle", "match", "idle", "idle"],
+    ["idle", "idle", "idle", "idle"],
+  ]}
+  caption="'f' is at row 1, column 1 — written grid[1][1]. Rows run down, columns run across."
+/>
+
+<Callout type="warn" title="Row first, then column — and it is not (x, y)">
+`grid[r][c]` means **row `r`, column `c`**. Rows go down, columns go across.
+
+That is the opposite order from graph coordinates, where `(x, y)` means across then down. Mixing them up gives an index error on a rectangular grid and — far worse — *silently wrong answers* on a square one, where both are in range.
+
+```text
+rows = len(grid)        how many rows      → the vertical size
+cols = len(grid[0])     how many columns   → the horizontal size
+```
+
+Write those two lines first, every time. Reaching for `len(grid)` when you meant the width is the most common matrix bug.
+</Callout>
+
+## The Four Neighbours
+
+Most grid traversal needs the cells sharing an edge:
+
+```text
+        (r-1, c)
+           │
+(r, c-1) ─ (r,c) ─ (r, c+1)
+           │
+        (r+1, c)
+
+directions = [(-1,0), (1,0), (0,-1), (0,1)]
+```
+
+Storing them as a list and looping is shorter and less error-prone than writing four near-identical blocks — the copy-paste version is where a stray `r` that should be `c` hides.
+
+<Callout type="info" title="Always check bounds before reading">
+```text
+0 <= nr < rows  and  0 <= nc < cols
+```
+
+In Python this matters twice over: `grid[-1]` is *legal* and silently wraps to the last row, so an unchecked negative index produces a plausible wrong answer rather than an error.
+</Callout>
+
+Diagonals add four more offsets. Whether they count is a decision the problem makes — check for it, because it is rarely stated in a sentence of its own.
+
+## Creating a Grid — the Reference Trap
+
+This is the single most damaging matrix bug in both languages.
+
+<Callout type="warn" title="Never build rows by repeating one list">
+```text
+WRONG   grid = [[0] * cols] * rows
+
+Creates ONE row and points every slot at it.
+grid[0][0] = 1  →  every row now starts with 1.
+```
+
+```text
+RIGHT   grid = [[0] * cols for _ in range(rows)]
+```
+
+TypeScript has the identical trap:
+
+```text
+WRONG   new Array(rows).fill(new Array(cols).fill(0))
+RIGHT   Array.from({ length: rows }, () => new Array(cols).fill(0))
+```
+
+The outer repeat copies a **reference**, not the row. `[0] * cols` is safe because numbers are values; `* rows` on a list of lists is not.
+
+The symptom is bizarre: writing one cell changes a whole column's worth of rows. It looks like a logic error anywhere but the line that caused it.
+</Callout>
+
+## In Place Means Order Matters
+
+Many matrix problems demand `O(1)` extra space — transform the grid without building a new one. That creates a hazard: **every write destroys a value that something else might still need.**
+
+Two ways out, and both are worth knowing:
+
+| Technique | Idea | Used by |
+|---|---|---|
+| **Swap in cycles** | Move values around a closed loop, holding one in a temporary | [Rotate Image](/docs/matrix/rotate-image) |
+| **Use the grid as its own notepad** | Store markers in a row or column you have already processed | [Set Matrix Zeroes](/docs/matrix/set-matrix-zeroes) |
+
+The second sounds like a hack and is a genuine technique: the first row and column can record which rows and columns need clearing, removing the need for two extra arrays.
+
+## The Transforms Worth Knowing
+
+Several problems are combinations of two simple operations.
+
+```text
+original        transpose        reverse each row
+1 2 3           1 4 7            7 4 1
+4 5 6     →     2 5 8      →     8 5 2
+7 8 9           3 6 9            9 6 3
+
+                                 = rotated 90° clockwise
+```
+
+<Callout type="info" title="Rotation is two reflections">
+| Want | Do |
+|---|---|
+| Rotate 90° **clockwise** | Transpose, then reverse each **row** |
+| Rotate 90° **anticlockwise** | Transpose, then reverse each **column** |
+| Rotate 180° | Reverse the rows, then reverse each row |
+
+Deriving a rotation from scratch means getting a four-way index formula right. Composing two operations you can each verify by eye is far harder to get wrong — see [Rotate Image](/docs/matrix/rotate-image).
+</Callout>
+
+**Transpose** swaps `grid[r][c]` with `grid[c][r]`. Note the loop must start at `c = r`, not `c = 0` — otherwise every pair is swapped twice and the grid comes back unchanged.
+
+## Traversing in Layers
+
+Spiral problems peel the grid like an onion. The reliable technique is **four moving boundaries** rather than direction-tracking logic:
+
+```text
+top, bottom, left, right
+
+→ walk the top row,     then top++
+→ walk the right col,   then right--
+→ walk the bottom row,  then bottom--
+→ walk the left col,    then left++
+
+repeat while top <= bottom and left <= right
+```
+
+The boundaries close in on each other and the loop ends when they cross. See [Spiral Matrix](/docs/matrix/spiral-matrix) for why the last two walks need an extra check.
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [Transpose Matrix](/docs/matrix/transpose-matrix) | Easy | Index swapping |
+| [Rotate Image](/docs/matrix/rotate-image) | Medium | Transpose then reverse, in place |
+| [Spiral Matrix](/docs/matrix/spiral-matrix) | Medium | Shrinking boundaries |
+| [Set Matrix Zeroes](/docs/matrix/set-matrix-zeroes) | Medium | The grid as its own storage |
+
+<Callout type="info" title="Suggested order">
+[Transpose Matrix](/docs/matrix/transpose-matrix) first — it is pure index arithmetic and teaches the `c = r` starting point that [Rotate Image](/docs/matrix/rotate-image) then depends on.
+
+[Spiral Matrix](/docs/matrix/spiral-matrix) is independent and can be done any time. [Set Matrix Zeroes](/docs/matrix/set-matrix-zeroes) is the hardest of the four, because the `O(1)` version requires trusting the grid to store its own bookkeeping.
+</Callout>
+
+## Related Elsewhere
+
+- [Number of Islands](/docs/graphs/number-of-islands) — a grid treated as a graph
+- [Flood Fill](/docs/graphs/flood-fill) — four-directional traversal in its simplest form
+- [Unique Paths](/docs/dynamic-programming/unique-paths) — a grid filled as a DP table
+- [Arrays](/docs/arrays) — why `grid[r][c]` costs the same wherever you look

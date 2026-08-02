@@ -1,0 +1,225 @@
+---
+title: Single Number
+description: Find the one value that appears once when every other appears twice — and see why XOR removes the need for any memory at all
+difficulty: easy
+pattern: Bit Manipulation
+variant: XOR cancellation
+tags: ["Array", "Bit Manipulation"]
+leetcode: https://leetcode.com/problems/single-number/
+problemNumber: 136
+---
+
+## Problem Statement
+
+Every element in the array appears **twice**, except for one which appears **once**. Find that one.
+
+You must solve it in `O(n)` time and `O(1)` extra space.
+
+```text
+Input:  nums = [4, 1, 2, 1, 2]
+Output: 4
+
+Input:  nums = [2, 2, 1]
+Output: 1
+
+Input:  nums = [1]
+Output: 1
+```
+
+## Intuition
+
+The obvious solution is a hash map: count everything, then look for the count of 1.
+
+```text
+[4, 1, 2, 1, 2]  →  {4: 1, 1: 2, 2: 2}  →  answer 4
+```
+
+That is `O(n)` time, which is fine — but `O(n)` **memory**, which the problem forbids. So the question is really: *how do you remember what you have seen without storing it?*
+
+A sum will not work: `4 + 1 + 2 + 1 + 2` is 10, and 10 tells you nothing. You need an operation where **a value meeting its twin destroys both**.
+
+<Callout type="info" title="The insight">
+XOR is exactly that operation.
+
+```text
+x ^ x = 0        a value cancels itself
+x ^ 0 = x        cancelling with nothing changes nothing
+a ^ b = b ^ a    order does not matter
+```
+
+XOR the whole array together. Every pair annihilates itself, whatever order the pairs appear in. Whatever is left over must be the unpaired value.
+</Callout>
+
+The third rule is what makes this work on an unsorted array. The two `1`s are not next to each other, and they do not need to be — XOR does not care when they arrive.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start with 0
+
+`0` is the identity for XOR — combining with it changes nothing. It is the correct empty starting point, the same way `0` is for a sum.
+</Step>
+
+<Step>
+### XOR every element into a running total
+
+One variable. One pass. No condition, no comparison, no lookup.
+</Step>
+
+<Step>
+### The total is the answer
+
+Every paired value has cancelled to `0`, leaving `0 ^ single`, which is `single`.
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title="nums = [4, 1, 2, 1, 2]"
+  frames={[
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["active", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { result: "0 ^ 4 = 4" },
+      note: "Start from 0. After the first value the running total is just 4.",
+    },
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["done", "active", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { result: "4 ^ 1 = 5" },
+      note: "Now 5. This is not a meaningful number yet — it is a mixture. Do not try to interpret it mid-loop.",
+    },
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["done", "done", "active", "idle", "idle"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { result: "5 ^ 2 = 7" },
+      note: "Still a mixture, now containing 4, 1 and 2.",
+    },
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["done", "discard", "done", "discard", "idle"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { result: "7 ^ 1 = 6" },
+      note: "The second 1 arrives. It cancels the first 1 out of the mixture — two positions apart, and it still works.",
+    },
+    {
+      values: [4, 1, 2, 1, 2],
+      states: ["match", "discard", "discard", "discard", "discard"],
+      pointers: [{ index: 4, label: "i" }],
+      vars: { result: "6 ^ 2 = 4" },
+      note: "The second 2 cancels the first. Only 4 was never cancelled, so 4 is what remains.",
+    },
+  ]}
+  caption="One variable held the whole answer the entire time — it just was not readable until the end."
+/>
+
+<Callout type="info" title="Following it in bits">
+```text
+        4  =  1 0 0
+  ^     1  =  0 0 1
+             -------
+              1 0 1   (5)
+  ^     2  =  0 1 0
+             -------
+              1 1 1   (7)
+  ^     1  =  0 0 1
+             -------
+              1 1 0   (6)
+  ^     2  =  0 1 0
+             -------
+              1 0 0   (4)  ← the bits of 4, untouched
+```
+
+Look at the rightmost column: it flips to 1 when the first `1` arrives and back to 0 when the second does. Each column is running its own independent cancellation.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def single_number(nums: list[int]) -> int:
+    """Return the only value appearing once; all others appear twice.
+
+    XOR cancels equal values, so the paired ones vanish and the
+    unpaired one survives. O(n) time, O(1) space.
+    """
+    result = 0
+
+    for num in nums:
+        result ^= num
+
+    return result
+```
+
+The whole loop is one line, and it can be written as `functools.reduce(operator.xor, nums, 0)` — but the explicit loop is clearer about what is happening.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function singleNumber(nums: number[]): number {
+  let result = 0;
+
+  for (const num of nums) {
+    result ^= num;
+  }
+
+  return result;
+}
+```
+
+`nums.reduce((a, b) => a ^ b, 0)` is equivalent. Note the starting value `0` is required — `reduce` without it throws on an empty array.
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+**Time** — one pass, one XOR per element. XOR is a single machine instruction, so the constant factor is as small as it gets.
+
+**Space** — one integer, regardless of input size. This is the requirement the hash map version fails, and the reason the problem exists.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="A single element: [1]">
+The loop runs once: `0 ^ 1 = 1`. Correct with no special case, because starting at `0` already represents "nothing seen yet".
+</Accordion>
+
+<Accordion title="The single number is 0, e.g. [0, 1, 1]">
+`0 ^ 0 ^ 1 ^ 1 = 0`. Correct. This case breaks solutions that use `result` being falsy as a signal for "not found" — a real bug if you write `if result:` anywhere.
+</Accordion>
+
+<Accordion title="Negative numbers">
+Works unchanged. XOR operates on the stored bits, and negative numbers are stored as bit patterns too. `-3 ^ -3` is still `0`.
+
+In JavaScript the operands are converted to 32-bit signed integers, which handles negatives correctly.
+</Accordion>
+
+<Accordion title="What if a value appeared three times instead of twice?">
+This solution breaks. `x ^ x ^ x = x`, so a tripled value survives and corrupts the answer.
+
+That is a genuinely different problem (LeetCode 137), solved by counting each bit position modulo 3 rather than modulo 2. The XOR trick is specifically a *pairs* tool.
+</Accordion>
+
+<Accordion title="Does the array need to be sorted?">
+No — and that is the point worth noticing. Because `a ^ b = b ^ a`, the pairs can be anywhere. A solution that compared neighbours would need sorting first, costing `O(n log n)`.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Missing Number](/docs/bit-manipulation/missing-number) — the same cancellation, but you supply the missing partner yourself
+- [Contains Duplicate](/docs/arrays/contains-duplicate) — the hash-set approach this problem forbids
+- [Number of 1 Bits](/docs/bit-manipulation/number-of-1-bits) — the other essential bit operation

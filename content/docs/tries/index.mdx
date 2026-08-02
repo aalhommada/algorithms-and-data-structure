@@ -1,0 +1,124 @@
+---
+title: Tries
+description: A tree keyed by character, where shared prefixes are stored once — and the one question a hash map cannot answer
+---
+
+A trie (said "try", from re**trie**val) is a tree where **each edge is a character** and each path from the root spells a prefix.
+
+It exists to answer one question a hash map cannot: *"which stored words start with this?"*
+
+## What a Trie Looks Like
+
+Storing `"cat"`, `"car"`, `"card"` and `"dog"`:
+
+```text
+            (root)
+            /    \
+           c      d
+           |      |
+           a      o
+          / \     |
+         t   r    g •          • marks the end of a word
+         •   •    \
+             |
+             d •
+```
+
+The words `"cat"`, `"car"` and `"card"` all share the path `c → a`. That prefix is stored **once**, not three times.
+
+<Callout type="info" title="The vocabulary">
+| Term | Means |
+|---|---|
+| **Node** | One position in the tree. Holds children and an end-of-word flag. |
+| **Edge** | A single character leading to a child node. |
+| **Children** | A map from character → next node. Often a dict, sometimes a 26-slot array. |
+| **End-of-word flag** | "A complete word finishes here." Without it you cannot tell `"car"` from the prefix of `"card"`. |
+| **Prefix** | Any path from the root. Every node *is* a prefix. |
+
+The root represents the empty string and holds no character of its own.
+</Callout>
+
+## Why the End-of-Word Flag Is Not Optional
+
+This is the part beginners skip, and it breaks the structure quietly.
+
+After inserting `"card"`, the path `c → a → r` exists. So does `c → a`. If you search for `"car"` by walking the characters and returning "found" when you arrive, you get `true` — even though `"car"` was never inserted.
+
+<Callout type="warn" title="Existing as a path is not the same as being a word">
+```text
+inserted: "card"
+
+search("car")   walk c → a → r   arrived, but is_word = False  →  false ✓
+starts_with("car")  same walk, arrival is enough                →  true  ✓
+```
+
+The flag is the only thing distinguishing "a word ends here" from "words pass through here". Both operations walk identically; they differ only in what they check on arrival.
+</Callout>
+
+## Why Not Just Use a Hash Map?
+
+For exact lookup, a hash map is better — `O(1)` versus `O(length)`. Use one.
+
+The difference appears with prefixes:
+
+| Question | Hash map | Trie |
+|---|---|---|
+| Is `"apple"` stored? | `O(1)` ✓ | `O(L)` |
+| Does anything start with `"app"`? | **Scan every key** — `O(n·L)` | `O(L)` ✓ |
+| List everything starting with `"app"` | Scan every key | Walk to the node, collect below it |
+| Memory for many shared prefixes | Full string each | Shared once |
+
+<Callout type="info" title="The rule">
+**A trie is worth it when you ask about prefixes.** Otherwise a hash map wins.
+
+That is why it powers autocomplete, spell-checking, IP routing tables and word-search games — all of which ask "what continues from here?" rather than "is this exact thing present?"
+</Callout>
+
+## The Two Operations Are the Same Walk
+
+Every trie operation is: start at the root, follow one character at a time.
+
+```text
+INSERT                          SEARCH
+for each char:                  for each char:
+    if no child, create it          if no child → not found
+    move down                       move down
+mark end-of-word                check the end-of-word flag
+```
+
+Insert creates missing children; search fails on them. Nothing else differs.
+
+## Cost
+
+| Operation | Time | Note |
+|---|---|---|
+| Insert a word | `O(L)` | `L` = word length |
+| Search a word | `O(L)` | Independent of how many words are stored |
+| Starts-with | `O(L)` | The reason the structure exists |
+| Space | `O(total characters)` | Less with shared prefixes |
+
+The time never depends on `n`, the number of stored words — only on the length of the one you are asking about. A trie holding a million words finds a five-letter word in five steps.
+
+<Callout type="warn" title="Memory is the real cost">
+Each node carries a map of children. With a dictionary per node the overhead is significant; a 26-slot array per node is faster but wastes space when most slots are empty.
+
+For a large sparse dictionary a trie can use **more** memory than storing the strings plainly. The prefix operations are what you are buying it for.
+</Callout>
+
+## All Problems
+
+| Problem | Difficulty | Pattern |
+|---|---|---|
+| [Implement Trie](/docs/tries/implement-trie) | Medium | Building the structure |
+| [Replace Words](/docs/tries/replace-words) | Medium | Shortest-prefix lookup |
+
+<Callout type="info" title="Suggested order">
+[Implement Trie](/docs/tries/implement-trie) first — you cannot use one well without having built one. [Replace Words](/docs/tries/replace-words) then applies it to the job a hash map genuinely cannot do.
+</Callout>
+
+## Related Elsewhere
+
+- [Search Autocomplete](/docs/system-design/autocomplete) — a trie at the scale of a search engine
+- [Probabilistic Structures](/docs/system-design/probabilistic-structures) — when even a trie is too much memory
+- [Word Break](/docs/dynamic-programming/word-break) — where a trie can replace repeated hashing
+- [Trees](/docs/trees) — the structure a trie specialises

@@ -1,0 +1,233 @@
+---
+title: Non-overlapping Intervals
+description: Remove the fewest intervals so none overlap — and see why sorting by end time is the only provably safe choice
+difficulty: medium
+pattern: Greedy
+variant: earliest finishing time
+tags: ["Array", "Sorting", "Greedy", "Intervals"]
+leetcode: https://leetcode.com/problems/non-overlapping-intervals/
+problemNumber: 435
+---
+
+## Problem Statement
+
+Given a list of intervals, return the **minimum number to remove** so that the rest do not overlap.
+
+```text
+Input:  [[1,2], [2,3], [3,4], [1,3]]
+Output: 1
+        remove [1,3] and the rest fit
+
+Input:  [[1,2], [1,2], [1,2]]
+Output: 2
+        keep one, remove the other two
+
+Input:  [[1,2], [2,3]]
+Output: 0
+        touching does not count as overlapping here
+```
+
+## Intuition
+
+"Remove the fewest" is the same as **"keep the most"**. That flip matters, because keeping is the question with a known greedy answer.
+
+So: what is the largest set of intervals that do not overlap? Answer that, and the removals are `total - kept`.
+
+Now the question is which interval to keep when two conflict. Three plausible rules:
+
+| Rule | Fails on |
+|---|---|
+| Keep the one that **starts earliest** | `[1,100]` beats `[2,3]` and `[4,5]` — one long interval blocks two short ones |
+| Keep the **shortest** | `[1,5]`, `[4,6]`, `[5,9]` — the short middle one blocks both neighbours |
+| Keep the one that **ends earliest** | Nothing. This one is provably safe. |
+
+<Callout type="info" title="The insight">
+When two intervals conflict, **keep the one that finishes sooner**.
+
+Both occupy one slot in your answer, so keeping either costs the same. But the one ending earlier leaves more room for everything that follows. It is never worse, and often better.
+
+Sort by end time and this becomes a single pass.
+</Callout>
+
+### Why "earliest end" is provably safe
+
+This is the part worth understanding — the rest is bookkeeping.
+
+Take any optimal answer and look at its first interval. The greedy choice ends **no later** than it, because greedy picked the earliest-ending interval available.
+
+Swap the greedy pick in. Everything that fit after the optimal first interval still fits, because the greedy one frees up at least as much space. The answer is still valid and still the same size.
+
+Repeat for each position. Every optimal solution can be transformed into the greedy one without getting worse — so greedy is optimal too. That is the [exchange argument](/docs/greedy), and it is what separates this from a guess.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Sort by **end** time
+
+Not start. This is the entire trick, and it is the line people get wrong.
+</Step>
+
+<Step>
+### Track the end of the last interval you kept
+
+Start it at negative infinity so the first interval always fits.
+</Step>
+
+<Step>
+### For each interval, keep it or remove it
+
+**Starts at or after the last kept end** → no conflict. Keep it, and update the tracked end.
+
+**Starts before** → it overlaps. Remove it, and count it. The tracked end does **not** change, because you kept the earlier-ending one.
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title="[[1,2], [2,3], [3,4], [1,3]] sorted by end → [[1,2], [1,3], [2,3], [3,4]]"
+  frames={[
+    {
+      values: ["[1,2]", "[1,3]", "[2,3]", "[3,4]"],
+      states: ["match", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "keep" }],
+      vars: { last_end: 2, removed: 0 },
+      note: "Sorted by end time: 2, 3, 3, 4. Keep [1,2] — it finishes soonest of all, so it blocks the least.",
+    },
+    {
+      values: ["[1,2]", "[1,3]", "[2,3]", "[3,4]"],
+      states: ["done", "discard", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { test: "1 < 2 → overlap", last_end: 2, removed: 1 },
+      note: "[1,3] starts at 1, before the kept end of 2. Conflict — remove it. last_end stays at 2, because we kept the better interval.",
+    },
+    {
+      values: ["[1,2]", "[1,3]", "[2,3]", "[3,4]"],
+      states: ["done", "discard", "match", "idle"],
+      pointers: [{ index: 2, label: "keep" }],
+      vars: { test: "2 >= 2 ✓", last_end: 3, removed: 1 },
+      note: "[2,3] starts exactly at 2. Touching is allowed here, so it fits. Keep it and move last_end to 3.",
+    },
+    {
+      values: ["[1,2]", "[1,3]", "[2,3]", "[3,4]"],
+      states: ["done", "discard", "done", "match"],
+      pointers: [{ index: 3, label: "keep" }],
+      vars: { test: "3 >= 3 ✓", last_end: 4, removed: 1 },
+      note: "[3,4] also touches and fits. Kept 3 intervals, removed 1 — the answer.",
+    },
+  ]}
+  caption="Had we sorted by start, [1,3] would have been kept before [2,3] and blocked it — giving 2 removals instead of 1."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def erase_overlap_intervals(intervals: list[list[int]]) -> int:
+    """Minimum intervals to remove so none overlap.
+
+    Sort by END time and keep greedily: the interval finishing
+    soonest leaves the most room for the rest.
+    """
+    if not intervals:
+        return 0
+
+    intervals.sort(key=lambda interval: interval[1])
+
+    removed = 0
+    last_end = float("-inf")
+
+    for start, end in intervals:
+        if start >= last_end:
+            last_end = end          # keep it
+        else:
+            removed += 1            # drop it; last_end is unchanged
+
+    return removed
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function eraseOverlapIntervals(intervals: number[][]): number {
+  if (intervals.length === 0) return 0;
+
+  intervals.sort((a, b) => a[1] - b[1]);
+
+  let removed = 0;
+  let lastEnd = -Infinity;
+
+  for (const [start, end] of intervals) {
+    if (start >= lastEnd) {
+      lastEnd = end;
+    } else {
+      removed++;
+    }
+  }
+
+  return removed;
+}
+```
+
+Sort on `a[1] - b[1]` — index 1, the end. Sorting on `a[0] - b[0]` compiles, runs, and returns wrong answers on exactly the inputs the problem is testing.
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="Do not update `last_end` when removing">
+On a conflict, the interval being removed is the one ending *later* — sorting guaranteed that. Setting `last_end = end` there would replace a good interval with a worse one and block later fits.
+
+Leaving `last_end` alone is what makes the greedy choice stick.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n log n)" space="O(1)" />
+
+**Time** — the sort dominates; the pass is `O(n)`.
+
+**Space** — two variables beyond the sort's own overhead.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty input">
+Returns 0. The guard avoids nothing in particular here — the loop would simply not run — but it documents the intent.
+</Accordion>
+
+<Accordion title="A single interval">
+Nothing conflicts, so 0 removals.
+</Accordion>
+
+<Accordion title="Identical intervals: [[1,2], [1,2], [1,2]]">
+The first is kept, setting `last_end = 2`. The other two start at 1, which is `< 2`, so both are removed. Answer: 2. Correct — only one of a set of duplicates can survive.
+</Accordion>
+
+<Accordion title="Touching intervals: [[1,2], [2,3]]">
+`2 >= 2` is true, so both are kept and the answer is 0.
+
+This problem treats touching as *not* overlapping — the opposite of [Merge Intervals](/docs/intervals/merge-intervals). The condition is `start >= last_end`; using `>` would wrongly remove one. Always check which convention the problem uses.
+</Accordion>
+
+<Accordion title="Nothing overlaps at all">
+Every interval passes the test, `removed` stays 0.
+</Accordion>
+
+<Accordion title="Why not solve this with dynamic programming?">
+You can — an `O(n²)` DP over "longest non-overlapping chain ending here" is correct.
+
+It is unnecessary because the greedy choice is provably safe, which is exactly the [greedy vs DP](/docs/dynamic-programming) boundary. DP is the fallback for when no such proof exists; here one does.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Merge Intervals](/docs/intervals/merge-intervals) — sorted by start instead, and merging rather than discarding
+- [Jump Game](/docs/greedy/jump-game) — another greedy whose safety needs an argument
+- [Greedy](/docs/greedy) — the exchange argument in general

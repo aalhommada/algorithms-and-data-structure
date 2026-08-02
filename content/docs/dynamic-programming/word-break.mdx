@@ -1,0 +1,245 @@
+---
+title: Word Break
+description: Can a string be cut into dictionary words? A boolean DP where each position asks about every earlier one
+difficulty: medium
+pattern: Dynamic Programming
+variant: boolean reachability over positions
+tags: ["Hash Table", "String", "Dynamic Programming", "Trie"]
+leetcode: https://leetcode.com/problems/word-break/
+problemNumber: 139
+---
+
+## Problem Statement
+
+Given a string `s` and a dictionary of words, return `true` if `s` can be split into a sequence of one or more dictionary words. Words may be reused.
+
+```text
+Input:  s = "leetcode", words = ["leet", "code"]
+Output: true          "leet" + "code"
+
+Input:  s = "applepenapple", words = ["apple", "pen"]
+Output: true          "apple" + "pen" + "apple"  — reuse is allowed
+
+Input:  s = "catsandog", words = ["cats", "dog", "sand", "and", "cat"]
+Output: false
+```
+
+## Intuition
+
+The greedy attempt fails, and the third example is built to show it.
+
+```text
+"catsandog"  with  ["cats", "dog", "sand", "and", "cat"]
+
+Greedy, longest match first:
+  "cats" ✓  → left with "andog"
+  "and"  ✓  → left with "og"
+  "og"   ✗  → stuck. Report false?
+
+But try the other branch:
+  "cat"  ✓  → left with "sandog"
+  "sand" ✓  → left with "og"
+  "og"   ✗  → also stuck
+```
+
+Here both branches fail so `false` is right — but greedy had no way to know that without checking both. Change the input slightly and the shorter first match is the one that works. **You must try every split point.**
+
+Recursion does that, and immediately repeats itself: `"applepenapple"` reaches the suffix `"apple"` down several different paths, and re-solves it each time.
+
+<Callout type="info" title="The insight">
+Ask one question per position: **can the first `i` characters be broken up completely?**
+
+```text
+ok[i] = true  if there is some j < i where
+              ok[j] is true  AND  s[j..i] is a word
+              └ prefix works    └ the rest is one word
+```
+
+`ok[0] = true` — an empty string is trivially breakable. Work left to right, and each position only consults answers already settled.
+</Callout>
+
+The shape is worth naming: this is **reachability**. Position 0 is reachable, and a word lets you jump from one reachable position to another. The question is whether the end is reachable — the same structure as [Jump Game](/docs/greedy/jump-game), with words instead of jump lengths.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Put the dictionary in a set
+
+Membership tests happen inside a double loop, so `O(1)` lookup matters. A list would make the whole solution `O(n² · k)`.
+</Step>
+
+<Step>
+### Create `ok` of length `n + 1`, with `ok[0] = true`
+
+Index `i` means "the first `i` characters". The extra slot is the empty prefix.
+</Step>
+
+<Step>
+### For each end position `i`, try every start position `j`
+
+If `ok[j]` is true and `s[j:i]` is in the dictionary, then `ok[i]` is true. Stop at the first success — one valid split is enough.
+</Step>
+
+<Step>
+### Return `ok[n]`
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title='s = "leetcode", words = ["leet", "code"]'
+  frames={[
+    {
+      values: ["", "l", "e", "e", "t", "c", "o", "d", "e"],
+      states: ["match", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "ok[0]=T" }],
+      vars: { ok: "[T, _, _, _, _, _, _, _, _]" },
+      note: "Position 0 is the empty prefix — breakable by definition. Everything else is unknown.",
+    },
+    {
+      values: ["", "l", "e", "e", "t", "c", "o", "d", "e"],
+      states: ["match", "compare", "compare", "compare", "discard", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 3, label: "i=3" }],
+      vars: { tried: '"l", "le", "lee"', result: "all false" },
+      note: 'Positions 1 to 3: try every prefix ending here. "l", "le" and "lee" are not words, so these stay false.',
+    },
+    {
+      values: ["", "l", "e", "e", "t", "c", "o", "d", "e"],
+      states: ["match", "compare", "compare", "compare", "match", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 4, label: "i=4" }],
+      vars: { check: 'ok[0] ✓ and "leet" is a word', ok4: true },
+      note: 'At i=4, split at j=0: ok[0] is true AND s[0:4] = "leet" is in the dictionary. So ok[4] becomes true.',
+    },
+    {
+      values: ["", "l", "e", "e", "t", "c", "o", "d", "e"],
+      states: ["done", "done", "done", "done", "match", "compare", "compare", "compare", "idle"],
+      pointers: [{ index: 7, label: "i=7" }],
+      vars: { tried: '"c", "co", "cod"', result: "all false" },
+      note: 'Now only splits starting from position 4 can work, since ok[4] is the only true position ahead. "c", "co", "cod" are not words.',
+    },
+    {
+      values: ["", "l", "e", "e", "t", "c", "o", "d", "e"],
+      states: ["done", "done", "done", "done", "match", "compare", "compare", "compare", "match"],
+      pointers: [{ index: 8, label: "i=8" }],
+      vars: { check: 'ok[4] ✓ and "code" is a word', answer: true },
+      note: 'At i=8: ok[4] is true and s[4:8] = "code" is a word. ok[8] is true — the whole string is breakable.',
+    },
+  ]}
+  caption="Each position is decided once. The recursion would have revisited the same suffixes repeatedly."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def word_break(s: str, word_dict: list[str]) -> bool:
+    """Can s be split entirely into dictionary words?
+
+    ok[i] is True when the first i characters can be broken up.
+    """
+    words = set(word_dict)
+    n = len(s)
+    ok = [False] * (n + 1)
+    ok[0] = True                      # empty prefix
+
+    for i in range(1, n + 1):
+        for j in range(i):
+            if ok[j] and s[j:i] in words:
+                ok[i] = True
+                break                 # one valid split is enough
+
+    return ok[n]
+```
+
+The `break` matters. Without it the inner loop keeps scanning after the answer is settled — correct but wasteful, and it obscures that only *existence* is being asked.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function wordBreak(s: string, wordDict: string[]): boolean {
+  const words = new Set(wordDict);
+  const n = s.length;
+  const ok = new Array<boolean>(n + 1).fill(false);
+  ok[0] = true;
+
+  for (let i = 1; i <= n; i++) {
+    for (let j = 0; j < i; j++) {
+      if (ok[j] && words.has(s.slice(j, i))) {
+        ok[i] = true;
+        break;
+      }
+    }
+  }
+
+  return ok[n];
+}
+```
+
+`s.slice(j, i)` matches Python's `s[j:i]` — end exclusive in both.
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="A useful pruning">
+The inner loop only needs to look back as far as the **longest word** in the dictionary. A split at `j` where `i - j` exceeds that length can never match anything.
+
+```text
+max_len = max(len(w) for w in words)
+for j in range(max(0, i - max_len), i):
+```
+
+With short words and a long string this turns `O(n²)` into roughly `O(n · max_len)` — a real saving, and it costs one line.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n² · k)" space="O(n)" />
+
+**Time** — `n²` position pairs, and each slices a substring of length up to `k` and hashes it. The slicing is easy to overlook; it is why the `max_len` pruning helps.
+
+**Space** — the boolean array plus the set of words.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty string">
+`ok[0]` is `true` and `n` is 0, so `ok[0]` is returned — `true`. An empty string is vacuously breakable.
+</Accordion>
+
+<Accordion title="Empty dictionary">
+No membership test ever passes, so nothing past `ok[0]` becomes true. Returns `false` for any non-empty string.
+</Accordion>
+
+<Accordion title="A word longer than the string">
+`s[j:i]` never produces it, so it is simply never matched. No bounds error — slicing is safe within the loop ranges.
+</Accordion>
+
+<Accordion title="Words reused: 'applepenapple'">
+Nothing prevents reuse. The set is only ever queried, never consumed, so `"apple"` can match at position 0 and again at position 8.
+</Accordion>
+
+<Accordion title="Why not just use greedy longest-match?">
+See the intuition. `"catsandog"` shows greedy committing to `"cats"` and getting stuck, with no mechanism to reconsider.
+
+Whenever an early choice can block a later one and there is no exchange argument, greedy is unsafe — the boundary described on the [greedy](/docs/greedy) page.
+</Accordion>
+
+<Accordion title="Could a trie replace the hash set?">
+Yes, and it is faster in principle: walking a trie from position `j` finds every word starting there in one pass, instead of slicing and hashing for each end position.
+
+The hash set is simpler and fast enough for these constraints. The trie version matters when the dictionary is large or the words are long.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Jump Game](/docs/greedy/jump-game) — the same reachability shape, where greedy *is* safe
+- [Coin Change](/docs/dynamic-programming/coin-change) — try every option at each step, minimising instead of testing
+- [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) — the simplest version of "reach position n"

@@ -1,0 +1,248 @@
+---
+title: Redundant Connection
+description: Find the edge that creates a cycle — where union-find beats a traversal, because the answer is decided the moment an edge arrives
+difficulty: medium
+pattern: Union-Find
+variant: cycle detection as edges arrive
+tags: ["Graph", "Union-Find", "DFS", "BFS"]
+leetcode: https://leetcode.com/problems/redundant-connection/
+problemNumber: 684
+---
+
+## Problem Statement
+
+You start with a tree of `n` nodes, then **one extra edge** is added, creating exactly one cycle. Return that edge. If several answers exist, return the one appearing last in the input.
+
+```text
+Input:  [[1,2], [1,3], [2,3]]
+Output: [2,3]
+
+    1
+   / \
+  2 - 3        the edge 2-3 closes the cycle
+
+Input:  [[1,2], [2,3], [3,4], [1,4], [1,5]]
+Output: [1,4]
+```
+
+## Intuition
+
+The DFS approach: for each edge, check whether its two nodes are already connected — if so, this edge closes a cycle. But "are these connected?" means a fresh traversal every time, so the whole thing is `O(n²)`.
+
+<Callout type="info" title="The insight">
+An edge creates a cycle exactly when **both endpoints are already in the same group**.
+
+If they are in different groups, the edge is doing useful work — joining two separate pieces. If they are already joined, there is already a path between them, and adding a second one closes a loop.
+
+That is precisely the question [union-find](/docs/graphs/number-of-provinces) answers in near-constant time. Process the edges in order, and the **first** one whose endpoints already share a root is the answer.
+</Callout>
+
+This is where union-find earns its place over DFS. The edges arrive one at a time, and each must be judged against everything seen so far. Union-find absorbs each edge and keeps answering instantly; DFS would re-walk the graph on every edge.
+
+<Callout type="info" title="Why the first failure is also the LAST valid answer">
+The problem asks for the last edge in the input that could be removed.
+
+Every edge before the cycle-closing one was a genuine merge — remove any of those and the graph falls apart. Only the edge that found its endpoints already connected is redundant.
+
+Since exactly one extra edge was added, there is exactly one such edge, and returning it on first detection satisfies "last in the input" automatically.
+</Callout>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Every node starts as its own group
+</Step>
+
+<Step>
+### For each edge, look up both roots
+
+`find(a)` and `find(b)`.
+</Step>
+
+<Step>
+### Same root → this is the answer
+
+The two nodes were already connected. This edge is redundant. Return it.
+</Step>
+
+<Step>
+### Different roots → merge and continue
+</Step>
+
+</Steps>
+
+<GraphViz
+  title="Edges [[1,2], [1,3], [2,3]] arriving in order"
+  nodes={[
+    { id: "1", x: 0.5, y: 0.1 },
+    { id: "2", x: 0.2, y: 0.85 },
+    { id: "3", x: 0.8, y: 0.85 },
+  ]}
+  frames={[
+    {
+      edges: [],
+      states: { "1": "active", "2": "active", "3": "active" },
+      vars: { parent: "{1:1, 2:2, 3:3}" },
+      note: "Three nodes, three separate groups. No edges processed yet.",
+    },
+    {
+      edges: [{ from: "1", to: "2", highlight: true }],
+      states: { "1": "match", "2": "done", "3": "idle" },
+      vars: { edge: "[1,2]", roots: "1 vs 2 — different", parent: "{2→1}" },
+      note: "Edge [1,2]: different roots, so it joins two separate groups. Merge them. Keep going.",
+    },
+    {
+      edges: [
+        { from: "1", to: "2" },
+        { from: "1", to: "3", highlight: true },
+      ],
+      states: { "1": "match", "2": "done", "3": "done" },
+      vars: { edge: "[1,3]", roots: "1 vs 3 — different", parent: "{2→1, 3→1}" },
+      note: "Edge [1,3]: also a real merge. All three nodes now share the root 1.",
+    },
+    {
+      edges: [
+        { from: "1", to: "2" },
+        { from: "1", to: "3" },
+        { from: "2", to: "3", highlight: true },
+      ],
+      states: { "1": "done", "2": "discard", "3": "discard" },
+      vars: { edge: "[2,3]", roots: "1 vs 1 — SAME" },
+      note: "Edge [2,3]: find(2) and find(3) both give 1. They are already connected — a path 2→1→3 exists. This edge closes the cycle.",
+    },
+    {
+      edges: [
+        { from: "1", to: "2" },
+        { from: "1", to: "3" },
+        { from: "2", to: "3", highlight: true },
+      ],
+      states: { "1": "idle", "2": "match", "3": "match" },
+      vars: { answer: "[2,3]" },
+      note: "Return [2,3]. Each edge was judged in near-constant time, with no traversal at any point.",
+    },
+  ]}
+  caption="Union-find decides each edge the moment it arrives, using only what came before it."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def find_redundant_connection(edges: list[list[int]]) -> list[int]:
+    """Return the edge that creates a cycle.
+
+    Nodes are labelled 1..n, so the arrays are sized n + 1.
+    """
+    n = len(edges)
+    parent = list(range(n + 1))
+    rank = [0] * (n + 1)
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]      # path halving
+            x = parent[x]
+        return x
+
+    for a, b in edges:
+        root_a, root_b = find(a), find(b)
+
+        if root_a == root_b:
+            return [a, b]                      # already connected → cycle
+
+        if rank[root_a] < rank[root_b]:
+            root_a, root_b = root_b, root_a
+        parent[root_b] = root_a
+        if rank[root_a] == rank[root_b]:
+            rank[root_a] += 1
+
+    return []                                  # unreachable per the problem
+```
+
+`list(range(n + 1))` sizes the array for 1-based labels. Using `n` would put an index error on the highest-numbered node.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function findRedundantConnection(edges: number[][]): number[] {
+  const n = edges.length;
+  const parent = Array.from({ length: n + 1 }, (_, i) => i);
+  const rank = new Array<number>(n + 1).fill(0);
+
+  function find(x: number): number {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  }
+
+  for (const [a, b] of edges) {
+    let rootA = find(a);
+    let rootB = find(b);
+
+    if (rootA === rootB) return [a, b];
+
+    if (rank[rootA] < rank[rootB]) [rootA, rootB] = [rootB, rootA];
+    parent[rootB] = rootA;
+    if (rank[rootA] === rank[rootB]) rank[rootA]++;
+  }
+
+  return [];
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n·α(n))" space="O(n)" />
+
+**Time** — one pass over the edges, with two near-constant `find` calls each. `α(n)` is the inverse Ackermann function, under 5 for any realistic input.
+
+Compare the DFS approach at `O(n²)`: a traversal per edge to test connectivity.
+
+**Space** — the parent and rank arrays.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="The redundant edge is the last one">
+The common case. Every earlier edge merges successfully, and the final one finds equal roots.
+</Accordion>
+
+<Accordion title="The redundant edge is in the middle">
+Returned as soon as it is found — the loop exits immediately.
+
+Since the input is a tree plus exactly one edge, only one edge can ever fail this test, so returning early is always correct.
+</Accordion>
+
+<Accordion title="A self-loop, e.g. [3,3]">
+`find(3)` equals `find(3)`, so it is reported straight away. A node connected to itself is the smallest possible cycle.
+</Accordion>
+
+<Accordion title="Why are the arrays sized n + 1?">
+Nodes are labelled `1..n`, not `0..n-1`. With `n` edges in the input there are also exactly `n` nodes, so the highest label is `n` and the array needs `n + 1` slots.
+
+Index 0 is unused. Sizing to `n` gives an out-of-range error only when the highest-numbered node happens to appear — so small test cases can pass while real ones fail.
+</Accordion>
+
+<Accordion title="Why is DFS worse here than in Number of Provinces?">
+In [Number of Provinces](/docs/graphs/number-of-provinces) the whole graph is available up front, so one traversal answers everything.
+
+Here each edge must be judged against only the edges before it. DFS has no memory between checks and must re-traverse each time; union-find keeps the accumulated state. That difference — **incremental** connectivity — is what the structure is for.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Number of Provinces](/docs/graphs/number-of-provinces) — union-find introduced, with both optimisations explained
+- [Course Schedule](/docs/graphs/course-schedule) — cycle detection on a *directed* graph, where union-find does not apply
+- [Graphs](/docs/graphs) — why cycles are the defining hazard

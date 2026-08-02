@@ -1,0 +1,242 @@
+---
+title: Merge Intervals
+description: Combine every group of overlapping ranges into one, and see why sorting by start is what removes the inner loop
+difficulty: medium
+pattern: Intervals
+variant: sort by start, then merge
+tags: ["Array", "Sorting", "Intervals"]
+leetcode: https://leetcode.com/problems/merge-intervals/
+problemNumber: 56
+---
+
+## Problem Statement
+
+Given a list of intervals, merge all overlapping ones and return the non-overlapping intervals that cover the same total range.
+
+```text
+Input:  [[1,3], [2,6], [8,10], [15,18]]
+Output: [[1,6], [8,10], [15,18]]
+        [1,3] and [2,6] overlap, so they become [1,6]
+
+Input:  [[1,4], [4,5]]
+Output: [[1,5]]
+        touching counts as overlapping here
+```
+
+## Intuition
+
+The naive approach: compare every interval against every other, merge any pair that overlaps, and repeat until nothing changes. That is `O(n²)` at best — and merging can create *new* overlaps, so it may need several passes.
+
+```text
+[[1,3], [8,10], [2,6]]
+
+pass 1:  [1,3] vs [8,10]  →  no
+         [1,3] vs [2,6]   →  merge  →  [1,6]
+pass 2:  must re-check everything, because [1,6] is new
+```
+
+The trouble is that an overlapping partner could be **anywhere** in the list, so nothing can ever be finalised.
+
+<Callout type="info" title="The insight">
+Sort by start time. Now anything overlapping the current interval **must be the very next one**.
+
+Why: after sorting, every later interval starts at or after the current one. If the next interval starts beyond the current end, so does every interval after it — they start even later. Nothing further along can reach back.
+
+So the moment one interval fails to overlap, the current one is finished forever. One pass, no re-checking.
+</Callout>
+
+That is the whole problem. Sorting costs `O(n log n)` and buys the ability to close an interval permanently.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Sort by start time
+
+`intervals.sort(key=lambda x: x[0])`. This is the step that makes everything else valid.
+</Step>
+
+<Step>
+### Hold one interval open
+
+Take the first as `current`. It is not finished — a later interval may extend it.
+</Step>
+
+<Step>
+### For each remaining interval, overlap or not?
+
+**Overlaps** (`next.start <= current.end`) → extend: `current.end = max(current.end, next.end)`.
+
+**Does not overlap** → `current` can never grow again. Output it, and make `next` the new `current`.
+</Step>
+
+<Step>
+### Output the last one
+
+The loop ends with `current` still open. Nothing inside the loop will close it.
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title="[[1,3], [2,6], [8,10], [15,18]] — already sorted by start"
+  frames={[
+    {
+      values: ["[1,3]", "[2,6]", "[8,10]", "[15,18]"],
+      states: ["active", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "current" }],
+      vars: { current: "[1,3]", output: "[]" },
+      note: "Hold [1,3] open. It cannot be output yet — something later might extend it.",
+    },
+    {
+      values: ["[1,3]", "[2,6]", "[8,10]", "[15,18]"],
+      states: ["compare", "compare", "idle", "idle"],
+      pointers: [{ index: 1, label: "next" }],
+      vars: { test: "2 <= 3 → overlap", current: "[1,6]" },
+      note: "[2,6] starts at 2, which is <= the current end of 3. Overlap. Extend the end to max(3, 6) = 6.",
+    },
+    {
+      values: ["[1,6]", "[2,6]", "[8,10]", "[15,18]"],
+      states: ["done", "discard", "active", "idle"],
+      pointers: [{ index: 2, label: "next" }],
+      vars: { test: "8 <= 6 → NO", output: "[[1,6]]" },
+      note: "[8,10] starts at 8, past the end of 6. No overlap — and because the list is sorted, nothing after it can overlap either. [1,6] is final.",
+    },
+    {
+      values: ["[1,6]", "[2,6]", "[8,10]", "[15,18]"],
+      states: ["done", "discard", "done", "active"],
+      pointers: [{ index: 3, label: "next" }],
+      vars: { test: "15 <= 10 → NO", output: "[[1,6], [8,10]]" },
+      note: "Same again. [8,10] closes, and [15,18] becomes the open interval.",
+    },
+    {
+      values: ["[1,6]", "[2,6]", "[8,10]", "[15,18]"],
+      states: ["match", "discard", "match", "match"],
+      vars: { output: "[[1,6], [8,10], [15,18]]" },
+      note: "Loop over. [15,18] is still open, so it must be output here — forgetting this drops the last interval every time.",
+    },
+  ]}
+  caption="Each interval is examined exactly once after the sort. The inner loop is gone."
+/>
+
+<Callout type="warn" title="The containment case is where `max` earns its place">
+```text
+[[1, 10], [2, 3]]
+
+with max:      end = max(10, 3) = 10   →  [1,10]   ✓
+without max:   end = 3                 →  [1,3]    ✗  lost 3..10
+```
+
+`[2, 3]` sits entirely inside `[1, 10]`. Sorting by start puts it second, so a naive `current.end = next.end` shrinks the answer.
+
+This passes most casual tests and fails the moment one interval contains another.
+</Callout>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def merge(intervals: list[list[int]]) -> list[list[int]]:
+    """Merge all overlapping intervals.
+
+    Sorting by start guarantees that any overlapping interval is the
+    next one, so a single pass suffices.
+    """
+    if not intervals:
+        return []
+
+    intervals.sort(key=lambda interval: interval[0])
+    merged = [intervals[0]]
+
+    for start, end in intervals[1:]:
+        last_end = merged[-1][1]
+
+        if start <= last_end:
+            # Overlap — widen the interval already in the output.
+            merged[-1][1] = max(last_end, end)
+        else:
+            merged.append([start, end])
+
+    return merged
+```
+
+Writing into `merged[-1]` instead of a separate `current` variable removes the "don't forget the last one" step entirely — the open interval is always the final element of the output.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function merge(intervals: number[][]): number[][] {
+  if (intervals.length === 0) return [];
+
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged: number[][] = [intervals[0]];
+
+  for (let i = 1; i < intervals.length; i++) {
+    const [start, end] = intervals[i];
+    const last = merged[merged.length - 1];
+
+    if (start <= last[1]) {
+      last[1] = Math.max(last[1], end);
+    } else {
+      merged.push([start, end]);
+    }
+  }
+
+  return merged;
+}
+```
+
+`sort((a, b) => a[0] - b[0])` is required. JavaScript's default sort converts to strings, so `[10, ...]` would come before `[9, ...]`.
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n log n)" space="O(n)" />
+
+**Time** — dominated by the sort. The merge pass itself is `O(n)`, so you cannot do better without a sorted input; comparison sorting is the floor.
+
+**Space** — `O(n)` for the output. The sort adds `O(log n)` for Python's Timsort or `O(n)` depending on the engine; if modifying the input is allowed, no additional structure is needed.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty input">
+Returns `[]`. The guard is needed because `intervals[0]` would otherwise throw.
+</Accordion>
+
+<Accordion title="A single interval">
+The loop never runs and the one interval is returned unchanged.
+</Accordion>
+
+<Accordion title="Touching intervals: [[1,4], [4,5]]">
+`4 <= 4` is true, so they merge into `[1,5]`. This problem treats touching as overlapping.
+
+If it did not — a meeting ending at 4 and another starting at 4 do not clash — the condition would be `start < last_end`. One character, opposite answer. Check what the numbers represent.
+</Accordion>
+
+<Accordion title="One interval inside another: [[1,10], [2,3]]">
+Merges to `[1,10]`, thanks to `max`. This is the case that catches the naive version — see the callout above.
+</Accordion>
+
+<Accordion title="Everything merges into one: [[1,4], [2,5], [3,6]]">
+Returns `[[1,6]]`. Each interval extends the same open one, and the output never grows past a single element.
+</Accordion>
+
+<Accordion title="Already sorted input">
+The sort still runs, so the complexity does not improve. Skipping it is unsafe — you cannot tell sorted input from unsorted without an `O(n)` check, and even then the assumption is fragile.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Insert Interval](/docs/intervals/insert-interval) — the same merge, on an input that is already sorted
+- [Non-overlapping Intervals](/docs/intervals/non-overlapping-intervals) — sorted by *end* instead, and greedy
+- [Intervals](/docs/intervals) — the overlap test and why sorting is the key step

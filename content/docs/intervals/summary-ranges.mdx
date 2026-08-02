@@ -1,0 +1,218 @@
+---
+title: Summary Ranges
+description: Compress a sorted list of numbers into ranges, and practise the start/end bookkeeping every interval problem needs
+difficulty: easy
+pattern: Intervals
+variant: building ranges from consecutive runs
+tags: ["Array", "Intervals"]
+leetcode: https://leetcode.com/problems/summary-ranges/
+problemNumber: 228
+---
+
+## Problem Statement
+
+Given a **sorted** array of distinct integers, return the smallest list of ranges that covers all of them exactly. Each range is written `"a->b"`, or just `"a"` if it holds one number.
+
+```text
+Input:  nums = [0, 1, 2, 4, 5, 7]
+Output: ["0->2", "4->5", "7"]
+
+Input:  nums = [0, 2, 3, 4, 6, 8, 9]
+Output: ["0", "2->4", "6", "8->9"]
+
+Input:  nums = []
+Output: []
+```
+
+## Intuition
+
+This problem builds intervals rather than merging them, which makes it the gentlest place to learn the bookkeeping.
+
+The input is sorted and distinct, so numbers form **runs** of consecutive values. A run continues while each number is exactly one more than the last, and ends the moment there is a gap.
+
+```text
+[0, 1, 2, 4, 5, 7]
+ └──────┘  └──┘  └     runs: 0..2, 4..5, 7
+        gap    gap
+```
+
+<Callout type="info" title="The insight">
+You cannot output a range when you *start* it — you do not yet know where it ends. So hold the start, walk forward, and output only when the run breaks.
+
+That "hold something open until you know it is finished" shape is the same one [Merge Intervals](/docs/intervals/merge-intervals) uses. Here there is no sorting or overlap logic in the way, so the pattern is easy to see.
+</Callout>
+
+The test for "still in the same run" is `nums[i] == nums[i - 1] + 1`. Because the values are distinct and sorted, anything else is a gap.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Remember where the current run began
+
+Keep `start = nums[0]`. This value is not written out yet.
+</Step>
+
+<Step>
+### Walk forward while the run continues
+
+If `nums[i]` is one more than `nums[i - 1]`, the run is unbroken. Do nothing and keep going.
+</Step>
+
+<Step>
+### On a gap, close the run and open a new one
+
+The run covers `start` to `nums[i - 1]` — the **previous** value, not the current one. Format it, then set `start = nums[i]`.
+</Step>
+
+<Step>
+### Close the final run after the loop
+
+The last run is still open when the array ends.
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title="nums = [0, 1, 2, 4, 5, 7]"
+  frames={[
+    {
+      values: [0, 1, 2, 4, 5, 7],
+      states: ["active", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "start" }],
+      vars: { start: 0, output: "[]" },
+      note: "Open a run at 0. We do not know yet how far it reaches.",
+    },
+    {
+      values: [0, 1, 2, 4, 5, 7],
+      states: ["compare", "compare", "compare", "idle", "idle", "idle"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { check: "1 = 0+1 ✓, 2 = 1+1 ✓", start: 0 },
+      note: "1 follows 0, and 2 follows 1. The run is still unbroken, so nothing is output.",
+    },
+    {
+      values: [0, 1, 2, 4, 5, 7],
+      states: ["done", "done", "done", "match", "idle", "idle"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { check: "4 ≠ 2+1 → gap", output: '["0->2"]' },
+      note: "4 does not follow 2. Close the run using nums[i-1] = 2, NOT 4. Then open a new run at 4.",
+    },
+    {
+      values: [0, 1, 2, 4, 5, 7],
+      states: ["done", "done", "done", "compare", "compare", "match"],
+      pointers: [{ index: 5, label: "i" }],
+      vars: { check: "7 ≠ 5+1 → gap", output: '["0->2", "4->5"]' },
+      note: "5 follows 4, so that run grows. Then 7 breaks it — close 4..5 and open a run at 7.",
+    },
+    {
+      values: [0, 1, 2, 4, 5, 7],
+      states: ["done", "done", "done", "done", "done", "match"],
+      vars: { output: '["0->2", "4->5", "7"]' },
+      note: "The array ends with the run at 7 still open. Close it here. Start equals end, so it prints as \"7\" with no arrow.",
+    },
+  ]}
+  caption="Every value is looked at once, and each run is written exactly when it is known to be complete."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def summary_ranges(nums: list[int]) -> list[str]:
+    """Compress a sorted, distinct array into range strings."""
+    if not nums:
+        return []
+
+    ranges: list[str] = []
+    start = nums[0]
+
+    for i in range(1, len(nums)):
+        if nums[i] != nums[i - 1] + 1:
+            # The run broke. It ended at the PREVIOUS value.
+            ranges.append(format_range(start, nums[i - 1]))
+            start = nums[i]
+
+    ranges.append(format_range(start, nums[-1]))
+    return ranges
+
+
+def format_range(start: int, end: int) -> str:
+    return str(start) if start == end else f"{start}->{end}"
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function summaryRanges(nums: number[]): string[] {
+  if (nums.length === 0) return [];
+
+  const ranges: string[] = [];
+  let start = nums[0];
+
+  for (let i = 1; i < nums.length; i++) {
+    if (nums[i] !== nums[i - 1] + 1) {
+      ranges.push(formatRange(start, nums[i - 1]));
+      start = nums[i];
+    }
+  }
+
+  ranges.push(formatRange(start, nums[nums.length - 1]));
+  return ranges;
+}
+
+function formatRange(start: number, end: number): string {
+  return start === end ? `${start}` : `${start}->${end}`;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(1)" />
+
+**Time** — a single pass. No sorting is needed, because the input is already sorted; that guarantee is what makes this `O(n)` rather than `O(n log n)`.
+
+**Space** — `O(1)` beyond the output. Only `start` is tracked.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty array">
+Returns `[]`. The guard is required — `nums[0]` would throw otherwise.
+</Accordion>
+
+<Accordion title="A single element: [5]">
+The loop never runs. The final append closes the run `5..5`, which formats as `"5"`.
+</Accordion>
+
+<Accordion title="No consecutive numbers: [1, 3, 5]">
+Every step is a gap, so each value becomes its own single-number range: `["1", "3", "5"]`.
+</Accordion>
+
+<Accordion title="All consecutive: [1, 2, 3, 4]">
+No gap ever occurs, so the loop outputs nothing. Everything depends on the final append, which produces `["1->4"]`. This is the case that fails if you forget to close the last run.
+</Accordion>
+
+<Accordion title="Why nums[i - 1] and not nums[i] when closing?">
+`nums[i]` is the value that **broke** the run — it belongs to the next one. The run being closed ended at the previous value.
+
+Using `nums[i]` produces ranges that overlap and include numbers that are not in the input, e.g. `"0->4"` for `[0,1,2,4]`, which wrongly claims 3 is present.
+</Accordion>
+
+<Accordion title="Negative numbers">
+Work unchanged. `-2` follows `-3` because `-3 + 1 == -2`. The arithmetic does not care about sign.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Merge Intervals](/docs/intervals/merge-intervals) — the same open/close bookkeeping, with overlap logic added
+- [Intervals](/docs/intervals) — the overlap test and sorting rules

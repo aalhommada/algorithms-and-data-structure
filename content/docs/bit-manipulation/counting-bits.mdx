@@ -1,0 +1,222 @@
+---
+title: Counting Bits
+description: Count the set bits of every number from 0 to n, and see how each answer is built from one already computed
+difficulty: easy
+pattern: Dynamic Programming
+variant: recurrence over bit patterns
+tags: ["Bit Manipulation", "Dynamic Programming"]
+leetcode: https://leetcode.com/problems/counting-bits/
+problemNumber: 338
+---
+
+## Problem Statement
+
+Given an integer `n`, return an array of length `n + 1` where position `i` holds the number of `1` bits in `i`.
+
+```text
+Input:  n = 2
+Output: [0, 1, 1]
+        0 → 0     zero ones
+        1 → 1     one one
+        2 → 10    one one
+
+Input:  n = 5
+Output: [0, 1, 1, 2, 1, 2]
+```
+
+## Intuition
+
+The obvious solution: run [Number of 1 Bits](/docs/bit-manipulation/number-of-1-bits) on every value from `0` to `n`. That is `O(n log n)` — up to 32 steps each, `n` times.
+
+It also throws away everything it learns. Counting the bits of 11 tells you nothing about 12, even though you are about to compute that too.
+
+**Ask the question from [dynamic programming](/docs/dynamic-programming): am I recomputing something I already know?**
+
+Look at what a right shift does:
+
+```text
+  11  =  1 0 1 1        three ones
+  11 >> 1  =  1 0 1     two ones      ← this is the number 5
+
+So:  bits(11)  =  bits(5)  +  (the bit that fell off)
+```
+
+<Callout type="info" title="The insight">
+Shifting right by one drops the last bit and leaves a **smaller number you have already solved**.
+
+```text
+bits(i)  =  bits(i >> 1)  +  (i & 1)
+            └─ already in  └─ the dropped
+               the array      bit: 0 or 1
+```
+
+`i >> 1` is always less than `i`, so its answer is already sitting in the array. Each value costs **one lookup and one addition** — `O(1)` — instead of a loop.
+</Callout>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Create the array with `result[0] = 0`
+
+Zero has no set bits. This is the base case, and it is the only value not computed from another.
+</Step>
+
+<Step>
+### For each `i` from 1 to n, read the answer for `i >> 1`
+
+`i >> 1` is roughly `i / 2`, so it was filled in earlier. This is the "already solved subproblem".
+</Step>
+
+<Step>
+### Add the last bit back
+
+`i & 1` is `1` if `i` is odd, `0` if even. That is exactly the bit the shift discarded.
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title="Building the answers up to n = 5"
+  frames={[
+    {
+      values: [0, 0, 0, 0, 0, 0],
+      states: ["match", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "base" }],
+      vars: { known: "bits(0) = 0" },
+      note: "Base case. Zero has no set bits, and nothing else is known yet.",
+    },
+    {
+      values: [0, 1, 0, 0, 0, 0],
+      states: ["done", "match", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "i=1" }],
+      vars: { calc: "bits(0) + 1 = 1", binary: "1" },
+      note: "1 >> 1 is 0, whose answer is 0. 1 is odd so add 1. Result: 1.",
+    },
+    {
+      values: [0, 1, 1, 0, 0, 0],
+      states: ["done", "compare", "match", "idle", "idle", "idle"],
+      pointers: [{ index: 2, label: "i=2" }],
+      vars: { calc: "bits(1) + 0 = 1", binary: "10" },
+      note: "2 >> 1 is 1, already computed as 1. 2 is even so add nothing. Result: 1.",
+    },
+    {
+      values: [0, 1, 1, 2, 0, 0],
+      states: ["done", "compare", "done", "match", "idle", "idle"],
+      pointers: [{ index: 3, label: "i=3" }],
+      vars: { calc: "bits(1) + 1 = 2", binary: "11" },
+      note: "3 >> 1 is 1 again. Reusing the same stored answer — this is the overlap that makes it DP.",
+    },
+    {
+      values: [0, 1, 1, 2, 1, 0],
+      states: ["done", "done", "compare", "done", "match", "idle"],
+      pointers: [{ index: 4, label: "i=4" }],
+      vars: { calc: "bits(2) + 0 = 1", binary: "100" },
+      note: "4 >> 1 is 2, stored as 1. Even, so add nothing.",
+    },
+    {
+      values: [0, 1, 1, 2, 1, 2],
+      states: ["done", "done", "compare", "done", "done", "match"],
+      pointers: [{ index: 5, label: "i=5" }],
+      vars: { calc: "bits(2) + 1 = 2", binary: "101" },
+      note: "5 >> 1 is 2 as well. Six answers, six additions — no inner loop anywhere.",
+    },
+  ]}
+  caption="Every value reads exactly one earlier value. That is what turns O(n log n) into O(n)."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def count_bits(n: int) -> list[int]:
+    """Count set bits for every value from 0 to n.
+
+    bits(i) = bits(i >> 1) + (i & 1)
+    Dropping the last bit gives a smaller value already solved.
+    """
+    result = [0] * (n + 1)
+
+    for i in range(1, n + 1):
+        result[i] = result[i >> 1] + (i & 1)
+
+    return result
+```
+
+The parentheses around `i & 1` are required. In Python `&` binds *lower* than `+`, so `result[i >> 1] + i & 1` would add first and then AND — silently wrong.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function countBits(n: number): number[] {
+  const result = new Array<number>(n + 1).fill(0);
+
+  for (let i = 1; i <= n; i++) {
+    result[i] = result[i >> 1] + (i & 1);
+  }
+
+  return result;
+}
+```
+
+Same precedence trap: `&` binds lower than `+` in TypeScript too, so the parentheses are not optional.
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="An equally good alternative recurrence">
+`bits(i) = bits(i & (i - 1)) + 1`.
+
+Clearing the lowest set bit (the trick from [Number of 1 Bits](/docs/bit-manipulation/number-of-1-bits)) also lands on a smaller, already-solved number — with exactly one fewer set bit.
+
+Both are `O(n)`. The shift version is easier to explain; this one connects the two problems more directly.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+**Time** — one pass from 1 to `n`, doing constant work per value. The naive version is `O(n log n)`, since each of the `n` values needs its own bit-counting loop.
+
+**Space** — `O(n)` for the output array. That is required by the problem, so it does not count as extra space; no additional structure is used beyond it.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="n = 0">
+Returns `[0]`. The array is created with one slot, the loop never runs, and the base case is already correct.
+</Accordion>
+
+<Accordion title="Why is result[i >> 1] guaranteed to be filled already?">
+For any `i ≥ 1`, `i >> 1` is at most `i / 2`, which is strictly less than `i`. The loop fills positions in increasing order, so every value it reads was written on an earlier iteration.
+
+This is the condition every bottom-up DP needs: **fill in an order where dependencies come first.** Here, "increasing" happens to be that order.
+</Accordion>
+
+<Accordion title="Is this really dynamic programming, or just a bit trick?">
+Genuinely DP, and it satisfies both requirements:
+
+- **Optimal substructure** — `bits(i)` is built from `bits(i >> 1)`
+- **Overlapping subproblems** — `bits(1)` is used by both 2 and 3; `bits(2)` by both 4 and 5
+
+The frontmatter lists the pattern as Dynamic Programming for that reason. The bit operations are how the subproblem is *found*, not what makes the solution fast.
+</Accordion>
+
+<Accordion title="Could you use the built-in bit count instead?">
+Yes — `[i.bit_count() for i in range(n + 1)]` in Python 3.10+ is correct and fast, because the count is a single CPU instruction.
+
+It is the right production answer and the wrong learning answer: it hides the recurrence, which is the transferable part.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Number of 1 Bits](/docs/bit-manipulation/number-of-1-bits) — the single-number version, and the alternative recurrence
+- [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) — the same "build on a smaller answer" shape, without bits
+- [Dynamic Programming](/docs/dynamic-programming) — why writing answers down is the whole technique

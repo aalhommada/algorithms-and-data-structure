@@ -1,0 +1,255 @@
+---
+title: Insert Interval
+description: Add one interval to a sorted list and merge what it touches, in three clean phases instead of one tangled loop
+difficulty: medium
+pattern: Intervals
+variant: three-phase scan
+tags: ["Array", "Intervals"]
+leetcode: https://leetcode.com/problems/insert-interval/
+problemNumber: 57
+---
+
+## Problem Statement
+
+You are given a list of **non-overlapping** intervals **sorted by start time**, and one new interval. Insert it, merging with anything it overlaps, and keep the result sorted and non-overlapping.
+
+```text
+Input:  intervals = [[1,3], [6,9]],  new = [2,5]
+Output: [[1,5], [6,9]]
+        [2,5] overlaps [1,3] → merged into [1,5]
+
+Input:  intervals = [[1,2], [3,5], [6,7], [8,10], [12,16]],  new = [4,8]
+Output: [[1,2], [3,10], [12,16]]
+        [4,8] swallows [3,5], [6,7] and [8,10]
+```
+
+## Intuition
+
+The lazy solution works: append the new interval, sort, and run [Merge Intervals](/docs/intervals/merge-intervals). That is `O(n log n)`.
+
+But the input is **already sorted and already non-overlapping**. Sorting again throws away a guarantee you were handed for free. With it, the answer is `O(n)`.
+
+<Callout type="info" title="The insight">
+The sorted list splits into exactly three regions relative to the new interval:
+
+```text
+intervals:  [1,2]   [3,5]  [6,7]  [8,10]     [12,16]
+new:                  [4 ─────────── 8]
+
+            └ BEFORE ┘└─── OVERLAPPING ───┘  └ AFTER ┘
+             ends before        touches       starts after
+             new starts         new           new ends
+```
+
+**Before** — copy across untouched. **Overlapping** — absorb into one widened interval. **After** — copy across untouched.
+
+Because the list is sorted, these regions are contiguous. You never go back.
+</Callout>
+
+Writing this as three separate loops is far clearer than one loop with a state flag — and it removes the class of bug where "am I still merging?" gets out of sync.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Phase 1 — copy everything that ends before the new interval starts
+
+While `intervals[i].end < new.start`, this interval cannot touch the new one. Copy it and move on.
+</Step>
+
+<Step>
+### Phase 2 — absorb everything that overlaps
+
+While `intervals[i].start <= new.end`, there is overlap. Widen the new interval to cover both:
+
+```text
+new.start = min(new.start, intervals[i].start)
+new.end   = max(new.end,   intervals[i].end)
+```
+
+Then append the widened interval **once**, after the loop.
+</Step>
+
+<Step>
+### Phase 3 — copy the rest
+
+Everything remaining starts after the new interval ends. Copy it across.
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title="[[1,2], [3,5], [6,7], [8,10], [12,16]] inserting [4,8]"
+  frames={[
+    {
+      values: ["[1,2]", "[3,5]", "[6,7]", "[8,10]", "[12,16]"],
+      states: ["match", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { phase: "1 — before", test: "2 < 4 ✓", output: "[[1,2]]" },
+      note: "[1,2] ends at 2, before the new interval starts at 4. It can never be touched — copy it straight across.",
+    },
+    {
+      values: ["[1,2]", "[3,5]", "[6,7]", "[8,10]", "[12,16]"],
+      states: ["done", "compare", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { phase: "2 — merging", test: "3 <= 8 ✓", merged: "[3,8]" },
+      note: "[3,5] starts at 3, which is <= the new end of 8. Overlap. Widen: start becomes min(4,3)=3, end stays max(8,5)=8.",
+    },
+    {
+      values: ["[1,2]", "[3,5]", "[6,7]", "[8,10]", "[12,16]"],
+      states: ["done", "discard", "discard", "idle", "idle"],
+      pointers: [{ index: 2, label: "i" }],
+      vars: { phase: "2 — merging", test: "6 <= 8 ✓", merged: "[3,8]" },
+      note: "[6,7] is entirely inside [3,8]. It overlaps, but max keeps the end at 8 — nothing shrinks.",
+    },
+    {
+      values: ["[1,2]", "[3,5]", "[6,7]", "[8,10]", "[12,16]"],
+      states: ["done", "discard", "discard", "compare", "idle"],
+      pointers: [{ index: 3, label: "i" }],
+      vars: { phase: "2 — merging", test: "8 <= 8 ✓", merged: "[3,10]" },
+      note: "[8,10] touches at exactly 8. That counts, so it merges too and the end extends to 10.",
+    },
+    {
+      values: ["[1,2]", "[3,10]", "[6,7]", "[8,10]", "[12,16]"],
+      states: ["done", "match", "discard", "discard", "active"],
+      pointers: [{ index: 4, label: "i" }],
+      vars: { phase: "3 — after", test: "12 > 10", output: "[[1,2], [3,10]]" },
+      note: "[12,16] starts past the merged end. Phase 2 is over — append [3,10], then copy the rest unchanged.",
+    },
+    {
+      values: ["[1,2]", "[3,10]", "[12,16]", "", ""],
+      states: ["match", "match", "match", "idle", "idle"],
+      vars: { output: "[[1,2], [3,10], [12,16]]" },
+      note: "Done in one pass. Three intervals were absorbed into one, and nothing was re-sorted.",
+    },
+  ]}
+  caption="The three phases run in order and never overlap, because the input was sorted to begin with."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def insert(
+    intervals: list[list[int]], new_interval: list[int]
+) -> list[list[int]]:
+    """Insert an interval into a sorted, non-overlapping list.
+
+    Three phases: copy what ends too early, absorb what overlaps,
+    copy the rest. O(n) — the input's sorted order is reused.
+    """
+    result: list[list[int]] = []
+    start, end = new_interval
+    i, n = 0, len(intervals)
+
+    # Phase 1 — entirely before the new interval.
+    while i < n and intervals[i][1] < start:
+        result.append(intervals[i])
+        i += 1
+
+    # Phase 2 — every overlapping interval widens the new one.
+    while i < n and intervals[i][0] <= end:
+        start = min(start, intervals[i][0])
+        end = max(end, intervals[i][1])
+        i += 1
+    result.append([start, end])
+
+    # Phase 3 — entirely after.
+    while i < n:
+        result.append(intervals[i])
+        i += 1
+
+    return result
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function insert(intervals: number[][], newInterval: number[]): number[][] {
+  const result: number[][] = [];
+  let [start, end] = newInterval;
+  let i = 0;
+  const n = intervals.length;
+
+  // Phase 1 — entirely before.
+  while (i < n && intervals[i][1] < start) {
+    result.push(intervals[i]);
+    i++;
+  }
+
+  // Phase 2 — absorb overlaps.
+  while (i < n && intervals[i][0] <= end) {
+    start = Math.min(start, intervals[i][0]);
+    end = Math.max(end, intervals[i][1]);
+    i++;
+  }
+  result.push([start, end]);
+
+  // Phase 3 — entirely after.
+  while (i < n) {
+    result.push(intervals[i]);
+    i++;
+  }
+
+  return result;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="The new interval is appended once, outside the loop">
+A common bug is appending inside phase 2, producing one copy per merge. The merged interval is a single result no matter how many originals it swallowed.
+
+Appending after the loop also handles the case where phase 2 never runs — the new interval simply goes in at the right position, unmerged.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(n)" space="O(n)" />
+
+**Time** — `i` only ever moves forward, so all three loops together visit each interval once. Compare with the sort-and-merge approach at `O(n log n)`.
+
+**Space** — `O(n)` for the output. No extra structure.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Empty intervals list">
+Phases 1 and 2 do not run, phase 3 has nothing to copy. The result is `[new_interval]`. Correct with no special case.
+</Accordion>
+
+<Accordion title="New interval goes at the very start: [[3,5]], new = [1,2]">
+Phase 1 skips (`5 < 1` is false). Phase 2 skips (`3 <= 2` is false). So `[1,2]` is appended first, then phase 3 copies `[3,5]`. Order is correct.
+</Accordion>
+
+<Accordion title="New interval goes at the very end: [[1,2]], new = [3,5]">
+Phase 1 copies `[1,2]` (since `2 < 3`). Phase 2 skips. `[3,5]` is appended last. Correct.
+</Accordion>
+
+<Accordion title="New interval swallows everything: [[2,3], [5,7]], new = [1,10]">
+Phase 1 skips. Phase 2 absorbs both, giving `[1,10]`. Phase 3 has nothing left. Result: `[[1,10]]`.
+</Accordion>
+
+<Accordion title="New interval is inside an existing one: [[1,10]], new = [3,5]">
+Phase 2 runs: `start = min(3,1) = 1`, `end = max(5,10) = 10`. Result `[[1,10]]` — unchanged, which is right.
+
+Without `min` on the start, the answer would be `[3,10]`, silently losing 1..3. Both `min` and `max` are load-bearing.
+</Accordion>
+
+<Accordion title="Touching at a boundary: [[1,3]], new = [3,5]">
+`3 <= 5` is true, so they merge into `[1,5]`. This problem treats touching as overlapping — consistent with [Merge Intervals](/docs/intervals/merge-intervals).
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Merge Intervals](/docs/intervals/merge-intervals) — the same merging when the input is not pre-sorted
+- [Non-overlapping Intervals](/docs/intervals/non-overlapping-intervals) — sorted by end, and greedy
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — another problem solved by trusting sorted input

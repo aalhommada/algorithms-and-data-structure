@@ -1,0 +1,257 @@
+---
+title: Replace Words
+description: Swap each word for its shortest root — the prefix question a hash map has to brute-force and a trie answers in one walk
+difficulty: medium
+pattern: Trie
+variant: shortest-prefix lookup
+tags: ["Array", "Hash Table", "String", "Trie"]
+leetcode: https://leetcode.com/problems/replace-words/
+problemNumber: 648
+---
+
+## Problem Statement
+
+Given a dictionary of roots and a sentence, replace every word that has a root as its prefix with that root. If several roots match, use the **shortest**.
+
+```text
+Input:  dictionary = ["cat", "bat", "rat"]
+        sentence = "the cattle was rattled by the battery"
+Output: "the cat was rat by the bat"
+
+Input:  dictionary = ["a", "b", "c"]
+        sentence = "aadsfasf absbs bbab cadsfafs"
+Output: "a a b c"
+```
+
+## Intuition
+
+The brute force: for each word, test every root to see whether it is a prefix, keeping the shortest match.
+
+```text
+"cattle"  vs  ["cat", "bat", "rat"]
+  does it start with "cat"? yes → candidate, length 3
+  does it start with "bat"? no
+  does it start with "rat"? no
+```
+
+That is `O(words × roots × length)`. With a large dictionary the roots loop dominates, and almost every test fails immediately on the first character — wasted work repeated for every word.
+
+<Callout type="info" title="The insight">
+Put the roots in a [trie](/docs/tries), then walk each word down it **one character at a time**.
+
+The moment you land on a node marked as the end of a root, you have found a match — and because you walked from the shortest prefix outward, it is automatically the **shortest** one. Stop there.
+
+If the path breaks before any root is found, no root matches. Keep the word.
+</Callout>
+
+Two things fall out for free:
+
+**Shortest is automatic.** Walking `c → a → t` reaches `"cat"` before it could ever reach `"cattle"`. Depth *is* length, so the first hit is the shortest. No comparison, no tracking a minimum.
+
+**Failure is early.** A word starting with `z` fails at the first character, having consulted the whole dictionary at once — instead of testing every root separately.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Insert every root into a trie
+
+Mark the last node of each root as a word end.
+</Step>
+
+<Step>
+### For each word in the sentence, walk it down the trie
+
+Character by character from the root.
+</Step>
+
+<Step>
+### Stop at the first end-of-root node
+
+Return the characters consumed so far. This is the shortest matching root.
+</Step>
+
+<Step>
+### If the path breaks, keep the original word
+
+A missing child means no root is a prefix of this word.
+</Step>
+
+</Steps>
+
+<TreeViz
+  title='Roots ["cat", "bat", "rat"] — replacing "cattle"'
+  frames={[
+    {
+      nodes: ["root", "c", "b", "a", null, "a", null],
+      states: ["match", "active", "idle", "idle", "idle", "idle", "idle"],
+      output: [],
+      vars: { word: "cattle", at: "c", consumed: "c" },
+      note: "Walk 'cattle' from the root. The child 'c' exists, so descend. One character consumed.",
+    },
+    {
+      nodes: ["root", "c", "b", "a", null, "a", null],
+      states: ["done", "done", "idle", "active", "idle", "idle", "idle"],
+      output: [],
+      vars: { at: "a", consumed: "ca", is_root: false },
+      note: "Then 'a'. This node is not marked as the end of a root, so keep going.",
+    },
+    {
+      nodes: ["root", "c", "b", "a", null, "a", null],
+      states: ["done", "done", "idle", "done", "match", "idle", "idle"],
+      output: ["cat"],
+      vars: { at: "t", consumed: "cat", is_root: true },
+      note: "Then 't' — and this node IS marked. Stop immediately. 'cat' is the answer, and it is the shortest because depth equals length.",
+    },
+    {
+      nodes: ["root", "c", "b", "a", null, "a", null],
+      states: ["done", "done", "idle", "done", "match", "idle", "idle"],
+      output: ["cat"],
+      vars: { remaining: "tle — never examined" },
+      note: "The rest of 'cattle' is never walked. Longer roots sharing this prefix could not be shorter, so there is nothing left to check.",
+    },
+    {
+      nodes: ["root", "c", "b", "a", null, "a", null],
+      states: ["match", "idle", "discard", "idle", "idle", "idle", "idle"],
+      output: ["cat", "the"],
+      vars: { word: "the", at: "t", found: "no child" },
+      note: "Now 'the'. The root has no child 't', so the walk fails on the FIRST character — the entire dictionary ruled out in one step.",
+    },
+  ]}
+  caption="Each word costs at most its own length, regardless of how many roots the dictionary holds."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+class TrieNode:
+    def __init__(self) -> None:
+        self.children: dict[str, "TrieNode"] = {}
+        self.is_root = False
+
+
+def replace_words(dictionary: list[str], sentence: str) -> str:
+    """Replace each word with its shortest matching root."""
+    trie = TrieNode()
+
+    for root in dictionary:
+        node = trie
+        for char in root:
+            node = node.children.setdefault(char, TrieNode())
+        node.is_root = True
+
+    def shortest_root(word: str) -> str:
+        node = trie
+        for i, char in enumerate(word):
+            if char not in node.children:
+                return word                 # no root is a prefix
+            node = node.children[char]
+            if node.is_root:
+                return word[: i + 1]        # first hit is the shortest
+        return word
+
+    return " ".join(shortest_root(w) for w in sentence.split())
+```
+
+`setdefault` creates the child only when missing and returns it either way — the insert loop in one line.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+class TrieNode {
+  children = new Map<string, TrieNode>();
+  isRoot = false;
+}
+
+function replaceWords(dictionary: string[], sentence: string): string {
+  const trie = new TrieNode();
+
+  for (const root of dictionary) {
+    let node = trie;
+    for (const char of root) {
+      let next = node.children.get(char);
+      if (next === undefined) {
+        next = new TrieNode();
+        node.children.set(char, next);
+      }
+      node = next;
+    }
+    node.isRoot = true;
+  }
+
+  function shortestRoot(word: string): string {
+    let node = trie;
+    for (let i = 0; i < word.length; i++) {
+      const next = node.children.get(word[i]);
+      if (next === undefined) return word;
+      node = next;
+      if (node.isRoot) return word.slice(0, i + 1);
+    }
+    return word;
+  }
+
+  return sentence.split(" ").map(shortestRoot).join(" ");
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="info" title="Why returning on the first hit gives the shortest root">
+The walk goes one character deeper per step, so it encounters prefixes in increasing length order: `"c"`, then `"ca"`, then `"cat"`.
+
+If both `"cat"` and `"cattle"` were roots, `"cat"` is reached first — it is nearer the root of the trie. Returning immediately is therefore not just an optimisation; it *is* the "shortest" requirement, implemented by the structure rather than by comparison.
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(D + S)" space="O(D)" />
+
+**Time** — `D` is the total characters across all roots (building the trie), `S` the total characters in the sentence (walking it). Compare the brute force at `O(words × roots × length)`.
+
+**Space** — the trie, bounded by the total characters in the dictionary and smaller when roots share prefixes.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="No root matches any word">
+Every walk fails early and each word is returned unchanged. The sentence comes back as it went in.
+</Accordion>
+
+<Accordion title="A word IS a root: 'cat' with root 'cat'">
+The walk reaches the final node, finds `is_root`, and returns `"cat"` — the same string. Correct.
+</Accordion>
+
+<Accordion title="Two roots where one is a prefix of the other: ['cat', 'cattle']">
+`"cattle"` returns `"cat"`, because that node is hit first. The `"cattle"` root is never reached — which is exactly the "shortest" rule.
+</Accordion>
+
+<Accordion title="A root longer than the word: root 'cattle', word 'cat'">
+The walk consumes all of `"cat"` without ever landing on a marked node, and the loop ends. The final `return word` handles it, leaving `"cat"` unchanged.
+
+Without that trailing return the function would fall off the end.
+</Accordion>
+
+<Accordion title="An empty dictionary">
+The trie has no children, so every word fails on its first character. The sentence is returned unchanged.
+</Accordion>
+
+<Accordion title="Why is a hash map worse here?">
+A hash map can only answer "is this exact string a root?" To find prefixes you would either test every root against every word, or generate every prefix of every word and look each up — `O(L²)` per word for the string slicing alone.
+
+The trie answers the prefix question directly, which is the whole reason the structure exists.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Implement Trie](/docs/tries/implement-trie) — building the structure this relies on
+- [Word Break](/docs/dynamic-programming/word-break) — another dictionary problem where a trie can replace repeated hashing
+- [Longest Common Prefix](/docs/strings/longest-common-prefix) — prefixes without needing a trie

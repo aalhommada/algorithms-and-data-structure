@@ -1,0 +1,263 @@
+---
+title: Number of Provinces
+description: Count connected groups with union-find — the structure that answers "are these two in the same group?" almost instantly
+difficulty: medium
+pattern: Union-Find
+variant: counting components
+tags: ["Graph", "Union-Find", "DFS", "BFS"]
+leetcode: https://leetcode.com/problems/number-of-provinces/
+problemNumber: 547
+---
+
+## Problem Statement
+
+`isConnected[i][j] = 1` means city `i` and city `j` are directly connected. A **province** is a group of cities connected directly or indirectly. Return how many provinces there are.
+
+```text
+Input:  [[1,1,0],
+         [1,1,0],
+         [0,0,1]]
+Output: 2
+        cities 0 and 1 form one province, city 2 is alone
+
+Input:  [[1,0,0],
+         [0,1,0],
+         [0,0,1]]
+Output: 3
+        nobody is connected
+```
+
+## Intuition
+
+DFS solves this: start at an unvisited city, mark everything reachable, and count how many times you had to start over. That is [Number of Islands](/docs/graphs/number-of-islands) on an adjacency matrix, and it is a perfectly good answer.
+
+This page uses **union-find** instead, because the problem is the cleanest introduction to it.
+
+<Callout type="info" title="The insight">
+Union-find (also called *disjoint set union*) answers one question fast: **are these two things in the same group?**
+
+Each element points at a parent. Follow the parents up and you reach a **root** — the group's representative. Two elements are in the same group when they share a root.
+
+```text
+find(x)      →  which group is x in?     (walk up to the root)
+union(a, b)  →  merge two groups         (point one root at the other)
+```
+
+Start with every city as its own group — `n` groups. Each successful union merges two into one, so **decrement a counter**. Whatever remains is the number of provinces.
+</Callout>
+
+Counting down from `n` is neater than counting components at the end, and it is the standard way to write this.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Give every city its own parent
+
+`parent[i] = i`. `n` separate groups.
+</Step>
+
+<Step>
+### For each connection, union the two cities
+
+Only scan the upper triangle (`j > i`). The matrix is symmetric, so checking both halves does the same work twice.
+</Step>
+
+<Step>
+### Decrement the count only on a real merge
+
+If both cities already share a root, they were already in one province. Nothing merged, so nothing is subtracted.
+</Step>
+
+</Steps>
+
+<GraphViz
+  title="Cities 0-1 connected, city 2 alone"
+  nodes={[
+    { id: "0", x: 0.15, y: 0.3 },
+    { id: "1", x: 0.5, y: 0.3 },
+    { id: "2", x: 0.85, y: 0.3 },
+  ]}
+  frames={[
+    {
+      edges: [],
+      states: { "0": "active", "1": "active", "2": "active" },
+      vars: { parent: "[0, 1, 2]", provinces: 3 },
+      note: "Every city starts as its own group, pointing at itself. Three groups, so the count begins at 3.",
+    },
+    {
+      edges: [{ from: "0", to: "1", highlight: true }],
+      states: { "0": "compare", "1": "compare", "2": "idle" },
+      vars: { op: "union(0, 1)", roots: "0 vs 1 — different" },
+      note: "Cities 0 and 1 are connected. find(0) gives 0, find(1) gives 1. Different roots, so this is a real merge.",
+    },
+    {
+      edges: [{ from: "0", to: "1" }],
+      states: { "0": "match", "1": "done", "2": "idle" },
+      vars: { parent: "[0, 0, 2]", provinces: 2 },
+      note: "Point 1's root at 0. Now both share the root 0. The count drops to 2.",
+    },
+    {
+      edges: [{ from: "0", to: "1" }],
+      states: { "0": "match", "1": "done", "2": "match" },
+      vars: { parent: "[0, 0, 2]", provinces: 2 },
+      note: "City 2 has no connections, so it stays its own root. Two distinct roots remain — two provinces.",
+    },
+  ]}
+  caption="The answer is the number of roots left standing, tracked by counting merges rather than recounting at the end."
+/>
+
+## The Two Optimisations
+
+A naive union-find degrades into a linked list and every `find` becomes `O(n)`. Two small additions make it effectively `O(1)`.
+
+<Callout type="info" title="Path compression">
+While walking up to the root, point each node **directly at the root**.
+
+```text
+before:  3 → 2 → 1 → 0          find(3) costs 3 steps
+after:   3 → 0,  2 → 0,  1 → 0  find(3) costs 1 step, forever
+```
+
+The chain is flattened as a side effect of asking the question. Two lines of code.
+</Callout>
+
+<Callout type="info" title="Union by rank">
+When merging, attach the **shorter** tree under the taller one. Attaching tall under short makes everything one level deeper for no reason.
+
+`rank` is an upper bound on tree height — it only increases when two trees of equal rank merge.
+</Callout>
+
+Together these give an amortised cost so close to constant that it is treated as `O(1)` in practice.
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def find_circle_num(is_connected: list[list[int]]) -> int:
+    """Count connected components using union-find."""
+    n = len(is_connected)
+    parent = list(range(n))
+    rank = [0] * n
+    provinces = n
+
+    def find(x: int) -> int:
+        # Path compression: point x straight at the root.
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> bool:
+        root_a, root_b = find(a), find(b)
+        if root_a == root_b:
+            return False                    # already together
+
+        # Union by rank: shorter tree hangs under taller.
+        if rank[root_a] < rank[root_b]:
+            root_a, root_b = root_b, root_a
+        parent[root_b] = root_a
+        if rank[root_a] == rank[root_b]:
+            rank[root_a] += 1
+        return True
+
+    for i in range(n):
+        for j in range(i + 1, n):           # upper triangle only
+            if is_connected[i][j] and union(i, j):
+                provinces -= 1
+
+    return provinces
+```
+
+`parent[x] = parent[parent[x]]` is *path halving* — it flattens the chain during the walk without needing a second pass or recursion.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function findCircleNum(isConnected: number[][]): number {
+  const n = isConnected.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const rank = new Array<number>(n).fill(0);
+  let provinces = n;
+
+  function find(x: number): number {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  }
+
+  function union(a: number, b: number): boolean {
+    let rootA = find(a);
+    let rootB = find(b);
+    if (rootA === rootB) return false;
+
+    if (rank[rootA] < rank[rootB]) [rootA, rootB] = [rootB, rootA];
+    parent[rootB] = rootA;
+    if (rank[rootA] === rank[rootB]) rank[rootA]++;
+    return true;
+  }
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (isConnected[i][j] === 1 && union(i, j)) provinces--;
+    }
+  }
+
+  return provinces;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(n²·α(n))" space="O(n)" />
+
+**Time** — the `n²` comes from scanning the adjacency matrix, which is unavoidable given that input format. `α(n)` is the inverse Ackermann function, below 5 for any input that fits in a computer — treat it as constant.
+
+**Space** — two arrays of length `n`.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="Every city isolated">
+No union ever succeeds, and `provinces` stays at `n`.
+</Accordion>
+
+<Accordion title="Every city connected to every other">
+The first `n - 1` unions succeed; the rest find equal roots and return `false`. The answer is 1.
+
+This is why `union` returns a boolean — decrementing on every connection instead of every *merge* would give a negative count here.
+</Accordion>
+
+<Accordion title="A single city">
+`n = 1`, the loops never run, and the answer is 1.
+</Accordion>
+
+<Accordion title="Why only scan j > i?">
+The matrix is symmetric — `isConnected[i][j]` equals `isConnected[j][i]`. Scanning both halves performs every union twice; the duplicate is harmless but wasteful.
+
+The diagonal (`i == j`) is always 1 and would be a self-union, which `find` correctly rejects.
+</Accordion>
+
+<Accordion title="When is union-find better than DFS here?">
+For this problem, neither wins — both are dominated by reading the `n²` matrix.
+
+Union-find pulls ahead when connections **arrive over time** and you must answer "connected?" after each one. DFS would have to re-traverse from scratch every time; union-find just absorbs the new edge. That is why [Redundant Connection](/docs/graphs/redundant-connection) is the better showcase.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Redundant Connection](/docs/graphs/redundant-connection) — where union-find genuinely beats DFS
+- [Number of Islands](/docs/graphs/number-of-islands) — the same counting with a traversal instead
+- [Graphs](/docs/graphs) — connectivity in general

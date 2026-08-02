@@ -1,0 +1,10 @@
+{
+  "title": "Tries",
+  "icon": "ListTree",
+  "pages": [
+    "index",
+    "---Medium---",
+    "implement-trie",
+    "replace-words"
+  ]
+}

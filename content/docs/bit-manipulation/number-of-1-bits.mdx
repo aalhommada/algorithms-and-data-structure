@@ -1,0 +1,216 @@
+---
+title: Number of 1 Bits
+description: Count the set bits in a number, and learn the n & (n-1) trick that skips every zero
+difficulty: easy
+pattern: Bit Manipulation
+variant: clearing the lowest set bit
+tags: ["Bit Manipulation", "Divide and Conquer"]
+leetcode: https://leetcode.com/problems/number-of-1-bits/
+problemNumber: 191
+---
+
+## Problem Statement
+
+Given an unsigned integer, return the number of `1` bits it contains. This count is also called the **Hamming weight**.
+
+```text
+Input:  n = 11        binary  1 0 1 1
+Output: 3
+
+Input:  n = 128       binary  1 0 0 0 0 0 0 0
+Output: 1
+
+Input:  n = 0
+Output: 0
+```
+
+## Intuition
+
+The direct approach: look at every bit position, check whether it is a 1, move on.
+
+```text
+n = 11        1 0 1 1
+              ↑ ↑ ↑ ↑
+check each:   1+0+1+1  =  3
+```
+
+You check the last bit with `n & 1`, then shift the number right to bring the next one into position. Repeat until nothing is left. That works and it is `O(32)` — 32 iterations for a 32-bit number, whatever the input.
+
+But look at `n = 128`. That is `1` followed by seven zeros. The loop above checks all eight positions to find one bit, and seven of those checks learn nothing.
+
+<Callout type="info" title="The insight">
+`n & (n - 1)` removes the **lowest set bit** and leaves everything else alone.
+
+So instead of walking past the zeros, jump straight from one `1` to the next. Count how many jumps it takes to reach zero — that is the answer.
+
+The loop now runs **once per set bit**, not once per position.
+</Callout>
+
+## Why `n & (n - 1)` Works
+
+Subtracting 1 from a binary number does two things: it flips the lowest `1` to `0`, and it turns every `0` below that into `1`.
+
+```text
+n       =  1 0 1 1 0 0        (44)
+                  ↑ lowest set bit
+
+n - 1   =  1 0 1 0 1 1        (43)
+                  ↑ flipped to 0, the zeros below became ones
+
+n&(n-1) =  1 0 1 0 0 0        (40)
+```
+
+Compare `n` and `n - 1` column by column. Above the lowest set bit they are **identical**, so AND keeps those unchanged. At the lowest set bit and below they are **exactly opposite**, so AND turns all of them to 0.
+
+Net effect: one bit removed, nothing else disturbed.
+
+## Approach
+
+<Steps>
+
+<Step>
+### Start a counter at zero
+</Step>
+
+<Step>
+### While `n` is not zero, clear its lowest set bit
+
+`n = n & (n - 1)`. Each clearing removes exactly one `1`.
+</Step>
+
+<Step>
+### Count the clearings
+
+When `n` reaches `0`, every set bit has been removed, and the counter holds how many there were.
+</Step>
+
+</Steps>
+
+<ArrayViz
+  title="Counting the bits of 44 = 1 0 1 1 0 0"
+  frames={[
+    {
+      values: [1, 0, 1, 1, 0, 0],
+      states: ["match", "idle", "match", "match", "idle", "idle"],
+      vars: { n: 44, count: 0 },
+      note: "Three set bits. The naive loop would check all six positions; this one will take three steps.",
+    },
+    {
+      values: [1, 0, 1, 0, 0, 0],
+      states: ["match", "idle", "match", "discard", "idle", "idle"],
+      vars: { n: 40, count: 1 },
+      note: "44 & 43 = 40. The lowest 1 is gone. The two zeros at the end were never examined.",
+    },
+    {
+      values: [1, 0, 0, 0, 0, 0],
+      states: ["match", "idle", "discard", "discard", "idle", "idle"],
+      vars: { n: 32, count: 2 },
+      note: "40 & 39 = 32. Next set bit removed. Again the loop jumped straight to it.",
+    },
+    {
+      values: [0, 0, 0, 0, 0, 0],
+      states: ["discard", "idle", "discard", "discard", "idle", "idle"],
+      vars: { n: 0, count: 3 },
+      note: "32 & 31 = 0. Nothing left, so the loop stops. Three iterations for three set bits.",
+    },
+  ]}
+  caption="For a number like 128 — one bit among eight — this runs once instead of eight times."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def hamming_weight(n: int) -> int:
+    """Count the set bits in n.
+
+    Each `n &= n - 1` clears exactly one set bit, so the loop runs
+    once per 1 rather than once per bit position.
+    """
+    count = 0
+
+    while n:
+        n &= n - 1
+        count += 1
+
+    return count
+```
+
+Python also offers `bin(n).count("1")` and, from 3.10, `n.bit_count()`. Both are fine in real code — the loop is what the problem is asking you to understand.
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function hammingWeight(n: number): number {
+  let count = 0;
+
+  while (n !== 0) {
+    n &= n - 1;
+    count++;
+  }
+
+  return count;
+}
+```
+
+Note `while (n !== 0)` rather than `while (n)`. They behave identically here, but being explicit matters once negative inputs are possible — `-1` is truthy and would loop very differently.
+
+</Tab>
+</CodeTabs>
+
+## Complexity Analysis
+
+<Complexity time="O(k)" space="O(1)" />
+
+**Time** — `k` is the number of set bits, at most 32 for a 32-bit integer. So it is `O(1)` in the strict sense, but the useful statement is that it is proportional to the number of ones, not the width of the number.
+
+**Space** — a single counter.
+
+<Callout type="info" title="Comparing the two loops">
+| | Shift-and-check | `n & (n - 1)` |
+|---|---|---|
+| Iterations | Always 32 | Once per set bit |
+| `n = 128` | 8 | **1** |
+| `n = 0` | 32 (or 0, if you exit early) | **0** |
+| `n` = all ones | 32 | 32 |
+
+They match in the worst case. The trick wins on sparse numbers, which is most real input.
+</Callout>
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="n = 0">
+The loop body never runs and `0` is returned. Correct.
+</Accordion>
+
+<Accordion title="All bits set (n = 4294967295)">
+32 iterations, returning 32. This is the worst case, and it is exactly where the trick gives no advantage over the naive version.
+</Accordion>
+
+<Accordion title="Negative numbers in JavaScript">
+`n & (n - 1)` on a negative number still terminates, because the bitwise operators work on 32-bit two's-complement values and each step removes one set bit.
+
+But `-1` has all 32 bits set, so it returns 32 — which is correct for the bit pattern, though the problem specifies unsigned input.
+</Accordion>
+
+<Accordion title="Negative numbers in Python">
+**This is the one that hangs.** Python integers are arbitrary precision, and a negative number behaves as if it has infinitely many leading `1` bits. The loop never reaches `0`.
+
+If negative input is possible, mask first: `n & 0xFFFFFFFF`.
+</Accordion>
+
+<Accordion title="Why is this called Hamming weight?">
+It is the Hamming distance between `n` and `0` — the number of positions where two bit strings differ. Comparing against all-zeros counts the ones.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Counting Bits](/docs/bit-manipulation/counting-bits) — this same count, for every number from 0 to n, done faster
+- [Single Number](/docs/bit-manipulation/single-number) — the other essential bit operation

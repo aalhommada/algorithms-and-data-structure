@@ -1,0 +1,284 @@
+---
+title: Flood Fill
+description: The paint-bucket tool, and the simplest possible introduction to traversing a grid as a graph
+difficulty: easy
+pattern: DFS
+variant: grid flood fill
+tags: ["Array", "DFS", "BFS", "Matrix"]
+leetcode: https://leetcode.com/problems/flood-fill/
+problemNumber: 733
+---
+
+## Problem Statement
+
+Given a 2-D image of colours, a starting pixel, and a new colour, repaint the starting pixel and every pixel connected to it **horizontally or vertically** that shares its original colour.
+
+This is the paint-bucket tool from any image editor.
+
+```text
+Input:  image = [[1,1,1],
+                 [1,1,0],
+                 [1,0,1]]
+        start = (1,1),  new colour = 2
+
+Output:         [[2,2,2],
+                 [2,2,0],
+                 [2,0,1]]
+
+The bottom-right 1 is NOT repainted — it only touches
+the region diagonally, and diagonals do not connect.
+```
+
+## Intuition
+
+A grid is a [graph](/docs/graphs) in disguise. Each pixel is a node, and each pixel is connected to the four pixels touching its edges.
+
+```text
+        (r-1, c)
+           │
+(r, c-1) ─ (r,c) ─ (r, c+1)
+           │
+        (r+1, c)
+```
+
+Once you see that, the problem is a standard traversal: start at one node, visit everything reachable, and change it on the way. There is no clever insight here — it is the plainest possible use of DFS, which is what makes it the right first grid problem.
+
+<Callout type="info" title="The one thing to get right">
+Repaint a pixel **the moment you arrive**, not when you leave.
+
+The new colour doubles as the visited marker. A repainted pixel no longer matches the original colour, so the check that decides whether to recurse also stops you revisiting anything.
+
+Without that, `A` visits `B`, `B` looks back at `A`, and the two bounce forever — the cycle problem from the [graphs](/docs/graphs) page, in its simplest form.
+</Callout>
+
+## Approach
+
+<Steps>
+
+<Step>
+### Remember the original colour before changing anything
+
+Once the first pixel is repainted, the colour you were matching against is gone.
+</Step>
+
+<Step>
+### Stop immediately if the new colour equals the old one
+
+Otherwise nothing ever changes, the "already visited" test never fires, and the recursion runs forever. This is the only special case in the problem.
+</Step>
+
+<Step>
+### Visit: repaint, then recurse into four neighbours
+
+Return early if the position is off the grid or does not hold the original colour.
+</Step>
+
+</Steps>
+
+<GridViz
+  title="Filling from (1,1) with colour 2"
+  frames={[
+    {
+      cells: [
+        [1, 1, 1],
+        [1, 1, 0],
+        [1, 0, 1],
+      ],
+      states: [
+        ["idle", "idle", "idle"],
+        ["idle", "active", "idle"],
+        ["idle", "idle", "idle"],
+      ],
+      cursor: { row: 1, col: 1 },
+      vars: { original: 1, new: 2 },
+      note: "Start at (1,1), which holds colour 1. Remember that — it is what we match against for the rest of the run.",
+    },
+    {
+      cells: [
+        [1, 1, 1],
+        [1, 2, 0],
+        [1, 0, 1],
+      ],
+      states: [
+        ["idle", "compare", "idle"],
+        ["compare", "match", "discard"],
+        ["idle", "discard", "idle"],
+      ],
+      cursor: { row: 1, col: 1 },
+      vars: { painted: 1 },
+      note: "Repaint it to 2 straight away. Now look at four neighbours: up and left hold 1 (go there), right and down hold 0 (stop).",
+    },
+    {
+      cells: [
+        [2, 2, 2],
+        [1, 2, 0],
+        [1, 0, 1],
+      ],
+      states: [
+        ["match", "match", "match"],
+        ["compare", "done", "discard"],
+        ["idle", "discard", "idle"],
+      ],
+      cursor: { row: 0, col: 2 },
+      vars: { painted: 4 },
+      note: "Following the upward branch repaints the whole top row. Each of those checks its own neighbours in turn.",
+    },
+    {
+      cells: [
+        [2, 2, 2],
+        [2, 2, 0],
+        [2, 0, 1],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["match", "done", "discard"],
+        ["match", "discard", "idle"],
+      ],
+      cursor: { row: 2, col: 0 },
+      vars: { painted: 6 },
+      note: "The left branch runs down the first column. Every pixel here held 1 and connects through an edge.",
+    },
+    {
+      cells: [
+        [2, 2, 2],
+        [2, 2, 0],
+        [2, 0, 1],
+      ],
+      states: [
+        ["done", "done", "done"],
+        ["done", "done", "discard"],
+        ["done", "discard", "match"],
+      ],
+      cursor: { row: 2, col: 2 },
+      vars: { painted: 6, untouched: "(2,2)" },
+      note: "The 1 at (2,2) is never reached. Its only routes in are diagonal, and diagonals are not connections here.",
+    },
+  ]}
+  caption="Six pixels repainted. The isolated 1 stays, because connectivity is defined by edges, not corners."
+/>
+
+## Solution
+
+<CodeTabs>
+<Tab label="Python">
+
+```python
+def flood_fill(
+    image: list[list[int]], sr: int, sc: int, color: int
+) -> list[list[int]]:
+    """Repaint the connected region containing (sr, sc)."""
+    original = image[sr][sc]
+
+    # Without this, the "already painted" test never fires
+    # and the recursion never terminates.
+    if original == color:
+        return image
+
+    rows, cols = len(image), len(image[0])
+
+    def fill(r: int, c: int) -> None:
+        if not (0 <= r < rows and 0 <= c < cols):
+            return
+        if image[r][c] != original:
+            return
+
+        image[r][c] = color          # paint on arrival — this is the visited mark
+
+        fill(r - 1, c)
+        fill(r + 1, c)
+        fill(r, c - 1)
+        fill(r, c + 1)
+
+    fill(sr, sc)
+    return image
+```
+
+</Tab>
+<Tab label="TypeScript">
+
+```typescript
+function floodFill(
+  image: number[][],
+  sr: number,
+  sc: number,
+  color: number,
+): number[][] {
+  const original = image[sr][sc];
+  if (original === color) return image;
+
+  const rows = image.length;
+  const cols = image[0].length;
+
+  function fill(r: number, c: number): void {
+    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+    if (image[r][c] !== original) return;
+
+    image[r][c] = color;
+
+    fill(r - 1, c);
+    fill(r + 1, c);
+    fill(r, c - 1);
+    fill(r, c + 1);
+  }
+
+  fill(sr, sc);
+  return image;
+}
+```
+
+</Tab>
+</CodeTabs>
+
+<Callout type="warn" title="`original == color` is not an optimisation">
+It is a termination condition.
+
+If the new colour matches the old, painting changes nothing. The check `image[r][c] != original` then never becomes true for a visited pixel, so `A` recurses into `B` and `B` recurses straight back into `A`.
+
+The result is a stack overflow, and it only happens on the input where the correct answer is "do nothing".
+</Callout>
+
+## Complexity Analysis
+
+<Complexity time="O(rows × cols)" space="O(rows × cols)" />
+
+**Time** — each pixel is repainted at most once, and each does constant work checking four neighbours. Pixels outside the region are looked at but returned from immediately.
+
+**Space** — the recursion stack. In the worst case the whole image is one region and the call chain is as long as the pixel count. Converting to an explicit stack or a BFS queue avoids the stack-overflow risk on very large images.
+
+## Edge Cases
+
+<Accordions>
+
+<Accordion title="New colour equals the original">
+Handled by the guard, returning the image unchanged. Without it, infinite recursion — see the callout.
+</Accordion>
+
+<Accordion title="The starting pixel is isolated">
+It is repainted, all four neighbours fail the colour test, and the recursion ends. One pixel changed.
+</Accordion>
+
+<Accordion title="The entire image is one colour">
+Everything is repainted. This is also the deepest possible recursion — for a 50×50 image that is 2,500 stack frames, which Python's default limit of about 1,000 will not survive.
+
+The iterative version matters here, not just in theory.
+</Accordion>
+
+<Accordion title="Do diagonals connect?">
+No, and the third example exists to test it. Adding the four diagonal directions is a one-line change that produces confidently wrong output.
+
+Whenever a grid problem mentions connectivity, check whether it means 4-directional or 8-directional.
+</Accordion>
+
+<Accordion title="Why paint before recursing rather than after?">
+Painting first is what marks the pixel visited. Painting after the recursive calls means each neighbour still sees the original colour and recurses back — the same infinite loop.
+
+This is the grid version of "mark nodes visited when you enqueue, not when you dequeue" from the [graphs](/docs/graphs) page.
+</Accordion>
+
+</Accordions>
+
+## Related Problems
+
+- [Number of Islands](/docs/graphs/number-of-islands) — the same fill, run repeatedly to count separate regions
+- [Rotting Oranges](/docs/graphs/rotting-oranges) — a grid traversal where BFS is required rather than optional
+- [Graphs](/docs/graphs) — why a visited marker is not optional

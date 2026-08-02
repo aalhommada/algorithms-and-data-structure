@@ -5,8 +5,13 @@
     "index",
     "---Easy---",
     "find-the-town-judge",
+    "flood-fill",
     "---Medium---",
     "number-of-islands",
+    "rotting-oranges",
+    "clone-graph",
+    "number-of-provinces",
+    "redundant-connection",
     "course-schedule"
   ]
 }
