@@ -1,0 +1,234 @@
+---
+title: Ride Sharing
+description: Matching riders to nearby drivers — geospatial indexing, a flood of location updates, and making sure one driver gets one ride
+---
+
+The interesting parts are proximity search over constantly-moving points, and making sure two riders are never matched to the same driver.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| Core feature? | Request a ride, match to a nearby driver |
+| Matching rule? | Nearest available driver, within 5 km |
+| Location updates? | Every 4 seconds from active drivers |
+| Pricing, payments, routing? | Out of scope — separate systems |
+
+## 2. Put Numbers On It
+
+```text
+1 million active drivers at peak
+Location update every 4 seconds
+  1,000,000 ÷ 4                 =  250,000 writes/sec     ← the dominant load
+
+RIDE REQUESTS
+  10 million rides/day
+  ÷ 100,000 sec                 ≈  100 requests/sec
+  × 3 peak                      ≈  300 requests/sec       ← trivial by comparison
+
+Ratio: ~800 location writes per ride request
+```
+
+<Callout type="warn" title="This is a write-heavy system, which is unusual">
+250,000 writes per second against 300 reads per second. Almost every design instinct — cache the reads, add replicas — is pointed the wrong way here.
+
+Two consequences follow immediately:
+
+**Driver locations do not belong in a durable database.** Writing 250,000 rows per second to disk is enormous, and the data is worthless four seconds later. Keep it in memory.
+
+**Do not store location history on this path.** If history is needed for analytics, stream it separately to a warehouse — do not make the matching path pay for it.
+</Callout>
+
+## 3. Define the Interface
+
+```text
+FROM DRIVERS                                              rate
+  update_location(driver_id, lat, lng)  →  ack            250,000/sec
+  set_available(driver_id, bool)        →  ack            rare
+  accept(driver_id, ride_id)            →  { ok } | { taken }
+
+FROM RIDERS
+  request_ride(rider_id, pickup, drop)  →  { ride_id }    300/sec
+  ride_updates(ride_id)                 →  pushed, not polled
+```
+
+<Callout type="warn" title="The rate column is part of the interface, not a footnote">
+`update_location` runs **800 times** more often than `request_ride`. Writing them into the same list makes it obvious they cannot share a storage system, and that any work added to `update_location` is multiplied by 250,000.
+
+An interface that hides its rates lets you design the cheap operation carefully and the expensive one by accident.
+</Callout>
+
+<Callout type="info" title="`accept` can return `taken` — the interface admits the race">
+Several drivers are offered the same ride. Only one can have it. Rather than pretend that never happens, the reply has a second outcome, and the driver's app is built to expect it.
+
+An interface with only a success case forces the race to be resolved by luck or by locking. Naming the failure makes it something the design can handle — which is what section 5 does.
+</Callout>
+
+## 4. The Proximity Problem
+
+"Find drivers within 5 km" cannot use an ordinary index. An index on latitude finds a horizontal band; an index on longitude finds a vertical one. Intersecting them scans far too much.
+
+The answer is to turn two dimensions into one, using [geohashing](/docs/system-design/partitioning).
+
+```text
+Driver at 51.5074, -0.1278  →  geohash "gcpvj0"
+
+Nearby drivers share a prefix:
+  gcpvj0  →  same ~1 km cell
+  gcpvj   →  same ~5 km cell    ← the radius this design promises
+  gcpv    →  same ~40 km cell
+```
+
+A proximity query becomes a **prefix match**, which any sorted index handles.
+
+<ArchViz
+  title="Matching a rider to a driver"
+  height={300}
+  nodes={[
+    { id: "driver", label: "Drivers", sublabel: "1M active", kind: "client", x: 0.0, y: 0.05 },
+    { id: "loc", label: "Location Service", kind: "service", x: 0.28, y: 0.05 },
+    { id: "geo", label: "Geo Index", sublabel: "Redis, in memory", kind: "cache", x: 0.6, y: 0.4 },
+    { id: "rider", label: "Rider", kind: "client", x: 0.0, y: 0.9 },
+    { id: "match", label: "Matching Service", kind: "service", x: 0.32, y: 0.9 },
+    { id: "rides", label: "Rides DB", sublabel: "durable", kind: "database", x: 0.75, y: 0.95 },
+    { id: "lock", label: "Driver Lock", kind: "cache", x: 1.0, y: 0.4 },
+  ]}
+  frames={[
+    {
+      edges: [{ from: "driver", to: "loc", label: "250k/sec", active: true }, { from: "loc", to: "geo", label: "update cell", active: true }],
+      active: ["driver", "loc", "geo"],
+      dimmed: ["rider", "match", "rides", "lock"],
+      vars: { load: "250,000 writes/sec", storage: "memory only" },
+      note: "Location updates overwrite the driver's entry in an in-memory geo index. Nothing is written to disk on this path.",
+    },
+    {
+      edges: [{ from: "rider", to: "match", label: "request ride", active: true }, { from: "match", to: "geo", label: "who is near?", active: true }],
+      active: ["rider", "match", "geo"],
+      dimmed: ["driver", "loc", "rides", "lock"],
+      vars: { query: "cell + 8 neighbours" },
+      note: "Query the rider's cell AND its eight neighbours — a driver 10 m away can sit in an adjacent cell.",
+    },
+    {
+      edges: [{ from: "match", to: "lock", label: "claim driver", active: true }],
+      active: ["match", "lock"],
+      dimmed: ["driver", "loc", "geo", "rider", "rides"],
+      vars: { step: "atomic claim", risk: "two riders, one driver" },
+      note: "Before offering the ride, atomically claim the driver. Without this, two simultaneous requests can both pick the same driver.",
+    },
+    {
+      edges: [{ from: "match", to: "rides", label: "persist ride", active: true }, { from: "match", to: "rider", label: "driver assigned", active: true }],
+      active: ["match", "rides", "rider"],
+      dimmed: ["driver", "loc", "geo", "lock"],
+      vars: { state: "MATCHED" },
+      note: "Only the ride itself is durable — 300 writes/sec, easily handled by one database.",
+    },
+  ]}
+  caption="Two systems in one: a huge in-memory write path, and a small durable transactional path."
+/>
+
+<Callout type="warn" title="Always search the neighbouring cells">
+Two points 10 metres apart can fall either side of a cell boundary and share no prefix.
+
+Searching only the containing cell silently misses the nearest drivers. The bug is invisible in testing and appears as "the app said nobody was available" for users standing near a boundary.
+
+Query the target cell plus all eight neighbours, then filter by true distance.
+</Callout>
+
+## 5. The Matching Race
+
+Two riders request at the same moment, and the same driver is nearest to both.
+
+<Callout type="warn" title="Read-then-write is a race, and here it books one car twice">
+```text
+Rider A: find nearest → driver 7 is free
+Rider B: find nearest → driver 7 is free
+Rider A: assign driver 7
+Rider B: assign driver 7      ← same driver, two rides
+```
+
+The check and the claim must be **one atomic operation** — a conditional update that only succeeds if the driver is still free:
+
+```text
+UPDATE drivers SET status='matched', ride_id=?
+ WHERE id=? AND status='available'
+```
+
+If it affects zero rows, someone else won; move to the next candidate. This is the same read-then-write race as in the [rate limiter](/docs/system-design/rate-limiter), and it has the same fix.
+</Callout>
+
+The claim also needs a **timeout**. A driver who is offered a ride and does not respond must be released automatically, or they are stuck unavailable forever.
+
+## 6. Reducing the Write Load
+
+250,000 writes per second is achievable but not free. Two easy reductions:
+
+| Technique | Saving |
+|---|---|
+| **Skip unchanged locations** — a parked driver need not report | Often 20–40% |
+| **Adaptive frequency** — update less often when stationary or off-duty | Large |
+| **Batch on the client** — send every 8 seconds instead of 4 | Halves it, at the cost of staleness |
+
+<Callout type="info" title="Only active drivers need to be in the index">
+A driver who is off-duty or already on a ride is not matchable, so their location does not belong in the matching index at all.
+
+Removing them shrinks both the write load and the search space. It sounds obvious and is frequently missed — the naive design tracks every driver all the time.
+</Callout>
+
+## 7. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Locations in memory only | 250k writes/sec is affordable | Locations lost if the store restarts |
+| Geohash prefix search | Proximity via an ordinary index | Must search 9 cells; edge effects |
+| Atomic claim with conditional update | One driver, one ride | Some requests must retry with another driver |
+| Only active drivers indexed | Smaller, faster index | Extra state transitions to manage |
+| No location history on the hot path | Write path stays lean | History needs a separate stream |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="What if the in-memory location store restarts?">
+Every active driver's location is lost. Recovery is fast, though: drivers report every four seconds, so the index refills within seconds.
+
+For those few seconds, matching returns nothing. Better to fail requests clearly than to match against stale positions — a driver's location from a minute ago may be a mile away.
+
+Replication reduces the window, and is worth it: the store is the whole matching path.
+</Accordion>
+
+<Accordion title="How would surge pricing fit in?">
+Compute demand and supply per geohash cell over a short window, and derive a multiplier per cell.
+
+It is naturally aggregated by the same cells the matching already uses, so the data is available. Keep it as a separate service, so pricing changes never risk the matching path.
+</Accordion>
+
+<Accordion title="Why not use PostGIS or a database's geo index?">
+For the ride *records*, a database geo index is perfectly good.
+
+For 250,000 location writes per second it is not — that is a durable write per update, for data that is worthless seconds later. The in-memory index exists for the write rate, not for the query capability.
+
+If updates were, say, every five minutes, a database geo index would be the simpler and better answer.
+</Accordion>
+
+<Accordion title="How do you handle dense city centres versus rural areas?">
+Fixed geohash cells are a poor fit for both: a central London cell may hold thousands of drivers, a rural one none.
+
+Two options: use a **shorter prefix** (bigger cell) where density is low, expanding the search until enough candidates are found; or use a [quadtree](/docs/system-design/partitioning), which subdivides only where density demands it.
+
+The expanding-search approach is simpler and usually sufficient — start at a fine cell and widen until you have candidates.
+</Accordion>
+
+<Accordion title="Should matching pick the nearest driver by straight-line distance?">
+Straight-line distance is the cheap filter, not the final answer. A driver 500 m away across a river may be 15 minutes distant.
+
+Use the geo index to shortlist perhaps ten candidates, then call a routing service for real travel times on that small set. Same retrieve-then-rank split as [search](/docs/system-design/search) — cheap filter first, expensive scoring on a few.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Partitioning and Consistent Hashing](/docs/system-design/partitioning) — geohashing and quadtrees in detail
+- [Rate Limiter](/docs/system-design/rate-limiter) — the same atomic check-and-set problem
+- [Caching](/docs/system-design/caching) — in-memory stores and what happens when they restart
+- [Consistency and CAP](/docs/system-design/consistency) — why matching must be strongly consistent

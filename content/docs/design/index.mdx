@@ -32,7 +32,7 @@ Sometimes you do not need a second structure — just more information per entry
 
 The general principle: **if a query would require a scan, precompute its answer at write time.** You pay memory and a little work per write in exchange for constant-time reads.
 
-## What Interviewers Are Testing
+## Where These Go Wrong
 
 <Callout type="warn" title="Invariants are the whole game">
 Design bugs are almost never in the happy path. They are in the moments where two structures drift out of sync.
@@ -42,7 +42,7 @@ In Insert Delete GetRandom, the trap is forgetting to update the moved element's
 Before you finish, state your invariants explicitly and check that every operation preserves them.
 </Callout>
 
-Also worth saying out loud: the **trade-off you chose**. Doubling memory to make an operation constant-time is a decision, not an accident, and naming it shows you understand what you built.
+Also worth stating explicitly: the **trade-off you chose**. Doubling memory to make an operation constant-time is a decision, not an accident, and a design you cannot describe the cost of is one you cannot defend later.
 
 ## All Problems
 

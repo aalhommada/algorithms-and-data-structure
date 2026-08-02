@@ -5,6 +5,123 @@ description: Last-in-first-out and first-in-first-out — and how to recognise w
 
 Stacks and queues are the same idea — a sequence you add to and remove from — differing only in **which end** you remove from. That single choice determines which problems they solve.
 
+## What They Actually Look Like
+
+Both are just a list with a rule about where you are allowed to touch it. The rule is the entire point: by giving up random access, you get a structure whose behaviour matches how certain problems are shaped.
+
+<Callout type="info" title="The names">
+| Word | Stack | Queue |
+|---|---|---|
+| Add an item | **push** | **enqueue** |
+| Remove an item | **pop** | **dequeue** |
+| Look without removing | **peek** / **top** | **front** |
+| Order | **LIFO** — last in, first out | **FIFO** — first in, first out |
+
+Everyday version: a stack is a pile of plates — you take from the top, which is the one added most recently. A queue is a line at a shop — first to arrive is first served.
+</Callout>
+
+### A stack, operating
+
+Everything happens at one end. The bottom of the pile is untouchable until everything above it has gone.
+
+<StackViz
+  title="Push 1, 2, 3 — then pop twice"
+  kind="stack"
+  frames={[
+    {
+      items: [{ value: 1, state: "active" }],
+      vars: { operation: "push(1)", top: 1 },
+      note: "Push 1. It sits on the bottom.",
+    },
+    {
+      items: [
+        { value: 1 },
+        { value: 2, state: "active" },
+      ],
+      vars: { operation: "push(2)", top: 2 },
+      note: "Push 2. It goes ON TOP of 1 — which is now buried and unreachable.",
+    },
+    {
+      items: [
+        { value: 1 },
+        { value: 2 },
+        { value: 3, state: "active" },
+      ],
+      vars: { operation: "push(3)", top: 3 },
+      note: "Push 3. The only item you can see or touch is the top one.",
+    },
+    {
+      items: [
+        { value: 1 },
+        { value: 2, state: "match" },
+      ],
+      vars: { operation: "pop() → 3", top: 2 },
+      note: "Pop returns 3 — the MOST RECENT item, not the first. 2 is now exposed.",
+    },
+    {
+      items: [{ value: 1, state: "match" }],
+      vars: { operation: "pop() → 2", top: 1 },
+      note: "Pop again gives 2. Items leave in the exact reverse of the order they arrived.",
+    },
+  ]}
+  caption="Pushed 1, 2, 3 → popped 3, 2. Reversal is free, and that is what makes stacks good at undo and nesting."
+/>
+
+### A queue, operating
+
+Two ends. You add at the back and remove from the front, so order is preserved instead of reversed.
+
+<StackViz
+  title="Enqueue 1, 2, 3 — then dequeue twice"
+  kind="queue"
+  frames={[
+    {
+      items: [{ value: 1, state: "active" }],
+      vars: { operation: "enqueue(1)", front: 1 },
+      note: "1 joins the empty queue.",
+    },
+    {
+      items: [
+        { value: 1 },
+        { value: 2, state: "active" },
+      ],
+      vars: { operation: "enqueue(2)", front: 1 },
+      note: "2 joins the BACK. 1 is still at the front — it was here first, so it will leave first.",
+    },
+    {
+      items: [
+        { value: 1 },
+        { value: 2 },
+        { value: 3, state: "active" },
+      ],
+      vars: { operation: "enqueue(3)", front: 1 },
+      note: "3 joins the back as well.",
+    },
+    {
+      items: [
+        { value: 2, state: "match" },
+        { value: 3 },
+      ],
+      vars: { operation: "dequeue() → 1", front: 2 },
+      note: "Dequeue returns 1 — the OLDEST item. Compare the stack above, which returned the newest.",
+    },
+    {
+      items: [{ value: 3, state: "match" }],
+      vars: { operation: "dequeue() → 2", front: 3 },
+      note: "Then 2. Arrival order is preserved exactly.",
+    },
+  ]}
+  caption="Enqueued 1, 2, 3 → dequeued 1, 2. Order is kept, which is what makes queues find shortest paths."
+/>
+
+<Callout type="info" title="Why this one difference matters so much">
+Put the same three items through both and you get opposite outputs — `3, 2, 1` versus `1, 2, 3`.
+
+That is the whole reason [DFS and BFS](/docs/graphs) are different algorithms. They share identical code; one holds pending work in a stack, the other in a queue. Serving newest-first makes you dive; serving oldest-first makes you sweep.
+
+One line of difference, two completely different behaviours.
+</Callout>
+
 ## Stack — Last In, First Out
 
 Reach for a stack whenever the most recent thing is the first thing you need to resolve.

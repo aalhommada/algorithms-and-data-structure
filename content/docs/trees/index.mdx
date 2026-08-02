@@ -5,6 +5,98 @@ description: Depth-first and breadth-first traversal, and choosing between recur
 
 A tree is a graph with no cycles and exactly one path between any two nodes. That guarantee is what makes tree algorithms simple: you never need a "visited" set, because you can never arrive somewhere twice.
 
+## What a Tree Actually Looks Like
+
+A [linked list](/docs/linked-lists) node points at **one** next node. Give a node **two** pointers instead of one, and you have a binary tree. That is the whole change.
+
+<TreeDiagram
+  title="A binary tree"
+  nodes={[1, 2, 3, 4, 5, null, null]}
+  states={["active", "idle", "idle", "idle", "idle", "idle", "idle"]}
+  caption="One node at the top, and every node pointing down at up to two others."
+/>
+
+<Callout type="info" title="The vocabulary, all of it">
+| Word | Means | In the picture |
+|---|---|---|
+| **Root** | The single node at the top. Your only handle on the tree. | `1` |
+| **Child** | A node one step below. Binary trees have a *left* and a *right*. | `2` and `3` are children of `1` |
+| **Parent** | The node one step above. Every node has exactly one, except the root. | `1` is the parent of `2` |
+| **Leaf** | A node with no children. The bottom edge. | `4`, `5`, `3` |
+| **Subtree** | Any node **plus everything hanging below it**. A subtree is itself a tree. | `2`, `4`, `5` form one |
+| **Depth** | Steps down from the root. The root is depth 0. | `4` is at depth 2 |
+| **Height** | The longest way down. Depth of the deepest leaf. | 2 |
+
+A missing child is `null` — the same "nothing there" marker a linked list uses to end.
+</Callout>
+
+### Why "subtree" is the word that matters
+
+Every other term is naming. *Subtree* is the one that changes how you write code.
+
+Look at node `2` in the picture. It has a value and two children — which is exactly what the root has. A subtree is not a smaller *kind* of thing; it is the same kind of thing, smaller.
+
+<Callout type="info" title="This is why tree code is short">
+"Count the nodes in this tree" becomes:
+
+```text
+count(tree) = 1 + count(left subtree) + count(right subtree)
+```
+
+You never wrote a loop, never tracked an index, never worried about the shape. You described the answer in terms of the same question asked about something smaller, and stopped at `null`.
+
+Nearly every tree problem yields to this. When one resists, the usual reason is that a node needs information from *above* it, which children cannot see — then you pass it down as an argument.
+</Callout>
+
+### One shape rule with big consequences
+
+Trees are not required to be tidy. Both of these are perfectly legal trees:
+
+<TreeDiagram
+  title="Balanced — every level filled"
+  nodes={[1, 2, 3, 4, 5, 6, 7]}
+  states={["active", "idle", "idle", "idle", "idle", "idle", "idle"]}
+  caption="7 nodes, height 2. Any node is reachable in at most 2 steps."
+/>
+
+<TreeDiagram
+  title="Degenerate — every node has one child"
+  nodes={[1, 2, null, 3, null, null, null, 4]}
+  states={["active", "idle", "idle", "idle", "idle", "idle", "idle", "idle"]}
+  caption="4 nodes, height 3. This is a linked list wearing a tree's clothes."
+/>
+
+Same node type, same code, wildly different cost:
+
+| | Balanced tree | Degenerate tree |
+|---|---|---|
+| Height for `n` nodes | `log n` — a million nodes is ~20 deep | `n` — a million nodes is a million deep |
+| Search in a BST | `O(log n)` | `O(n)` |
+| Recursion frames used | ~20 | 1,000,000 → **crash** |
+
+This is why the warning further down about recursion depth is not theoretical. The tree that breaks your solution is the one shaped like a stick.
+
+### Binary search tree — one extra rule
+
+A plain binary tree has no rule about *which* value goes where. A **binary search tree** (BST) adds exactly one:
+
+<Callout type="info" title="The BST rule">
+For every node: **everything in its left subtree is smaller, everything in its right subtree is larger.**
+
+Note "subtree", not "child". The rule covers the entire branch below, not just the two nodes touching it — a common and expensive misreading.
+</Callout>
+
+<TreeDiagram
+  title="A binary search tree"
+  nodes={[8, 3, 10, 1, 6, null, 14]}
+  states={["active", "idle", "idle", "idle", "idle", "idle", "idle"]}
+  caption="Every value left of 8 is below 8. Every value right of it is above."
+/>
+
+That rule buys you the ability to *discard half the tree at every step*. Searching for `6`: it is less than `8`, so the entire right side — `10`, `14` — can be ignored without being looked at. This is [binary search](/docs/searching) living in a tree.
+
+Contrast that with a [heap](/docs/heaps), which orders parent against child but says nothing about left versus right — and therefore cannot search at all. One rule's difference.
+
 ## Two Ways to Walk a Tree
 
 ### Depth-first search (DFS) — a stack
@@ -25,6 +117,55 @@ Inorder   (left, node, right):  4, 2, 5, 1, 3
 Postorder (left, right, node):  4, 5, 2, 3, 1
 ```
 
+The walk itself is identical in all three. What changes is the moment you write the node down: before going into the children, between them, or after both.
+
+<TreeViz
+  title="Preorder — record the node, then go left, then go right"
+  frames={[
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["active", "idle", "idle", "idle", "idle", "idle", "idle"],
+      output: [1],
+      note: "Arrive at 1. Preorder records the node the moment it is reached, before looking at any child.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["done", "active", "idle", "idle", "idle", "idle", "idle"],
+      output: [1, 2],
+      note: "Go left to 2 and record it immediately. Node 3 has not been touched — the whole right side waits.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["done", "done", "idle", "active", "idle", "idle", "idle"],
+      output: [1, 2, 4],
+      note: "Left again, to 4. It is a leaf, so there is nowhere deeper to go.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["done", "done", "idle", "done", "active", "idle", "idle"],
+      output: [1, 2, 4, 5],
+      note: "Back up to 2, then down its right side to 5. Node 2's subtree is now finished.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["done", "done", "match", "done", "done", "idle", "idle"],
+      output: [1, 2, 4, 5, 3],
+      note: "Only now does the walk return to the root and go right, to 3. DFS finishes a whole branch before starting another.",
+    },
+  ]}
+  caption="Notice 3 is recorded last, even though it sits next to 1. Depth beats width."
+/>
+
+<Callout type="info" title="Why the three orders exist">
+| Order | Records the node | Use it when |
+|---|---|---|
+| **Preorder** | before its children | You need the parent's information *on the way down* — copying a tree, printing structure |
+| **Inorder** | between left and right | The tree is a BST and you want **sorted order** |
+| **Postorder** | after both children | You need answers *from* the children — heights, sums, deletion |
+
+Postorder is the one to reach for when the node's answer depends on its subtrees. You cannot compute a node's height until both children have reported theirs.
+</Callout>
+
 - [N-ary Tree Preorder Traversal](/docs/trees/n-ary-tree-preorder-traversal) — recursive and iterative versions
 
 <Callout type="info" title="Inorder on a binary search tree gives sorted output">
@@ -34,6 +175,69 @@ That single fact solves a surprising number of BST problems: validation, finding
 ### Breadth-first search (BFS) — a queue
 
 Visit every node at depth `d` before any node at depth `d + 1`.
+
+Where DFS dives, BFS sweeps. It finishes a whole row before dropping to the next.
+
+<TreeViz
+  title="BFS — one full level at a time"
+  frames={[
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["active", "idle", "idle", "idle", "idle", "idle", "idle"],
+      output: [1],
+      vars: { level: 0, queue: "[2, 3]" },
+      note: "Take 1 from the queue and record it. Its children go into the queue for later — we do not follow them now.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["done", "active", "idle", "idle", "idle", "idle", "idle"],
+      output: [1, 2],
+      vars: { level: 1, queue: "[3, 4, 5]" },
+      note: "2 comes out next. Its children 4 and 5 join the BACK of the queue, behind 3.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["done", "done", "active", "idle", "idle", "idle", "idle"],
+      output: [1, 2, 3],
+      vars: { level: 1, queue: "[4, 5]" },
+      note: "3 is next because it entered the queue before 4 and 5. Level 1 is now complete.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["done", "done", "done", "active", "idle", "idle", "idle"],
+      output: [1, 2, 3, 4],
+      vars: { level: 2, queue: "[5]" },
+      note: "Only now does the walk reach depth 2.",
+    },
+    {
+      nodes: [1, 2, 3, 4, 5, null, null],
+      states: ["done", "done", "done", "done", "match", "idle", "idle"],
+      output: [1, 2, 3, 4, 5],
+      vars: { level: 2, queue: "[]" },
+      note: "Queue empty, tree finished. The output is the tree read top to bottom, left to right.",
+    },
+  ]}
+  caption="Compare with preorder above: same tree, same nodes, completely different order — because a queue serves oldest-first and a stack serves newest-first."
+/>
+
+<Callout type="info" title="One data structure is the entire difference">
+DFS and BFS are the same three lines of code. Take a node out of the container, record it, put its children in.
+
+Swap the container and the behaviour flips:
+
+| Container | Serves | Result |
+|---|---|---|
+| **Stack** (or recursion) | newest first | Dive down one branch — DFS |
+| **Queue** | oldest first | Sweep across a level — BFS |
+
+That is worth holding on to, because it is exactly the same on [graphs](/docs/graphs).
+</Callout>
+
+<Callout type="warn" title="Why BFS finds the shortest path and DFS does not">
+BFS reaches every node at depth 1 before any node at depth 2. So the first time it arrives anywhere, it arrived by the fewest possible steps — there was no shorter route, or it would have been taken already.
+
+DFS gives no such promise. It may reach a node down a long winding branch while a two-step route sits unexplored. Correct answer, wrong distance.
+</Callout>
 
 - [Binary Tree Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) — including the level-size trick for grouping
 

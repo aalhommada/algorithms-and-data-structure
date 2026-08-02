@@ -7,6 +7,64 @@ Binary search is the payoff for having sorted data. Each comparison discards hal
 
 The idea is easy. Getting the boundaries right is not — which is why it deserves its own section.
 
+## Watch It Work
+
+Three variables do everything. `lo` and `hi` mark the range that could still contain the answer; `mid` is the guess in the middle.
+
+<ArrayViz
+  title="Find 72 in a sorted array of 10"
+  frames={[
+    {
+      values: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91],
+      states: ["idle", "idle", "idle", "idle", "compare", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "lo" }, { index: 4, label: "mid" }, { index: 9, label: "hi" }],
+      vars: { guess: 16, target: 72, remaining: 10 },
+      note: "Guess the middle: 16. Too small. Because the array is sorted, everything to the LEFT of 16 is also too small — five candidates gone, unexamined.",
+    },
+    {
+      values: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91],
+      states: ["discard", "discard", "discard", "discard", "discard", "idle", "idle", "compare", "idle", "idle"],
+      pointers: [{ index: 5, label: "lo" }, { index: 7, label: "mid" }, { index: 9, label: "hi" }],
+      vars: { guess: 56, target: 72, remaining: 5 },
+      note: "New range is 5 items. Middle is 56 — still too small, so 23 and 38 go too.",
+    },
+    {
+      values: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91],
+      states: ["discard", "discard", "discard", "discard", "discard", "discard", "discard", "discard", "compare", "idle"],
+      pointers: [{ index: 8, label: "lo" }, { index: 8, label: "mid" }, { index: 9, label: "hi" }],
+      vars: { guess: 72, target: 72, remaining: 2 },
+      note: "Two left. Middle is 72 — found it.",
+    },
+    {
+      values: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91],
+      states: ["discard", "discard", "discard", "discard", "discard", "discard", "discard", "discard", "match", "discard"],
+      pointers: [{ index: 8, label: "found" }],
+      vars: { comparisons: 3, scan_would_take: 9 },
+      note: "3 comparisons instead of 9. The gap widens fast: at a million items it is 20 instead of 1,000,000.",
+    },
+  ]}
+  caption="Every step throws away half the remaining range without looking at it. Sorted order is what makes that safe."
+/>
+
+<Callout type="info" title="Why halving is so powerful">
+Each step cuts the problem in half, so the cost is *how many times can you halve n before reaching 1* — that is `log₂ n`.
+
+| Items | Steps needed |
+|---|---|
+| 10 | 4 |
+| 1,000 | 10 |
+| 1,000,000 | 20 |
+| 1,000,000,000 | 30 |
+
+A thousand-fold increase in data costs **ten more steps**. Almost nothing else in computing scales this well, which is why so much effort goes into keeping data sorted in the first place.
+</Callout>
+
+<Callout type="warn" title="The prerequisite that is easy to forget">
+The array must be **sorted by the thing you are comparing**. Binary search on unsorted data does not crash and does not warn you — it confidently returns a wrong answer, because the assumption it relies on ("everything left of `mid` is smaller") is simply false.
+
+If sorting first costs `O(n log n)` and you only search once, sorting was not worth it — a plain `O(n)` scan is cheaper. Sorting pays off when you will search many times.
+</Callout>
+
 ## Two Templates
 
 Nearly every binary search you write is one of these, and mixing lines between them is the source of almost every bug.

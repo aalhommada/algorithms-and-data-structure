@@ -3,9 +3,74 @@ title: Patterns
 description: A cross-cutting map of the techniques in this guide, and how to recognise which one a problem wants
 ---
 
-Most interview problems are variations on a small number of techniques. Learning to **recognise the pattern** is worth more than memorising any individual solution — and it is what turns an unfamiliar problem into a familiar one.
+Most problems are variations on a small number of techniques. Learning to **recognise the pattern** is worth more than memorising any individual solution — and it is what turns an unfamiliar problem into a familiar one.
 
 This page maps every technique in the guide to the problems that teach it.
+
+## The Words First
+
+Every term used below, defined plainly. If a page ever uses a word you have not met, it should be here.
+
+### Ways of saying "part of the data"
+
+These three are constantly confused, and mixing them up sends you to the wrong technique entirely.
+
+```text
+Original:      [ 2,  7, 11, 15,  3 ]
+                 0   1   2   3   4
+
+Subarray       [ 7, 11, 15 ]      contiguous — no gaps allowed
+Subsequence    [ 2, 11,  3 ]      keeps order, gaps ARE allowed
+Subset         { 11, 2 }          order does not matter at all
+```
+
+| Term | Contiguous? | Order kept? | How many exist for `n` items |
+|---|---|---|---|
+| **Subarray** / **substring** | Yes | Yes | about `n²/2` |
+| **Subsequence** | No | Yes | `2ⁿ` |
+| **Subset** | No | No | `2ⁿ` |
+
+*Substring* is just "subarray" when the data is text. The counts matter: subarrays are few enough to consider directly, subsequences are not — which is why "longest subsequence" problems need dynamic programming and "longest subarray" problems usually need a sliding window.
+
+### Words about how the code works
+
+| Term | Plain meaning |
+|---|---|
+| **Pass** | One walk through the data from start to finish. "Two passes" = two loops, one after the other. |
+| **Pointer** | Here, just a variable holding an **index** — a position in the array. Not the memory pointer from [linked lists](/docs/linked-lists). "Move the pointer" means "add 1 to that number". |
+| **In place** | Change the input directly instead of building a new one. Uses `O(1)` extra space, and destroys the original. |
+| **Brute force** | The obvious solution that tries everything. Usually correct and too slow — but it is the right starting point, because you cannot improve what you have not written. |
+| **Invariant** | Something you promise stays true at every step. *"Everything left of `write` is already correct."* Most tricky loops are held together by one. |
+| **Canonical form** | A single agreed spelling for things that should count as equal. `"eat"`, `"tea"` and `"ate"` all become `"aet"` when sorted — now a hash map can group them. |
+| **Amortised** | The average cost per operation when occasional expensive steps are spread over many cheap ones. Appending to a dynamic array is amortised `O(1)`: usually free, occasionally a full copy. |
+| **Monotonic** | Only ever moving one way — never decreasing, or never increasing. |
+
+### Reading `O(...)`
+
+Big-O answers one question: **when the input gets bigger, how much slower does this get?** It ignores constants and small details on purpose, because those stop mattering as `n` grows.
+
+| Notation | Means | If `n` doubles… | Feels like |
+|---|---|---|---|
+| `O(1)` | Constant | No change | Looking up one hash map key |
+| `O(log n)` | Halving each step | One extra step | Binary search |
+| `O(n)` | One pass | Twice the work | A single loop |
+| `O(n log n)` | A pass per halving | Slightly over double | Sorting |
+| `O(n²)` | Every pair | **Four times** the work | Two nested loops |
+| `O(2ⁿ)` | A branch per item | **Squares** the work | Trying every subset |
+
+<Callout type="info" title="Put real numbers on it — this is the part that makes it click">
+At `n = 100,000` (a very common limit):
+
+```text
+O(n)        →         100,000 steps    instant
+O(n log n)  →       1,700,000 steps    instant
+O(n²)       →  10,000,000,000 steps    minutes — too slow
+```
+
+Computers handle roughly 10⁸ simple operations per second. That is the number to measure against. `O(n²)` is not "a bit slower" here — it is the difference between finishing and not finishing.
+</Callout>
+
+**Space complexity** is the same idea applied to memory. `O(1)` space means you used a fixed number of variables no matter how big the input was; `O(n)` means you built something that grows with it — a hash map, a copy, a recursion stack.
 
 ## The Recognition Table
 
@@ -39,11 +104,117 @@ Start here. The wording of a problem usually points straight at the technique.
 
 Turn an `O(n)` search into an `O(1)` lookup. The single highest-leverage move in this guide.
 
+**What it means.** A **hash map** stores pairs — a *key* and a *value* — and finds any key in one step, no matter how many it holds. A **set** is the same thing without values: it only remembers *"I have seen this"*. Python calls them `dict` and `set`; TypeScript calls them `Map` and `Set`.
+
+**Why it changes the cost.** Searching a list for a value means checking items one by one — `O(n)`. A hash map turns the key into an address by arithmetic, so it goes straight there — `O(1)`.
+
+**The move.** Whenever you catch yourself writing a second loop to search for something, ask: *could I have recorded that on the way past?* One loop that remembers usually replaces two loops that search.
+
+```text
+FINDING TWO NUMBERS THAT ADD TO 9,  in [2, 7, 11, 15]
+
+Brute force — check every pair                O(n²)
+  2+7  2+11  2+15  7+11  7+15  11+15
+
+Hash map — remember what you passed           O(n)
+  see 2   → need 7   → not seen yet → remember 2
+  see 7   → need 2   → SEEN IT      → answer
+```
+
+<HashMapViz
+  title="Two Sum — nums = [2, 7, 11, 15], target = 9"
+  label="seen: value → index"
+  frames={[
+    {
+      entries: [],
+      scan: { values: [2, 7, 11, 15], cursor: 0 },
+      vars: { at: 2, need: "9 - 2 = 7" },
+      note: "At 2 we need 7 to complete the pair. The map is empty, so 7 has not appeared yet.",
+    },
+    {
+      entries: [{ key: 2, value: "index 0", state: "active" }],
+      scan: { values: [2, 7, 11, 15], cursor: 0 },
+      vars: { at: 2, need: 7 },
+      note: "Record 2 and move on. This is the whole idea: leave a note for your future self.",
+    },
+    {
+      entries: [{ key: 2, value: "index 0", state: "match" }],
+      scan: { values: [2, 7, 11, 15], cursor: 1 },
+      vars: { at: 7, need: "9 - 7 = 2" },
+      note: "At 7 we need 2 — and 2 IS in the map. Answer found at index 1, without ever looking back through the array.",
+    },
+    {
+      entries: [{ key: 2, value: "index 0", state: "match" }],
+      scan: { values: [2, 7, 11, 15], cursor: 1 },
+      vars: { answer: "[0, 1]", passes: 1, comparisons: 2 },
+      note: "One pass, two lookups. The brute force would have compared 6 pairs — and 500 billion on an array of a million.",
+    },
+  ]}
+  caption="Each value asks one question of the map, then leaves itself behind for the values that follow."
+/>
+
+<Callout type="warn" title="What it costs, and when it is wrong">
+You now store up to `n` items — `O(n)` memory where the brute force used none. That trade is the deal, and it is usually worth it.
+
+Two things a hash map cannot give you:
+
+- **Order.** It has none. If the problem needs sorted output or "the next larger key", this is the wrong structure.
+- **Guaranteed `O(1)`.** It is `O(1)` on average. Adversarial keys can collide and degrade it — rarely a concern in practice, but it is why the guarantee is written "amortised".
+</Callout>
+
 [Two Sum](/docs/arrays/two-sum) · [Contains Duplicate](/docs/arrays/contains-duplicate) · [Group Anagrams](/docs/arrays/group-anagrams) · [Valid Anagram](/docs/strings/valid-anagram) · [Minimum Index Sum](/docs/arrays/minimum-index-sum-of-two-lists) · [Unique Email Addresses](/docs/strings/unique-email-addresses)
 
 ### 2. Two Pointers — converging
 
 Start at both ends and move inward under a rule that provably discards possibilities.
+
+**What it means.** Two index variables, one at each end, walking towards each other. Each step you decide which one to move — and moving it throws away every combination that used its old position.
+
+**Why it is fast.** Checking every pair is `O(n²)`. Here each pointer only ever moves inward, so together they take at most `n` steps total. The whole thing is one pass.
+
+<ArrayViz
+  title="Container With Most Water — height = [1, 8, 6, 2, 5, 4]"
+  variant="bars"
+  frames={[
+    {
+      values: [1, 8, 6, 2, 5, 4],
+      states: ["active", "idle", "idle", "idle", "idle", "active"],
+      pointers: [{ index: 0, label: "L" }, { index: 5, label: "R" }],
+      vars: { width: 5, height: "min(1,4) = 1", area: 5 },
+      note: "Water is limited by the SHORTER wall. Here that is the left one, height 1.",
+    },
+    {
+      values: [1, 8, 6, 2, 5, 4],
+      states: ["discard", "active", "idle", "idle", "idle", "active"],
+      pointers: [{ index: 1, label: "L" }, { index: 5, label: "R" }],
+      vars: { width: 4, height: "min(8,4) = 4", area: 16 },
+      note: "Move the SHORTER wall inward. Keeping it and moving the tall one could only lose — width shrinks and the short wall still caps the height.",
+    },
+    {
+      values: [1, 8, 6, 2, 5, 4],
+      states: ["discard", "active", "idle", "idle", "active", "discard"],
+      pointers: [{ index: 1, label: "L" }, { index: 4, label: "R" }],
+      vars: { width: 3, height: "min(8,5) = 5", area: 15 },
+      note: "Right was shorter, so it moves. Every pair involving the old right position was skipped — and skipping them was safe.",
+    },
+    {
+      values: [1, 8, 6, 2, 5, 4],
+      states: ["discard", "match", "idle", "idle", "match", "discard"],
+      pointers: [{ index: 1, label: "L" }, { index: 4, label: "R" }],
+      vars: { best: 16 },
+      note: "Best found: 16. Six bars have 15 possible pairs; this examined 3 of them.",
+    },
+  ]}
+  caption="The pattern is only correct because of the argument in frame 2. Without that, it is guessing."
+/>
+
+<Callout type="warn" title="The proof is the pattern — not the two pointers">
+Anyone can move two indices inward. What makes this correct is being able to say **why the skipped options cannot contain the answer**.
+
+For the container: moving the taller wall keeps the same short wall capping the height, while the width shrinks. Every such option is worse. So they can go, unchecked.
+
+If you cannot make that argument for your problem, this technique is not applicable — you are just hoping.
+</Callout>
 
 [Container With Most Water](/docs/arrays/container-with-most-water) · [Valid Palindrome](/docs/strings/valid-palindrome) · [Trapping Rain Water](/docs/arrays/trapping-rain-water)
 
@@ -51,17 +222,99 @@ Start at both ends and move inward under a rule that provably discards possibili
 
 Both pointers move forward, at different rates or under different conditions.
 
+**What it means.** Usually a **read** pointer and a **write** pointer. Read visits every item; write only advances when an item is worth keeping. When they finish, everything before `write` is the answer.
+
+```text
+Removing duplicates in place from [1, 1, 2, 3, 3]
+
+read  →  visits all five
+write →  advances only on a new value
+
+  [1, 2, 3, 3, 3]
+   ↑        ↑
+   kept     leftover junk — ignored, never cleaned up
+   (write = 3, so the answer is the first 3 items)
+```
+
+**The invariant.** *Everything left of `write` is already correct.* Hold that in mind and the loop writes itself. The trailing junk is intentional — the caller is told to read only the first `write` items.
+
 [Is Subsequence](/docs/strings/is-subsequence) · [Remove Duplicates II](/docs/arrays/remove-duplicates-from-sorted-array-ii) · [Merge Sorted Array](/docs/arrays/merge-sorted-array)
 
 ### 4. Fast & Slow Pointers
 
 One pointer moves twice as fast. Finds middles, detects cycles, locates offsets.
 
+**What it means.** Both start at the head; `slow` takes one step per turn, `fast` takes two. Two facts fall out of that speed difference:
+
+| When `fast` reaches the end | `slow` is at the **middle** — it travelled half as far |
+| If there is a loop | `fast` must eventually **lap** `slow` and land on it |
+
+**Why the cycle check works.** Inside a loop, `fast` gains exactly one position on `slow` every turn. A gap that shrinks by one each time must reach zero — so they meet. If there is no loop, `fast` runs off the end instead. There is no third outcome, which is what makes this a *proof* rather than a heuristic.
+
+<LinkedListDiagram
+  title="A list with a cycle"
+  nodes={[
+    { value: 3, pointers: ["head"] },
+    { value: 2 },
+    { value: 0, state: "compare" },
+    { value: -4 },
+  ]}
+  cycleTo={2}
+  caption="The last node points back into the middle. Walking this list normally never ends — which is why detecting it needs the speed trick, not a counter."
+/>
+
 [Middle of the Linked List](/docs/linked-lists/middle-of-the-linked-list) · [Linked List Cycle II](/docs/linked-lists/linked-list-cycle-ii) · [Intersection of Two Lists](/docs/linked-lists/intersection-of-two-linked-lists)
 
 ### 5. Sliding Window
 
 A range that slides or grows across the data. The two kinds behave differently and are worth separating.
+
+**What it means.** A window is a **subarray** marked by two indices, `left` and `right`. Instead of recomputing the answer for each new window from scratch, you *update* the previous answer — add what entered on the right, subtract what left on the left.
+
+**Why it is fast.** Recomputing each window is `O(n·k)`. Updating is `O(1)` per step, so the whole scan is `O(n)`. The saving comes from reusing work, not from cleverer looping.
+
+<ArrayViz
+  title="Sum of every window of size 3 — nums = [2, 1, 5, 1, 3, 2]"
+  frames={[
+    {
+      values: [2, 1, 5, 1, 3, 2],
+      states: ["active", "active", "active", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "L" }, { index: 2, label: "R" }],
+      vars: { sum: 8 },
+      note: "Build the first window the slow way: 2 + 1 + 5 = 8. This is the only time we add everything up.",
+    },
+    {
+      values: [2, 1, 5, 1, 3, 2],
+      states: ["discard", "active", "active", "active", "idle", "idle"],
+      pointers: [{ index: 1, label: "L" }, { index: 3, label: "R" }],
+      vars: { sum: "8 - 2 + 1 = 7" },
+      note: "Slide right by one. Subtract the value leaving (2), add the value entering (1). Two operations — not three additions.",
+    },
+    {
+      values: [2, 1, 5, 1, 3, 2],
+      states: ["discard", "discard", "active", "active", "active", "idle"],
+      pointers: [{ index: 2, label: "L" }, { index: 4, label: "R" }],
+      vars: { sum: "7 - 1 + 3 = 9" },
+      note: "Again. The window size never changes, so left and right always move together.",
+    },
+    {
+      values: [2, 1, 5, 1, 3, 2],
+      states: ["discard", "discard", "discard", "match", "match", "match"],
+      pointers: [{ index: 3, label: "L" }, { index: 5, label: "R" }],
+      vars: { sum: "9 - 5 + 2 = 6", best: 9 },
+      note: "Best window sum was 9. Each element was added once and removed once — O(n) total, whatever k is.",
+    },
+  ]}
+  caption="The window never looks back at values it already accounted for. That is the entire trick."
+/>
+
+<Callout type="info" title="Fixed or variable — decide this before writing code">
+**Fixed** windows move both edges together, every step. The size is given to you (*"subarray of size k"*).
+
+**Variable** windows grow the right edge greedily and only pull the left edge in when a rule breaks (*"longest substring with no repeats"*). The size is the answer, not the input.
+
+Writing a variable window as if it were fixed is a common and confusing bug — the loop looks right and the answers are quietly wrong.
+</Callout>
 
 | | Fixed size | Variable size |
 |---|---|---|
@@ -73,11 +326,91 @@ A range that slides or grows across the data. The two kinds behave differently a
 
 One pass forward, one pass back, then combine. Turns range queries into `O(1)` arithmetic.
 
+**What it means.** A **prefix sum** array stores, at each position, the total of everything up to that point. Once you have it, the sum of *any* range is one subtraction — no loop.
+
+```text
+nums     =  [ 2,  4,  1,  7,  3 ]
+prefix   =  [ 2,  6,  7, 14, 17 ]      running total
+
+Sum of nums[2..3]  =  prefix[3] - prefix[1]
+                   =     14     -    6      =  8
+                                              (1 + 7 ✓)
+```
+
+The subtraction removes exactly the part you did not want. Build it once in `O(n)`, then answer any number of range questions in `O(1)` each.
+
+<ArrayViz
+  title="Building the prefix array, then querying it"
+  frames={[
+    {
+      values: [2, 4, 1, 7, 3],
+      states: ["active", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "i" }],
+      vars: { prefix: "[2]", running: 2 },
+      note: "Walk once, keeping a running total. Position 0 holds 2.",
+    },
+    {
+      values: [2, 4, 1, 7, 3],
+      states: ["done", "active", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "i" }],
+      vars: { prefix: "[2, 6]", running: 6 },
+      note: "2 + 4 = 6. Each entry is the previous entry plus the current value — one addition per step.",
+    },
+    {
+      values: [2, 4, 1, 7, 3],
+      states: ["done", "done", "done", "done", "active"],
+      pointers: [{ index: 4, label: "i" }],
+      vars: { prefix: "[2, 6, 7, 14, 17]", running: 17 },
+      note: "One pass, done. O(n) once — and it is never rebuilt.",
+    },
+    {
+      values: [2, 4, 1, 7, 3],
+      states: ["discard", "discard", "match", "match", "idle"],
+      pointers: [{ index: 2, label: "from" }, { index: 3, label: "to" }],
+      vars: { query: "sum(2..3)", math: "14 - 6 = 8" },
+      note: "Now ANY range costs one subtraction. prefix[3] is everything up to 3; prefix[1] is the part we do not want. Subtracting leaves exactly 1 + 7.",
+    },
+    {
+      values: [2, 4, 1, 7, 3],
+      states: ["match", "match", "match", "idle", "idle"],
+      pointers: [{ index: 0, label: "from" }, { index: 2, label: "to" }],
+      vars: { query: "sum(0..2)", math: "7 - 0 = 7" },
+      note: "A different range, same cost. A thousand queries would still be one subtraction each — the loop is gone for good.",
+    },
+  ]}
+  caption="The build is O(n) once. Every question afterwards is O(1), no matter how many you ask."
+/>
+
+<Callout type="warn" title="The off-by-one that catches everyone">
+For the range `[i..j]` you subtract `prefix[i - 1]`, **not** `prefix[i]`. Subtracting `prefix[i]` removes the item at `i` as well — the one you wanted to keep.
+
+Many people avoid this entirely by making the prefix array one slot longer, with a leading `0`. Then the range `[i..j]` is always `prefix[j + 1] - prefix[i]`, and `i = 0` needs no special case.
+</Callout>
+
+**Why the second pass exists.** Some problems need to know about *both* sides of a position — "what is to my left" and "what is to my right". One forward pass gives the first, one backward pass gives the second, then you combine them at each index. That is how [Product of Array Except Self](/docs/arrays/product-of-array-except-self) reaches `O(n)` without division, and how [Trapping Rain Water](/docs/arrays/trapping-rain-water) knows the tallest wall on each side.
+
+<Callout type="info" title="The recognition cue">
+Any time a brute-force solution has an inner loop that re-adds the same values over and over, precomputation removes it. The signal is a nested loop where the inner one always starts from the same place.
+</Callout>
+
 [Running Sum](/docs/arrays/running-sum-of-1d-array) · [Find Pivot Index](/docs/arrays/find-pivot-index) · [Product of Array Except Self](/docs/arrays/product-of-array-except-self) · [Candy](/docs/greedy/candy) · [Trapping Rain Water](/docs/arrays/trapping-rain-water)
 
 ### 7. Stack
 
 Last-in-first-out. Nesting, undo, deferred operands, depth-first traversal.
+
+**What it means.** A pile. You add to the top (*push*) and remove from the top (*pop*). The most recent thing in is the first thing out — **LIFO**. A [queue](/docs/stacks-queues) is the opposite: first in, first out, like a checkout line.
+
+**When to reach for it.** Whenever the thing you need next is *the most recent unfinished thing*. That phrasing covers more than it sounds like:
+
+| Problem | The "most recent unfinished thing" |
+|---|---|
+| Matching brackets | The last bracket still waiting to close |
+| Undo | The last action taken |
+| `3 + 4 × 2` | The operand not yet used |
+| `../` in a file path | The last folder entered |
+
+If a problem involves nesting, or something that must be resolved in reverse order of arrival, a stack is almost certainly the answer.
 
 [Valid Parentheses](/docs/stacks-queues/valid-parentheses) · [Min Stack](/docs/stacks-queues/min-stack) · [Evaluate RPN](/docs/stacks-queues/evaluate-reverse-polish-notation) · [Simplify Path](/docs/stacks-queues/simplify-path)
 
@@ -85,11 +418,63 @@ Last-in-first-out. Nesting, undo, deferred operands, depth-first traversal.
 
 A stack deliberately kept sorted, so anything breaking the order is popped. Answers "next greater" questions in one pass instead of `O(n²)`.
 
+**What it means.** *Monotonic* means the stack only ever holds values in one direction — say, decreasing from bottom to top. Before pushing a new value, you pop everything that would break that order. And here is the point: **the thing being popped has just found its answer.** The new value is the first bigger one to its right.
+
+<StackViz
+  title="Daily Temperatures — how many days until it gets warmer?"
+  frames={[
+    {
+      items: [{ value: "73 (day 0)", state: "active" }],
+      input: { values: [73, 74, 75, 71, 76], cursor: 0 },
+      vars: { answer: "[_, _, _, _, _]" },
+      note: "Push day 0. We do not know its answer yet, so it waits on the stack.",
+    },
+    {
+      items: [{ value: "74 (day 1)", state: "active" }],
+      input: { values: [73, 74, 75, 71, 76], cursor: 1 },
+      vars: { answer: "[1, _, _, _, _]" },
+      note: "74 > 73, so day 0 is popped — it waited 1 day. Answering it and removing it happen together.",
+    },
+    {
+      items: [{ value: "75 (day 2)", state: "active" }],
+      input: { values: [73, 74, 75, 71, 76], cursor: 2 },
+      vars: { answer: "[1, 1, _, _, _]" },
+      note: "75 > 74, so day 1 is popped with an answer of 1.",
+    },
+    {
+      items: [
+        { value: "75 (day 2)", state: "idle" },
+        { value: "71 (day 3)", state: "active" },
+      ],
+      input: { values: [73, 74, 75, 71, 76], cursor: 3 },
+      vars: { answer: "[1, 1, _, _, _]" },
+      note: "71 < 75, so nothing pops. It sits ON TOP, and the stack stays decreasing downward. Both days are now waiting.",
+    },
+    {
+      items: [{ value: "76 (day 4)", state: "match" }],
+      input: { values: [73, 74, 75, 71, 76], cursor: 4 },
+      vars: { answer: "[1, 1, 2, 1, 0]" },
+      note: "76 beats BOTH waiting days: day 3 waited 1, day 2 waited 2. One value resolved several — which is why this is O(n) and not O(n²).",
+    },
+  ]}
+  caption="Every day is pushed once and popped at most once. Five days, five pushes, four pops."
+/>
+
+The counting version of "each item enters and leaves once" is what makes the cost linear even though a single step can pop many items.
+
 [Daily Temperatures](/docs/stacks-queues/daily-temperatures) · [Trapping Rain Water](/docs/arrays/trapping-rain-water)
 
 ### 8. BFS / DFS
 
 Queue for breadth, stack for depth. The choice determines both the visit order and the space cost.
+
+**What it means.** Both explore everything reachable. **BFS** sweeps outward in rings — everything one step away, then everything two steps away. **DFS** commits to one direction and follows it to the end before trying another.
+
+**They are the same code.** Take something out of the container, record it, put its neighbours in. Swap a queue for a stack and BFS becomes DFS. Nothing else changes.
+
+**Choosing.** *"Fewest steps"*, *"shortest path"*, *"minimum moves"* → **BFS**, because it arrives in distance order, so the first arrival is the closest one. Anything about whole branches — does a path exist, is there a cycle, how deep is this — → **DFS**.
+
+See it animated on [trees](/docs/trees) and on [graphs](/docs/graphs), where the same start node gets visited third by one and last by the other.
 
 [Level Order Traversal](/docs/trees/binary-tree-level-order-traversal) · [N-ary Preorder](/docs/trees/n-ary-tree-preorder-traversal) · [Number of Islands](/docs/graphs/number-of-islands) · [Course Schedule](/docs/graphs/course-schedule) · [Maximum Depth](/docs/trees/maximum-depth-of-binary-tree) · [Jump Game II](/docs/greedy/jump-game-ii)
 
@@ -97,11 +482,88 @@ Queue for breadth, stack for depth. The choice determines both the visit order a
 
 Halve the search space. Works for exact matches, for boundaries, and even when there is no array.
 
+**What it means.** Look at the middle. If it is not the answer, you learn which half the answer must be in — and throw the other half away without looking at it. Repeat.
+
+**Why it is so fast.** Each step removes half of what is left. A million items is gone in 20 steps, because doubling the input adds just one step. That is what `O(log n)` looks like in practice.
+
+<ArrayViz
+  title="Searching for 23 in a sorted array"
+  frames={[
+    {
+      values: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91],
+      states: ["idle", "idle", "idle", "idle", "compare", "idle", "idle", "idle", "idle", "idle"],
+      pointers: [{ index: 0, label: "lo" }, { index: 4, label: "mid" }, { index: 9, label: "hi" }],
+      vars: { checking: 16, target: 23 },
+      note: "Middle is 16. Too small — and because the array is SORTED, everything to its left is also too small.",
+    },
+    {
+      values: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91],
+      states: ["discard", "discard", "discard", "discard", "discard", "idle", "idle", "compare", "idle", "idle"],
+      pointers: [{ index: 5, label: "lo" }, { index: 7, label: "mid" }, { index: 9, label: "hi" }],
+      vars: { checking: 56, target: 23 },
+      note: "Five items eliminated in one comparison, unseen. New middle is 56 — too big, so the right side goes too.",
+    },
+    {
+      values: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91],
+      states: ["discard", "discard", "discard", "discard", "discard", "match", "idle", "discard", "discard", "discard"],
+      pointers: [{ index: 5, label: "lo" }, { index: 5, label: "mid" }, { index: 6, label: "hi" }],
+      vars: { checking: 23, target: 23 },
+      note: "Found, in 3 comparisons instead of 6. At 1,000,000 items it would be 20 instead of 1,000,000.",
+    },
+  ]}
+  caption="Sorted order is what makes discarding safe. Without it, the middle value tells you nothing about either side."
+/>
+
+<Callout type="warn" title="The two traps">
+**The array must be sorted** — by the thing you are searching on. This is the assumption doing all the work, and an unsorted array gives wrong answers rather than errors.
+
+**`(lo + hi) / 2` can overflow** in languages with fixed-size integers. `lo + (hi - lo) / 2` is the safe form. Python and JavaScript will not overflow here, but the habit is worth having.
+</Callout>
+
+<Callout type="info" title="It is not really about arrays">
+Binary search works on any question whose answer flips from *no* to *yes* exactly once as you move along a range:
+
+```text
+versions:   1    2    3    4    5    6    7
+bad?        no   no   no   YES  YES  YES  YES
+                          ↑ find this boundary
+```
+
+There is no array here — you are searching the *range of possible answers* and calling a function to test each guess. [First Bad Version](/docs/searching/first-bad-version) is exactly this. Once you see the pattern as "find where the answer flips", it applies far more widely than "find a number in a list".
+</Callout>
+
 [Binary Search](/docs/searching/binary-search) · [Search Insert Position](/docs/searching/search-insert-position) · [First Bad Version](/docs/searching/first-bad-version)
 
 ### 10. Greedy vs. Dynamic Programming
 
 Greedy when the local choice is provably safe; DP when it is not.
+
+**Greedy** takes the best-looking option right now and never reconsiders. Fast and simple — and wrong whenever a good choice today blocks a better one tomorrow.
+
+**Dynamic programming** (DP) does the opposite: it considers every option, but never solves the same subproblem twice. It remembers each answer the first time and reuses it.
+
+**What DP actually is.** Two conditions, and it applies whenever both hold:
+
+| Condition | Means |
+|---|---|
+| **Overlapping subproblems** | The same smaller question comes up again and again |
+| **Optimal substructure** | The best answer is built from best answers to smaller versions |
+
+```text
+Climbing stairs — how many ways to reach step 5?
+Plain recursion recomputes the same values constantly:
+
+              ways(5)
+             /       \
+        ways(4)      ways(3)
+        /     \      /     \
+   ways(3) ways(2) ways(2) ways(1)      ← ways(3) computed twice,
+                                          ways(2) three times
+
+Remember each result → each is computed once → O(2ⁿ) becomes O(n).
+```
+
+**How to tell them apart.** Ask: *can taking the best option now make me worse off later?* If yes, greedy is unsafe.
 
 [Jump Game](/docs/greedy/jump-game) · [Gas Station](/docs/greedy/gas-station) · [Candy](/docs/greedy/candy) · [Integer to Roman](/docs/strings/integer-to-roman) · [Climbing Stairs](/docs/dynamic-programming/climbing-stairs) · [House Robber](/docs/dynamic-programming/house-robber) · [Coin Change](/docs/dynamic-programming/coin-change) · [Longest Increasing Subsequence](/docs/dynamic-programming/longest-increasing-subsequence)
 
@@ -115,13 +577,150 @@ Whenever a local choice can block a better option later, greedy is unsafe and DP
 
 A heap answers one question fast: what is the smallest right now? That is enough for "top k" and "next to process".
 
+**What it means.** A heap keeps the smallest item permanently at the front. Adding or removing costs `O(log n)`; reading the smallest is free. It does **not** keep everything sorted — it cannot search, and it cannot give you the second smallest without removing the first.
+
+**Why that narrow ability is enough.** For "the 5 largest of a million", sorting everything is `O(n log n)` and wasteful — you throw away 999,995 results. Instead keep a heap of size 5: each new item is compared against the smallest kept so far, and replaces it if bigger. Cost `O(n log k)`, memory `O(k)`.
+
+**The inversion that trips people up.** To find the *largest* items you keep a **min**-heap, because the thing you need instant access to is the *weakest survivor* — the one to evict.
+
+<TreeViz
+  title="Keeping the 3 largest of [5, 1, 8, 3, 9, 2] — with a MIN-heap"
+  frames={[
+    {
+      nodes: [1, 5, 8],
+      states: ["match", "idle", "idle"],
+      output: [],
+      vars: { holding: "5, 1, 8", smallest: 1 },
+      note: "First three values, arranged as a min-heap. The SMALLEST of the three sits at the top, instantly reachable.",
+    },
+    {
+      nodes: [1, 5, 8],
+      states: ["compare", "idle", "idle"],
+      output: [3],
+      vars: { incoming: 3, smallest: 1 },
+      note: "3 arrives. Compare it against the top — the weakest we are keeping. Is 3 bigger than 1? Yes, so 1 must go.",
+    },
+    {
+      nodes: [3, 5, 8],
+      states: ["match", "idle", "idle"],
+      output: [3],
+      vars: { holding: "3, 5, 8", smallest: 3 },
+      note: "1 is evicted, 3 takes its place, and the heap re-settles. One comparison decided it — the other two values were never examined.",
+    },
+    {
+      nodes: [5, 8, 9],
+      states: ["match", "idle", "idle"],
+      output: [9, 2],
+      vars: { holding: "5, 8, 9", smallest: 5 },
+      note: "9 beats 3 and enters. 2 loses to 5 and is discarded immediately. Six values processed, three kept.",
+    },
+  ]}
+  caption="A max-heap would put 9 on top — the one item you never need to look at. The min-heap keeps the eviction candidate in view instead."
+/>
+
+<Callout type="info" title="Why this beats sorting">
+| | Sort everything | Heap of size `k` |
+|---|---|---|
+| Time | `O(n log n)` | `O(n log k)` |
+| Memory | `O(n)` | `O(k)` |
+| For `n` = 1,000,000, `k` = 10 | 20 million comparisons | 3 million, holding 10 items |
+
+Sorting computes the full ranking of a million items so you can read the top ten and throw away the rest. The heap only ever answers the one question that matters: *is this better than the worst one I am keeping?*
+</Callout>
+
+See [heaps](/docs/heaps) for the shape rules and the sift operations, animated.
+
 [Kth Largest](/docs/heaps/kth-largest-element-in-an-array) · [Merge k Sorted Lists](/docs/heaps/merge-k-sorted-lists) · [Top K Frequent](/docs/arrays/top-k-frequent-elements)
 
 ### 12. Backtracking — choose, explore, undo
 
 For problems asking for **all** arrangements. Always exponential, so the constraints will be small.
 
+**What it means.** Build an answer one decision at a time. When you run out of options — or the partial answer is already invalid — **undo the last decision** and try the next one. It is DFS over the space of possible answers rather than over a graph.
+
+```text
+Subsets of [1, 2, 3] — at each item, take it or skip it
+
+                    []
+            take 1 /  \ skip 1
+                 [1]    []
+          take 2 / \      / \  skip 2
+              [1,2] [1]  [2] []
+               ...  ...  ... ...        →  2³ = 8 subsets
+```
+
+**The three lines that matter.** Choose → recurse → **un-choose**. That last step is the one beginners drop, and forgetting it means later branches inherit decisions from earlier ones, producing answers that were never actually built.
+
+**Why exponential is acceptable here.** The problem asks for *every* arrangement, and there are `2ⁿ` or `n!` of them — no algorithm can be faster than the size of its own output. That is also the tell: when you see `n ≤ 20` in the constraints, the author is telling you exponential is expected.
+
 [Subsets](/docs/backtracking/subsets) · [Permutations](/docs/backtracking/permutations) · [Combination Sum](/docs/backtracking/combination-sum)
+
+## When the Table Does Not Help
+
+The recognition table works when a problem is phrased in familiar words. Sooner or later one is not. This is the procedure for that case — and it is more valuable than any single pattern above, because it does not run out.
+
+### 1. Solve it by hand first
+
+Take a tiny example — four or five items — and find the answer **on paper**, without writing code.
+
+Then ask the question that matters: *what did I actually do?* You did something. Write it down in plain words. That description is your algorithm, and it is almost always closer to correct than whatever you would have typed first.
+
+If you cannot solve it by hand, you do not yet understand the problem. Stay here. Writing code will not help.
+
+### 2. Write the brute force
+
+Not as a formality — it earns three things:
+
+| It gives you | Why that matters |
+|---|---|
+| A correct answer | Something to check faster versions against |
+| A statement of the cost | You cannot say "too slow" until you know what slow is |
+| The wasted work, made visible | The improvement is nearly always "stop redoing that" |
+
+Almost every technique on this page is *the brute force with one specific waste removed*. You cannot remove waste you have not seen.
+
+### 3. Name the waste
+
+Look at the brute force and find where it repeats itself. The kind of repetition points straight at the fix:
+
+| The brute force… | Remove it with |
+|---|---|
+| Searches for something it already walked past | **Hash map** — record it on the way |
+| Re-adds the same values in an inner loop | **Prefix sums** — precompute totals |
+| Recomputes an overlapping range from scratch | **Sliding window** — update instead |
+| Solves the same subproblem repeatedly | **Memoization / DP** — write the answer down |
+| Checks pairs that could not possibly win | **Two pointers / greedy** — but *prove* the skip first |
+| Scans to find the smallest, again and again | **Heap** — keep it at the front |
+| Rebuilds a comparison that sorting would settle | **Sort first**, then a linear pass |
+
+### 4. Check the constraints — they name the target
+
+The problem's limits tell you which complexity is expected, which usually tells you the technique.
+
+```text
+n ≤ 20             →  exponential is fine   →  backtracking, bitmask
+n ≤ 3,000          →  O(n²) passes          →  2-D dynamic programming
+n ≤ 200,000        →  needs O(n log n)      →  sorting, heap, binary search
+n ≤ 10,000,000     →  needs O(n) or better  →  one pass, hash map, two pointers
+```
+
+Read these before designing, not after your solution times out.
+
+<Callout type="info" title="Four questions that unstick most problems">
+**Would sorting help?** It costs `O(n log n)` and frequently makes the rest trivial. Worth asking every time — the answer is yes surprisingly often.
+
+**What if I processed it backwards?** [Merge Sorted Array](/docs/arrays/merge-sorted-array) is hard from the front and easy from the back. Some problems are simply written in the wrong direction.
+
+**What am I allowed to assume?** Sorted? All positive? Distinct? Every guarantee in the statement is there for a reason — an unused guarantee usually means an unfound shortcut.
+
+**Can I store something to avoid recomputing it?** This one question is behind hash maps, prefix sums, memoization and augmented stacks. It is the single most productive question on this page.
+</Callout>
+
+<Callout type="warn" title="Two habits worth avoiding">
+**Pattern-matching before understanding.** Seeing "subarray" and reaching for a sliding window without checking whether the window rule actually holds. The pattern must be *justified* by the problem, not triggered by a word in it.
+
+**Optimising before it works.** A fast wrong answer is worth nothing, and a correct slow version is often only one observation away from being fast.
+</Callout>
 
 ## Complexity Cheat Sheet
 

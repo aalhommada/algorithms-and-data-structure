@@ -5,6 +5,70 @@ description: Character counting, two pointers and normalisation — the recurrin
 
 Strings are arrays of characters, so most array techniques carry over directly. What makes string problems distinct is that the *content* often has structure worth exploiting — letters have counts, words have boundaries, and equivalent strings can be reduced to a shared canonical form.
 
+## What a String Actually Is
+
+A string is an [array](/docs/arrays) whose slots hold characters. Everything you know about arrays applies — index access is `O(1)`, insertion in the middle is `O(n)`.
+
+<ArrayDiagram
+  title='word = "hello"'
+  values={["h", "e", "l", "l", "o"]}
+  states={["idle", "idle", "active", "idle", "idle"]}
+  pointers={[{ index: 2, label: "word[2]" }]}
+  caption="Same layout as an array of numbers. The characters are stored as numbers too — 'h' is 104."
+/>
+
+But one property changes how you write the code, in both languages used here.
+
+### Strings are immutable
+
+You cannot change a character in place. `word[0] = "H"` fails in Python and silently does nothing in JavaScript.
+
+Every "modification" builds a **whole new string**, copying every character:
+
+```text
+s = "hello"
+s = s + "!"        ← does NOT append.
+                     Allocates a new 6-character string,
+                     copies all of "hello" into it, adds "!"
+```
+
+<Callout type="warn" title="The performance trap this creates">
+Building a string inside a loop with `+=` copies everything built so far, every single time.
+
+```text
+Building an n-character string with += :
+  step 1 copies 1 char, step 2 copies 2, step 3 copies 3 …
+  total ≈ n²/2 character copies      →  O(n²)
+```
+
+At 100,000 characters that is five billion copies. The fix is the same idea in both languages: collect the pieces in a **list**, then join once at the end.
+
+| | Slow — `O(n²)` | Fast — `O(n)` |
+|---|---|---|
+| Python | `s += c` in a loop | `parts.append(c)` … `"".join(parts)` |
+| TypeScript | `s += c` in a loop | `parts.push(c)` … `parts.join("")` |
+
+A list is mutable, so appending to it is genuinely cheap. Only the final `join` allocates.
+</Callout>
+
+### Characters are numbers
+
+Each character has a numeric code. That is what makes counting tricks work:
+
+```text
+'a' = 97,  'b' = 98,  …  'z' = 122
+
+ord(c) - ord('a')   →  0 for 'a', 1 for 'b', … 25 for 'z'
+```
+
+So a 26-slot array can count letters, using the letter itself to pick the slot — no hash map needed, and no hashing cost. This is the basis of most anagram and frequency problems below.
+
+<Callout type="info" title="Two habits worth forming early">
+**Say which alphabet you assume.** "Lowercase English letters only" makes a 26-slot array correct. Without that guarantee, use a hash map — real text contains accents, emoji and capitals.
+
+**Case and whitespace are decisions, not details.** Is `"Hello"` equal to `"hello"`? Does a trailing space matter? Problems that hinge on this rarely say so directly, and getting it wrong looks like a logic bug.
+</Callout>
+
 ## The Patterns
 
 ### 1. Counting — reduce a string to a multiset

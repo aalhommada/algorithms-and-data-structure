@@ -5,6 +5,172 @@ description: Representing graphs, traversing them, and recognising when no trave
 
 A graph is nodes connected by edges. Trees are a special case — a graph with no cycles and one path between any two nodes — so everything here generalises what you already know about trees, with one addition: **you must track visited nodes**, because a graph can lead you in circles.
 
+## What a Graph Actually Looks Like
+
+A [tree](/docs/trees) node points down at its children, and every node has exactly one parent. Remove both of those restrictions — let anything point at anything — and you have a graph.
+
+<GraphViz
+  title="A graph of six nodes"
+  nodes={[
+    { id: "A", x: 0.1, y: 0.2 },
+    { id: "B", x: 0.4, y: 0.05 },
+    { id: "C", x: 0.4, y: 0.55 },
+    { id: "D", x: 0.72, y: 0.3 },
+    { id: "E", x: 0.72, y: 0.85 },
+    { id: "F", x: 0.98, y: 0.6 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "D" },
+        { from: "C", to: "E" },
+        { from: "D", to: "F" },
+        { from: "E", to: "F" },
+      ],
+      note: "Six nodes, seven edges. No top, no bottom, no root — just things and the connections between them.",
+    },
+  ]}
+  caption="Notice A→B→D and A→C→D: two different routes to the same node. A tree can never do this."
+/>
+
+<Callout type="info" title="The vocabulary">
+| Word | Means |
+|---|---|
+| **Node** (or *vertex*) | A thing. A city, a person, a web page. |
+| **Edge** | A connection between two nodes. A road, a friendship, a link. |
+| **Neighbour** | Any node one edge away. `A`'s neighbours are `B` and `C`. |
+| **Degree** | How many edges touch a node. `C` has degree 3. |
+| **Path** | A sequence of nodes joined by edges. `A → C → E → F` is a path. |
+| **Cycle** | A path that returns to where it started. `A → B → D → C → A` is one. |
+| **Connected** | Every node is reachable from every other. Not all graphs are. |
+| **Directed** | Edges are one-way arrows. Undirected edges go both ways. |
+| **Weighted** | Each edge carries a number — distance, cost, time. |
+</Callout>
+
+### The two properties that decide everything
+
+Before touching a graph problem, answer two questions. They change which algorithm is even correct.
+
+**Directed or undirected?** A friendship is mutual — if you are my friend I am yours, so the edge goes both ways. "Follows on social media" is not mutual, so it needs an arrow. Get this wrong and you either invent connections that do not exist or lose half of them.
+
+<GraphViz
+  title="Same three nodes, two meanings"
+  directed={true}
+  nodes={[
+    { id: "A", x: 0.15, y: 0.5 },
+    { id: "B", x: 0.5, y: 0.1 },
+    { id: "C", x: 0.5, y: 0.9 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "A", to: "B", highlight: true },
+        { from: "B", to: "C", highlight: true },
+      ],
+      states: { A: "active" },
+      note: "Directed: A can reach C by going through B. But C can reach nobody — every arrow points away from it.",
+    },
+  ]}
+  caption="If these edges were undirected, C could reach A just as easily. One property, opposite answers."
+/>
+
+**Cyclic or acyclic?** This is the one that bites. A graph can lead you in a circle, so a walk that does not remember where it has been will loop forever.
+
+<GraphViz
+  title="Why a graph walk needs a memory"
+  nodes={[
+    { id: "A", x: 0.15, y: 0.15 },
+    { id: "B", x: 0.6, y: 0.15 },
+    { id: "C", x: 0.6, y: 0.85 },
+    { id: "D", x: 0.15, y: 0.85 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "A", to: "B", highlight: true },
+        { from: "B", to: "C" },
+        { from: "C", to: "D" },
+        { from: "D", to: "A" },
+      ],
+      states: { A: "active" },
+      vars: { visited: "{A}" },
+      note: "Start at A and walk to B.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "B", to: "C", highlight: true },
+        { from: "C", to: "D" },
+        { from: "D", to: "A" },
+      ],
+      states: { A: "done", B: "active" },
+      vars: { visited: "{A, B}" },
+      note: "On to C. Still new ground.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "B", to: "C" },
+        { from: "C", to: "D", highlight: true },
+        { from: "D", to: "A" },
+      ],
+      states: { A: "done", B: "done", C: "active" },
+      vars: { visited: "{A, B, C}" },
+      note: "On to D.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "B", to: "C" },
+        { from: "C", to: "D" },
+        { from: "D", to: "A", highlight: true },
+      ],
+      states: { A: "discard", B: "done", C: "done", D: "active" },
+      vars: { visited: "{A, B, C, D}" },
+      note: "D's neighbour is A — which we have already seen. WITHOUT a visited set we would walk to A and go round forever. With one, we recognise it and stop.",
+    },
+  ]}
+  caption="A tree cannot do this, which is why tree code needs no visited set. In a graph it is not optional."
+/>
+
+<Callout type="warn" title="This is the single biggest difference from tree code">
+Tree traversal and graph traversal are the same algorithm, except graph traversal asks one extra question first: *have I been here already?*
+
+Forget it and the program does not return a wrong answer — it hangs, or crashes with a stack overflow. That failure looks like a bug in your loop, and people spend a long time looking in the wrong place.
+</Callout>
+
+### Where the graph comes from
+
+In real problems you are rarely handed a picture. You are handed a list of pairs, and the graph is something you build.
+
+```text
+n = 4,  edges = [[0,1], [0,2], [1,3]]
+
+Becomes:
+  0  →  [1, 2]
+  1  →  [0, 3]
+  2  →  [0]
+  3  →  [1]
+```
+
+That mapping — **node → list of its neighbours** — is the adjacency list below. It is the shape almost every graph algorithm wants, because the question they ask over and over is "where can I go from here?"
+
+<Callout type="info" title="Many problems are graphs in disguise">
+The word "graph" often never appears. These are all graphs:
+
+| Problem says | Nodes are | Edges are |
+|---|---|---|
+| A grid where you move up/down/left/right | Cells | Neighbouring cells |
+| Courses with prerequisites | Courses | "must be taken before" |
+| Words differing by one letter | Words | A single-letter change |
+| Flights between airports | Airports | Routes |
+
+Spotting this is most of the work. Once it is a graph, the traversal is standard — a grid needs no adjacency list at all, since a cell's neighbours are just `(r±1, c)` and `(r, c±1)`.
+</Callout>
+
 ## Representing a Graph
 
 | Representation | Space | "Is there an edge `u→v`?" | "List `u`'s neighbours" |
@@ -56,6 +222,206 @@ function buildGraph(n: number, edges: number[][]): Map<number, number[]> {
 ## Traversal
 
 Both DFS and BFS work exactly as they do on trees, plus a `visited` set.
+
+Here they are on the same graph, so the difference is visible rather than described.
+
+<GraphViz
+  title="BFS from A — closest first"
+  nodes={[
+    { id: "A", x: 0.1, y: 0.5 },
+    { id: "B", x: 0.4, y: 0.15 },
+    { id: "C", x: 0.4, y: 0.85 },
+    { id: "D", x: 0.72, y: 0.15 },
+    { id: "E", x: 0.72, y: 0.85 },
+    { id: "F", x: 0.97, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "A", to: "B", highlight: true },
+        { from: "A", to: "C", highlight: true },
+        { from: "B", to: "D" },
+        { from: "C", to: "E" },
+        { from: "D", to: "F" },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "active" },
+      vars: { queue: "[B, C]", distance: 0 },
+      note: "Start at A. Put both neighbours in the queue. Mark them visited NOW, as they go in — not when they come out.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D", highlight: true },
+        { from: "C", to: "E" },
+        { from: "D", to: "F" },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "done", B: "active", C: "compare" },
+      vars: { queue: "[C, D]", distance: 1 },
+      note: "B comes out. Its neighbour D joins the back of the queue — behind C, which was already waiting.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "E", highlight: true },
+        { from: "D", to: "F" },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "done", B: "done", C: "active", D: "compare" },
+      vars: { queue: "[D, E]", distance: 1 },
+      note: "C is served before D, because it was queued earlier. Everything one step from A is finished before anything two steps away begins.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "E" },
+        { from: "D", to: "F", highlight: true },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "done", B: "done", C: "done", D: "active", E: "compare" },
+      vars: { queue: "[E, F]", distance: 2 },
+      note: "Now distance 2. D's neighbour F is queued.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "E" },
+        { from: "D", to: "F" },
+        { from: "E", to: "F", highlight: true },
+      ],
+      states: { A: "done", B: "done", C: "done", D: "done", E: "active", F: "compare" },
+      vars: { queue: "[F]", distance: 2 },
+      note: "E also touches F — but F is already visited, so it is NOT queued again. This check is what keeps the work linear.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "E" },
+        { from: "D", to: "F" },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "done", B: "done", C: "done", D: "done", E: "done", F: "match" },
+      vars: { queue: "[]", distance: 3 },
+      note: "F reached in 3 steps. Because BFS arrives in distance order, this IS the shortest path — no shorter one can exist, or it would have been found first.",
+    },
+  ]}
+  caption="Order visited: A, B, C, D, E, F — grouped by distance from the start."
+/>
+
+<GraphViz
+  title="DFS from A — one branch to the end"
+  nodes={[
+    { id: "A", x: 0.1, y: 0.5 },
+    { id: "B", x: 0.4, y: 0.15 },
+    { id: "C", x: 0.4, y: 0.85 },
+    { id: "D", x: 0.72, y: 0.15 },
+    { id: "E", x: 0.72, y: 0.85 },
+    { id: "F", x: 0.97, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "A", to: "B", highlight: true },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "E" },
+        { from: "D", to: "F" },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "active" },
+      vars: { path: "A" },
+      note: "Start at A, take the first neighbour B. C is ignored for now — DFS commits to one direction.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D", highlight: true },
+        { from: "C", to: "E" },
+        { from: "D", to: "F" },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "done", B: "active" },
+      vars: { path: "A → B" },
+      note: "From B, straight on to D. Still no interest in C.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "E" },
+        { from: "D", to: "F", highlight: true },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "done", B: "done", D: "active" },
+      vars: { path: "A → B → D" },
+      note: "D leads to F. We are now as far from A as this branch goes.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "E" },
+        { from: "D", to: "F" },
+        { from: "E", to: "F", highlight: true },
+      ],
+      states: { A: "done", B: "done", D: "done", F: "active" },
+      vars: { path: "A → B → D → F" },
+      note: "F's other neighbour is E, unvisited — so DFS keeps going deeper rather than turning back.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "E", highlight: true },
+        { from: "D", to: "F" },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "done", B: "done", D: "done", F: "done", E: "active" },
+      vars: { path: "A → B → D → F → E" },
+      note: "E leads to C — the last unvisited node.",
+    },
+    {
+      edges: [
+        { from: "A", to: "B" },
+        { from: "A", to: "C" },
+        { from: "B", to: "D" },
+        { from: "C", to: "E" },
+        { from: "D", to: "F" },
+        { from: "E", to: "F" },
+      ],
+      states: { A: "done", B: "done", D: "done", F: "done", E: "done", C: "match" },
+      vars: { path: "A → B → D → F → E → C" },
+      note: "C is reached LAST, by a 5-step path — even though it sits one edge from the start. DFS visits everything, but tells you nothing about distance.",
+    },
+  ]}
+  caption="Order visited: A, B, D, F, E, C. Same graph, same start, and C went from second to last."
+/>
+
+<Callout type="info" title="Read those two side by side">
+| | BFS | DFS |
+|---|---|---|
+| Container | Queue — oldest first | Stack / recursion — newest first |
+| C is visited | 3rd, at distance 1 | 6th, at distance 5 |
+| Shortest paths | **Yes**, on unweighted graphs | No |
+| Memory used | Up to the widest level | Up to the longest path |
+| Natural for | Fewest steps, level grouping | Connectivity, cycles, topological order |
+
+Both visit every reachable node exactly once, so both are `O(V + E)`. They differ only in the order — and that order is the whole reason you pick one.
+</Callout>
 
 <Callout type="warn" title="Mark nodes visited when you enqueue, not when you dequeue">
 In BFS, a node can be reached by several neighbours before it is processed. Marking it only on dequeue lets it enter the queue multiple times, which wastes work and can blow up exponentially on dense graphs. Mark it the moment you add it.

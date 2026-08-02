@@ -1,0 +1,178 @@
+---
+title: Search Systems
+description: The inverted index, how text becomes searchable tokens, ranking results, and keeping the index fresh
+---
+
+Searching text is not a database `LIKE` query. `LIKE '%shoes%'` scans every row, cannot rank, and cannot tell that "running" and "run" are the same word. Search systems are built around one structure that fixes all three.
+
+## The Inverted Index
+
+A normal index maps a document to its content. An **inverted** index maps each word to the documents containing it.
+
+```text
+FORWARD (what you store)
+  doc1 → "red running shoes"
+  doc2 → "blue running shorts"
+  doc3 → "red hat"
+
+INVERTED (what you search)
+  red      → [doc1, doc3]
+  running  → [doc1, doc2]
+  shoes    → [doc1]
+  shorts   → [doc2]
+  blue     → [doc2]
+  hat      → [doc3]
+```
+
+Searching `"red shoes"` becomes: look up `red` → `[1,3]`, look up `shoes` → `[1]`, intersect → `[1]`. Two hash lookups and a list intersection, regardless of how many documents exist.
+
+<Callout type="info" title="Why the lists are sorted">
+Posting lists are kept sorted by document id, which makes intersecting two of them a single linear merge — the same two-pointer walk as [Merge Sorted Array](/docs/arrays/merge-sorted-array).
+
+Sorted ids also compress extremely well. Storing the *gaps* between ids rather than the ids themselves turns large numbers into small ones, and a posting list of a million documents shrinks dramatically.
+</Callout>
+
+## Turning Text Into Tokens
+
+What goes into the index is not the raw text. The processing pipeline decides what will be findable, and it must be applied identically to documents and to queries.
+
+```text
+"Running SHOES for men's feet!"
+   ↓  tokenise        ["Running", "SHOES", "for", "men's", "feet"]
+   ↓  lowercase       ["running", "shoes", "for", "men's", "feet"]
+   ↓  remove stop words ["running", "shoes", "men's", "feet"]
+   ↓  strip punctuation ["running", "shoes", "mens", "feet"]
+   ↓  stem            ["run", "shoe", "men", "feet"]
+```
+
+| Step | Effect | Risk |
+|---|---|---|
+| **Lowercasing** | `Shoes` matches `shoes` | Loses acronym distinctions — `US` vs `us` |
+| **Stop words** | Drops `the`, `for`, `a` | Breaks phrase searches like "The Who" |
+| **Stemming** | `running` → `run` | Over-stems: `university` → `univers` |
+| **Lemmatisation** | `better` → `good` | Slower, needs a dictionary |
+| **Synonyms** | `laptop` also matches `notebook` | Can broaden results too far |
+
+<Callout type="warn" title="Query and document must go through the same pipeline">
+If documents are stemmed but queries are not, a search for `running` looks for a token the index does not contain — because the index stored `run`.
+
+The result is a search that returns nothing for perfectly reasonable queries, with no error anywhere. Every mismatch between the two pipelines produces silent, confusing gaps.
+</Callout>
+
+## Ranking
+
+Matching gives you a set. Ranking decides the order, and the order is what users actually experience.
+
+### TF-IDF, in one idea
+
+**Term frequency** — a word appearing often in a document suggests that document is about it.
+
+**Inverse document frequency** — a word appearing in *every* document tells you nothing. `the` is worthless; `photosynthesis` is highly informative.
+
+Multiply them: a term is important to a document when it appears often *there* and rarely *elsewhere*. **BM25** is a refined version and is the practical default in modern search engines.
+
+<Callout type="info" title="Relevance is more than text matching">
+Text similarity is one signal among several. Real ranking blends:
+
+| Signal | Example |
+|---|---|
+| Text relevance | BM25 score |
+| Freshness | Recent news outranks old news |
+| Popularity | Click-through rate, purchases |
+| Personalisation | Location, past behaviour |
+| Business rules | In stock, promoted, not banned |
+
+The usual architecture is two stages: **retrieve** a few hundred candidates cheaply using the index, then **rank** those with an expensive model. Scoring the whole corpus is impossible; scoring 500 candidates is easy.
+
+This retrieve-then-rank split is the same shape as [news feed](/docs/system-design/news-feed) candidate generation and [autocomplete](/docs/system-design/autocomplete) suggestion ranking.
+</Callout>
+
+## Architecture
+
+<ArchViz
+  title="Indexing and querying are separate paths"
+  height={300}
+  nodes={[
+    { id: "source", label: "Source Data", kind: "database", x: 0.0, y: 0.05 },
+    { id: "pipeline", label: "Index Pipeline", sublabel: "tokenise, stem", kind: "service", x: 0.3, y: 0.05 },
+    { id: "shards", label: "Index Shards", sublabel: "by document", kind: "storage", x: 0.65, y: 0.4 },
+    { id: "user", label: "User", kind: "client", x: 0.0, y: 0.9 },
+    { id: "query", label: "Query Service", kind: "service", x: 0.3, y: 0.9 },
+    { id: "rank", label: "Ranker", kind: "service", x: 1.0, y: 0.9 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "source", to: "pipeline", label: "changes", dashed: true, active: true },
+        { from: "pipeline", to: "shards", label: "write index", active: true },
+      ],
+      active: ["source", "pipeline", "shards"],
+      dimmed: ["user", "query", "rank"],
+      vars: { path: "INDEXING (async)" },
+      note: "Data changes flow through the pipeline and into the index. Asynchronous, so a write to the main database is never slowed by indexing.",
+    },
+    {
+      edges: [
+        { from: "user", to: "query", label: "red shoes", active: true },
+        { from: "query", to: "shards", label: "scatter", active: true },
+      ],
+      active: ["user", "query", "shards"],
+      dimmed: ["source", "pipeline", "rank"],
+      vars: { path: "QUERY", step: "scatter to all shards" },
+      note: "The query goes to EVERY shard, because a matching document could be on any of them. Documents are sharded, terms are not.",
+    },
+    {
+      edges: [
+        { from: "shards", to: "query", label: "top 100 each", active: true },
+        { from: "query", to: "rank", label: "candidates", active: true },
+        { from: "rank", to: "user", label: "top 10", active: true },
+      ],
+      active: ["query", "rank", "user"],
+      dimmed: ["source", "pipeline"],
+      vars: { step: "gather and rank" },
+      note: "Each shard returns its best few. They are merged and re-ranked with the expensive model, and the top ten are returned.",
+    },
+  ]}
+  caption="Scatter-gather: every shard is asked, then the small combined candidate set is ranked properly."
+/>
+
+<Callout type="warn" title="Shard by document, and accept that every query hits every shard">
+You could shard by *term* — all documents containing `shoes` on one shard. Then a two-word query needs only two shards.
+
+But posting lists for common words are enormous, so shards become wildly uneven, and any multi-term query must ship huge lists across the network to intersect them.
+
+Sharding by **document** keeps shards even and self-contained: each can fully score its own documents. The cost is that every query is broadcast, so the slowest shard sets the query latency. That is the trade everyone makes.
+</Callout>
+
+## Keeping the Index Fresh
+
+Inverted indexes are built from immutable segments — new documents create new segments, and segments merge in the background. That is why updates are not instant.
+
+| Approach | Freshness | Cost |
+|---|---|---|
+| **Full rebuild** | Hours | Simple, predictable, heavy |
+| **Incremental segments** | Seconds to a minute | The normal approach |
+| **Near-real-time buffer** | Under a second | A small in-memory index searched alongside the main one |
+
+<Callout type="info" title="Deletes are marks, not removals">
+Removing a document from a compressed posting list would mean rewriting it. Instead, deleted documents are **flagged**, and filtered out of results at query time. The space is reclaimed later during merging.
+
+This is why a search index can grow after deletions, and why heavily-updated indexes need regular merging to stay fast — the same compaction pressure as an [LSM-tree](/docs/system-design/storage).
+</Callout>
+
+## When Not to Build This
+
+<Callout type="info" title="Most systems should use an existing engine">
+Elasticsearch, OpenSearch, Solr and Typesense implement everything above, well tested, with clustering and ranking included.
+
+Build your own only where the requirement is genuinely unusual — [autocomplete](/docs/system-design/autocomplete) is a good example, because a 60 ms budget with precomputed top-k rules out a general engine.
+
+Knowing how an inverted index works matters because it explains why search behaves as it does — why updates lag, why every shard is queried, why stemming changes results. Reimplementing it rarely does.
+</Callout>
+
+## Related Reading
+
+- [Search Autocomplete](/docs/system-design/autocomplete) — a specialised search problem solved with a trie
+- [Storage Engines](/docs/system-design/storage) — segments and compaction, the same idea
+- [Partitioning](/docs/system-design/partitioning) — sharding strategies and their trade-offs
+- [Merge Sorted Array](/docs/arrays/merge-sorted-array) — intersecting posting lists

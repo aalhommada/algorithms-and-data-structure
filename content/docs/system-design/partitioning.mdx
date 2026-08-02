@@ -1,0 +1,191 @@
+---
+title: Partitioning and Consistent Hashing
+description: Splitting data across machines without reshuffling everything when the machine count changes, plus how location-based data is partitioned
+---
+
+Partitioning splits data across machines so no single one holds it all. The hard part is not the split — it is what happens when you add or remove a machine.
+
+## The Problem With Modulo
+
+The obvious scheme is `hash(key) % N`, where `N` is the number of servers. It distributes evenly and is trivial to compute. And it fails badly the moment `N` changes.
+
+<Callout type="warn" title="Adding one server moves almost everything">
+```text
+key hash 100:   N=4 → server 0      N=5 → server 0
+key hash 101:   N=4 → server 1      N=5 → server 1
+key hash 103:   N=4 → server 3      N=5 → server 3
+key hash 104:   N=4 → server 0      N=5 → server 4    moved
+key hash 105:   N=4 → server 1      N=5 → server 0    moved
+```
+
+Across the whole keyspace roughly **`(N-1)/N` of all keys move** — about 80% when going from 4 servers to 5.
+
+For a cache that means near-total invalidation and every request missing at once, which is a [cache avalanche](/docs/system-design/caching). For a database it means moving most of your data before the new server is usable.
+</Callout>
+
+## Consistent Hashing
+
+The fix is to stop hashing to *servers* and start hashing to a fixed **ring** of positions. Servers also take positions on the ring. A key belongs to the first server clockwise from it.
+
+<ArchViz
+  title="Adding a server moves only one segment"
+  height={280}
+  nodes={[
+    { id: "k1", label: "key A", sublabel: "pos 10", kind: "client", x: 0.0, y: 0.05 },
+    { id: "k2", label: "key B", sublabel: "pos 140", kind: "client", x: 0.0, y: 0.5 },
+    { id: "k3", label: "key C", sublabel: "pos 250", kind: "client", x: 0.0, y: 0.95 },
+    { id: "s1", label: "Server 1", sublabel: "pos 90", kind: "database", x: 0.55, y: 0.05 },
+    { id: "s2", label: "Server 2", sublabel: "pos 180", kind: "database", x: 0.55, y: 0.5 },
+    { id: "s3", label: "Server 3", sublabel: "pos 300", kind: "database", x: 0.55, y: 0.95 },
+    { id: "s4", label: "Server 4", sublabel: "pos 200 (new)", kind: "database", x: 1.0, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "k1", to: "s1", label: "10 → 90", active: true },
+        { from: "k2", to: "s2", label: "140 → 180", active: true },
+        { from: "k3", to: "s3", label: "250 → 300", active: true },
+      ],
+      active: ["s1", "s2", "s3"],
+      dimmed: ["s4"],
+      vars: { servers: 3, rule: "first server clockwise" },
+      note: "Each key walks clockwise to the first server it meets. Key C at 250 passes 300 and lands on server 3.",
+    },
+    {
+      edges: [
+        { from: "k1", to: "s1", label: "unchanged" },
+        { from: "k2", to: "s2", label: "unchanged" },
+        { from: "k3", to: "s4", label: "250 → 300 becomes 250 → ...", active: true },
+      ],
+      active: ["s4"],
+      vars: { servers: 4, moved: "only keys between 180 and 200" },
+      note: "Server 4 joins at position 200. Only keys landing between 180 and 200 change owner — everything else stays exactly where it was.",
+    },
+    {
+      edges: [
+        { from: "k1", to: "s2", label: "10 → 180", active: true },
+        { from: "k2", to: "s2", label: "unchanged" },
+        { from: "k3", to: "s4", label: "unchanged" },
+      ],
+      active: ["s2"],
+      dimmed: ["s1"],
+      vars: { event: "server 1 fails", moved: "only its own segment" },
+      note: "If server 1 dies, only its keys move — to the next server clockwise. The other servers are untouched.",
+    },
+  ]}
+  caption="Adding or losing a server disturbs one segment, not the whole keyspace."
+/>
+
+<Callout type="info" title="The guarantee">
+With `N` servers, adding one moves roughly **`1/N` of the keys** instead of `(N-1)/N`.
+
+Going from 4 servers to 5: modulo moves about 80% of keys, consistent hashing moves about 20%. At 100 servers the difference is 99% against 1%.
+</Callout>
+
+### Virtual nodes
+
+Plain consistent hashing has a flaw: with few servers, their random ring positions are uneven, so one server can own a much larger arc than another.
+
+The fix is to give each physical server **many** positions on the ring — typically 100 to 200 "virtual nodes" each.
+
+| | Without virtual nodes | With virtual nodes |
+|---|---|---|
+| Load spread | Uneven — luck of placement | Evens out by averaging |
+| Server removal | Its whole load goes to one neighbour | Spreads across many servers |
+| Heterogeneous machines | Not supported | A bigger server simply gets more positions |
+
+<Callout type="info" title="Virtual nodes solve the failure case too">
+Without them, losing a server dumps *all* of its traffic onto the single next server clockwise — which may then also fall over. That is a cascading failure.
+
+With 150 virtual nodes each, a failed server's segments are scattered around the ring, so its load is absorbed by many servers in small pieces. Nobody gets a sudden doubling.
+</Callout>
+
+Consistent hashing is used by CDNs to pick an edge cache, by distributed caches to pick a node, and by databases like Cassandra and DynamoDB to place data.
+
+## Choosing a Partition Key
+
+Consistent hashing decides *where* a key goes. The choice of *what to use as the key* is the decision that actually determines whether the system works.
+
+| The key should be | Why |
+|---|---|
+| High cardinality | Many distinct values to spread across |
+| Evenly accessed | No value should attract disproportionate traffic |
+| Present in most queries | Otherwise every query must ask every partition |
+
+<Callout type="warn" title="Hot partitions are the standard failure">
+**Sharding by timestamp** is the worst common choice: every new write lands on the newest partition while the rest sit idle.
+
+**Sharding a social graph by user id** spreads evenly until one account with 100 million followers puts all of its traffic on one partition.
+
+**Sharding by country** looks tidy and is wildly uneven.
+
+Watch for keys where activity is not uniform — which is most human-generated data. Where a single key is unavoidably hot, split it artificially: append a random suffix `user:42:0` … `user:42:9` and read all ten.
+</Callout>
+
+## Partitioning by Location
+
+Location data cannot be hashed, because nearby points must land near each other — the whole point is asking "what is close to me?"
+
+### Geohashing
+
+Repeatedly halve the world — first by longitude, then latitude, alternating — and record each choice as a bit. The result is a short string where **shared prefixes mean physical proximity**.
+
+```text
+gcpvj0   →  central London
+gcpvj2   →  a few hundred metres away
+gcpuz    →  a few kilometres away
+u10hb    →  Paris
+
+Longer prefix  =  smaller box  =  closer together
+```
+
+| Length | Approximate box |
+|---|---|
+| 4 | 40 km |
+| 5 | 5 km |
+| 6 | 1 km |
+| 7 | 150 m |
+
+A proximity query becomes a **prefix query**, which any ordinary index can serve. That is what makes geohashing so useful: it turns a two-dimensional problem into a one-dimensional string lookup.
+
+<Callout type="warn" title="The edge problem">
+Two points either side of a cell boundary can be 10 metres apart yet share no prefix.
+
+Every real implementation searches the target cell **plus its eight neighbours**, then filters by true distance. Searching only the containing cell silently misses the closest results, and the bug is invisible until someone stands near a boundary.
+</Callout>
+
+### Quadtrees
+
+A quadtree splits a region into four, and keeps splitting any square holding more than some number of points.
+
+| | Geohash | Quadtree |
+|---|---|---|
+| Structure | String prefix | Tree in memory |
+| Adapts to density | No — fixed grid | **Yes** — dense areas split further |
+| Storage | Any indexed database | Usually memory |
+| Updating | Trivial | Requires rebalancing |
+
+Geohashing suits data that is stored and queried through a normal database. Quadtrees suit dense, memory-resident data where city centres need far finer resolution than open countryside.
+
+## Rebalancing
+
+Whatever the scheme, at some point data must move. Three approaches:
+
+| Approach | How | Cost |
+|---|---|---|
+| **Fixed partition count** | Create 1,024 partitions up front, move whole partitions between servers | Simple; the count is fixed forever |
+| **Dynamic splitting** | Split a partition when it grows too large | Adapts; more machinery |
+| **Proportional to nodes** | A fixed number of partitions per server | Splits and merges on membership change |
+
+<Callout type="info" title="Fixed partition count is the pragmatic default">
+Create far more partitions than servers — say 1,024 partitions across 8 servers, 128 each. Adding a ninth server means moving whole partitions, never splitting them.
+
+The partition count is fixed for the lifetime of the system, so choose it generously. Moving partitions is a routing-table change plus a data copy, which is far simpler than splitting live data.
+</Callout>
+
+## Related Reading
+
+- [Databases](/docs/system-design/databases) — sharding, and what it takes away
+- [Caching](/docs/system-design/caching) — where consistent hashing prevents avalanches
+- [Ride Sharing](/docs/system-design/ride-sharing) — geohashing applied to a real proximity problem
+- [Hash Maps](/docs/arrays/two-sum) — the idea underneath all of this

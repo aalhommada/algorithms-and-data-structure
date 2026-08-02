@@ -1,0 +1,294 @@
+---
+title: Payment System
+description: Where correctness matters more than latency — idempotency, the double-entry ledger, reconciliation, and why money is never deleted
+---
+
+Most designs optimise for speed. This one optimises for **never being wrong**. A feed showing a stale count is a nuisance; a payment taken twice is a serious incident.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| What are we building? | Charging a card and recording the result |
+| Do we handle card details? | No — a third-party provider does |
+| Refunds? | Yes, full and partial |
+| Currencies? | Multiple, no conversion |
+| Consistency requirement | **Strong.** Money must never be double-charged or lost |
+
+<Callout type="info" title="Not storing card numbers is a design decision, not a shortcut">
+Handling raw card data pulls the entire system into strict compliance scope, with heavy audit obligations on every service that touches it.
+
+Instead, the client sends card details **directly** to the payment provider, which returns a token. Your servers only ever see the token. This shrinks the sensitive surface to almost nothing, and it is what nearly every real system does.
+</Callout>
+
+## 2. Put Numbers On It
+
+```text
+10 million payments/day
+÷ 100,000 sec                  ≈  100 payments/sec
+× 5 peak (sales, paydays)      ≈  500 payments/sec        ← small
+
+STORAGE
+  a payment record ≈ 1 KB, and ledger entries are ~200 bytes each
+  10M/day × ~2 KB               =  20 GB/day
+  × 365 × 7 years retention     ≈  50 TB
+
+Latency budget: users tolerate 2-3 seconds — this is not a latency problem
+```
+
+<Callout type="warn" title="The numbers are small, which changes the priorities">
+500 payments per second fits comfortably on one database. There is no scaling problem here.
+
+Every design decision below is therefore about **correctness**, not throughput — which is the opposite of most systems. If you find yourself sharding a payment database for performance, check the arithmetic first.
+</Callout>
+
+## 3. Define the Interface
+
+```text
+charge(idempotency_key, amount, currency, payment_method, order_id)
+    →  { payment_id, status: pending | succeeded | failed, reason? }
+
+get_payment(payment_id)                        →  current status
+refund(idempotency_key, payment_id, amount)    →  { refund_id, status }
+
+Delivered to the caller, not returned by the call:
+  payment.succeeded / payment.failed / refund.completed   (webhook)
+```
+
+<Callout type="warn" title="`idempotency_key` is the first argument, and it is required">
+Not a header. Not optional. The caller generates it once for one intended charge and sends the same key on every retry.
+
+Consider what happens without it. A request times out. The caller does not know whether the card was charged — a timeout is silence, not a "no". It retries. If the first attempt did go through, the customer has now paid twice.
+
+There is no way to fix that after the fact from inside this system, because two identical charges are indistinguishable from a customer legitimately buying the same thing twice. **The only place it can be solved is the interface**, by making the caller say "this is the same attempt, not a new one".
+
+Section 5 covers how the key is enforced. This step is about it being required at all.
+</Callout>
+
+<Callout type="info" title="`charge` returns `pending`, not a final answer">
+It would be nicer to return `succeeded` or `failed` and be done. You cannot. A card network takes seconds, sometimes asks the cardholder for confirmation, and sometimes stops responding mid-request.
+
+So the honest interface hands back a `payment_id` and a status that may still change, and the real outcome arrives later by webhook.
+
+An interface that promised a final answer would have to lie whenever the network was slow — and a lie about money becomes a support ticket and a refund.
+</Callout>
+
+## 4. The Flow
+
+<ArchViz
+  title="A payment, with a state machine behind it"
+  height={310}
+  nodes={[
+    { id: "client", label: "Client", kind: "client", x: 0.0, y: 0.5 },
+    { id: "api", label: "Payment API", kind: "service", x: 0.24, y: 0.5 },
+    { id: "idem", label: "Idempotency Store", kind: "cache", x: 0.24, y: 0.02 },
+    { id: "db", label: "Payments DB", sublabel: "state machine", kind: "database", x: 0.52, y: 0.5 },
+    { id: "ledger", label: "Ledger", sublabel: "append only", kind: "database", x: 0.52, y: 0.95 },
+    { id: "psp", label: "Provider", sublabel: "external", kind: "external", x: 0.82, y: 0.5 },
+    { id: "recon", label: "Reconciliation", sublabel: "nightly", kind: "service", x: 1.0, y: 0.95 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "client", to: "api", label: "pay + idem key", active: true },
+        { from: "api", to: "idem", label: "seen this key?", active: true },
+      ],
+      active: ["client", "api", "idem"],
+      dimmed: ["db", "ledger", "psp", "recon"],
+      vars: { step: "1. deduplicate" },
+      note: "Every request carries a client-generated idempotency key. If it has been seen, return the stored result and do nothing else.",
+    },
+    {
+      edges: [{ from: "api", to: "db", label: "record PENDING", active: true }],
+      active: ["api", "db"],
+      dimmed: ["client", "idem", "ledger", "psp", "recon"],
+      vars: { state: "PENDING" },
+      note: "Write the intent BEFORE calling the provider. If we crash now, a record exists to investigate — the alternative is money moving with no trace.",
+    },
+    {
+      edges: [{ from: "api", to: "psp", label: "charge token", active: true }],
+      active: ["api", "psp"],
+      dimmed: ["client", "idem", "db", "ledger", "recon"],
+      vars: { state: "PENDING", risk: "response may be lost" },
+      note: "Call the provider, passing our idempotency key through so THEY also deduplicate. This is the dangerous moment: the charge may succeed while the reply is lost.",
+    },
+    {
+      edges: [
+        { from: "psp", to: "api", label: "succeeded", active: true },
+        { from: "api", to: "db", label: "mark SUCCEEDED", active: true },
+        { from: "api", to: "ledger", label: "double entry", active: true },
+      ],
+      active: ["db", "ledger"],
+      dimmed: ["client", "idem", "psp", "recon"],
+      vars: { state: "SUCCEEDED" },
+      note: "On success, update the state and append balanced ledger entries. The ledger is append-only — nothing is ever edited.",
+    },
+    {
+      edges: [
+        { from: "recon", to: "ledger", label: "compare", active: true },
+        { from: "recon", to: "psp", label: "their records", active: true },
+      ],
+      active: ["recon", "ledger", "psp"],
+      dimmed: ["client", "api", "idem", "db"],
+      vars: { step: "nightly reconciliation" },
+      note: "Every night, compare our ledger against the provider's settlement report. Anything that does not match is investigated by a human.",
+    },
+  ]}
+  caption="Record intent first, deduplicate everywhere, and verify against an independent source daily."
+/>
+
+### The state machine
+
+```text
+        ┌──────────┐
+        │ PENDING  │
+        └────┬─────┘
+      ┌──────┼──────┐
+      ▼      ▼      ▼
+ SUCCEEDED FAILED  UNKNOWN ──► requires investigation
+      │
+      ▼
+  REFUNDED (partial or full)
+```
+
+<Callout type="warn" title="UNKNOWN is a real state and must be modelled">
+When the provider call times out, you genuinely do not know whether the money moved. Guessing either way is wrong: assume success and you may ship goods for free; assume failure and you may charge twice.
+
+Record `UNKNOWN`, then resolve it by **querying the provider** using your idempotency key. If it cannot be resolved automatically, reconciliation catches it.
+
+Designs that model only success and failure will, at scale, silently take money without recording it.
+</Callout>
+
+## 5. Idempotency
+
+The single most important mechanism in the system.
+
+```text
+POST /payments
+Idempotency-Key: 8f2c-4a91-b3e7
+
+first request  →  process, store the outcome under the key
+retry          →  key found  →  return the SAME outcome, charge nothing
+```
+
+<Callout type="info" title="Idempotency must be end to end">
+Deduplicating at your API is not enough. Your call to the provider can also be retried, so the key must be **passed through** to them as well.
+
+Two layers of deduplication, one key. If either layer is missing, a retry at that layer double-charges.
+
+The key must also be stored **durably** and written in the same transaction as the payment record. Keeping it only in a cache means a cache eviction reopens the double-charge window.
+</Callout>
+
+## 6. The Ledger
+
+Payment state says what happened. The **ledger** says where the money is, and it uses double-entry bookkeeping — every movement is recorded twice, as a debit and a matching credit.
+
+```text
+Customer pays £100 for an order:
+
+  account                 debit    credit
+  ──────────────────────────────────────
+  customer_receivable     100
+  revenue                          100
+
+Sum of debits must always equal sum of credits.
+```
+
+<Callout type="info" title="Why double entry, in a computer, in this century">
+Because it makes errors **detectable**. If debits and credits do not balance, something is wrong — and you find out from the data itself rather than from a customer complaint.
+
+A single `balance` column can be wrong silently forever. A ledger that must balance cannot.
+
+The ledger is also **append-only**. Correcting a mistake means adding a reversing entry, never editing or deleting. That preserves the full history, which is both an audit requirement and the only way to answer "what did we think was true last Tuesday?"
+</Callout>
+
+| Rule | Reason |
+|---|---|
+| Append only | History must be reconstructable |
+| Every entry balanced | Errors become detectable |
+| Corrections are new entries | Never rewrite the past |
+| Amounts in minor units as integers | Never floating point |
+
+<Callout type="warn" title="Never store money in a floating-point number">
+```text
+0.1 + 0.2 = 0.30000000000000004
+```
+
+Floating point cannot represent most decimal fractions exactly. Errors accumulate across millions of transactions, and the resulting discrepancies are nearly impossible to trace.
+
+Store **integer minor units** — 1050 for £10.50 — or use a decimal type. Always store the currency alongside the amount; an integer with no currency is meaningless.
+</Callout>
+
+## 7. Reconciliation
+
+Even with everything above, your records and the provider's will occasionally disagree — a lost webhook, a timeout, a provider-side adjustment.
+
+Nightly, fetch the provider's settlement report and compare it line by line with your ledger.
+
+| Mismatch | Likely cause |
+|---|---|
+| They charged, we have no record | A lost response we never resolved |
+| We recorded, they have nothing | A write that should have failed |
+| Amounts differ | Currency handling or a partial refund |
+
+<Callout type="info" title="Reconciliation is the safety net that makes the rest trustworthy">
+Every other mechanism reduces the chance of error. Reconciliation is what **detects** the errors that get through anyway.
+
+A payment system without it will drift out of agreement with reality, and nobody will know until an audit or an angry customer.
+
+Mismatches should alert a human. This is one of the few places where the correct response to an anomaly is a person looking at it, not an automatic retry.
+</Callout>
+
+## 8. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Tokenised cards | Sensitive data never touches us | Dependent on the provider's availability |
+| Write PENDING before charging | No untraceable money movement | An extra write on the critical path |
+| Idempotency keys everywhere | Retries are safe | Keys must be stored durably |
+| Append-only ledger | Full auditability, detectable errors | More storage; corrections are indirect |
+| Strong consistency | Money is never lost or doubled | Cannot use eventual-consistency shortcuts |
+| Nightly reconciliation | Errors are caught | Up to 24 hours to detect one |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="How do webhooks from the provider get handled?">
+Providers notify asynchronously, and webhooks can arrive **out of order, twice, or not at all**.
+
+Verify the signature, deduplicate by event id, and ignore an event that would move the state backwards. Never rely on webhooks alone — poll for the status of anything still pending, because the webhook you never receive is the one that matters.
+</Accordion>
+
+<Accordion title="How are refunds modelled?">
+As new records referencing the original payment, never as a modification of it. The original stays exactly as it was.
+
+Partial refunds need a running total so refunds cannot exceed the original amount — enforced with a database constraint or a conditional update, not an application-level check, which races.
+</Accordion>
+
+<Accordion title="Why not use a queue for payments?">
+Queues give [at-least-once](/docs/system-design/queues) delivery, so a payment job could run twice. That is survivable only because of idempotency keys — and if you are relying on them anyway, the synchronous path is simpler and gives the user an immediate answer.
+
+Queues fit the work *around* the payment: sending receipts, updating analytics, notifying fulfilment. Those can safely happen later.
+</Accordion>
+
+<Accordion title="How do you handle multiple currencies?">
+Store the amount and the currency together, always. Never sum across currencies.
+
+Conversions are recorded as explicit ledger entries with the rate and timestamp used, so the figure can be reproduced later. A rate applied but not recorded makes an account impossible to audit.
+</Accordion>
+
+<Accordion title="What if the provider is down?">
+Fail the payment clearly rather than queuing it silently — the user must know it did not happen.
+
+For retryable failures, a [circuit breaker](/docs/system-design/reliability) stops hammering a failing provider. Systems at scale often integrate a second provider and fail over, which makes the abstraction over providers worth the effort.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Consistency and CAP](/docs/system-design/consistency) — idempotency and why this path is CP
+- [Security](/docs/system-design/security) — why card data is kept out of scope
+- [Reliability](/docs/system-design/reliability) — timeouts, retries and circuit breakers
+- [Databases](/docs/system-design/databases) — transactions and isolation levels

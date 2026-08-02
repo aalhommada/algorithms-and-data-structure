@@ -1,0 +1,197 @@
+---
+title: Networking Basics
+description: DNS, TCP versus UDP, the HTTP versions, TLS, and what a CDN actually does — the layer every design sits on
+---
+
+Every box in a design diagram is connected by a network, and the network has properties that decide what is possible. This page covers the parts that change designs.
+
+## What Happens When a Request Is Made
+
+<ArchViz
+  title="One request, end to end"
+  height={260}
+  nodes={[
+    { id: "browser", label: "Browser", kind: "client", x: 0.0, y: 0.5 },
+    { id: "dns", label: "DNS Resolver", kind: "external", x: 0.26, y: 0.05 },
+    { id: "cdn", label: "CDN Edge", kind: "edge", x: 0.52, y: 0.5 },
+    { id: "lb", label: "Load Balancer", kind: "edge", x: 0.78, y: 0.5 },
+    { id: "app", label: "App Server", kind: "service", x: 1.0, y: 0.05 },
+  ]}
+  frames={[
+    {
+      edges: [{ from: "browser", to: "dns", label: "where is example.com?", active: true }],
+      active: ["browser", "dns"],
+      dimmed: ["cdn", "lb", "app"],
+      vars: { step: "1. DNS", cost: "0-100 ms" },
+      note: "The name must become an IP address. Cached at the browser, the OS, and the resolver — a cache hit costs nothing, a miss can cost 100 ms.",
+    },
+    {
+      edges: [{ from: "browser", to: "cdn", label: "TCP handshake", active: true }],
+      active: ["browser", "cdn"],
+      dimmed: ["dns", "lb", "app"],
+      vars: { step: "2. connect", cost: "1 round trip" },
+      note: "TCP needs a handshake before any data moves. One full round trip, purely to agree to talk.",
+    },
+    {
+      edges: [{ from: "browser", to: "cdn", label: "TLS handshake", active: true }],
+      active: ["browser", "cdn"],
+      dimmed: ["dns", "lb", "app"],
+      vars: { step: "3. encrypt", cost: "1-2 round trips" },
+      note: "TLS adds another one or two round trips to agree on keys. Connecting to a distant server costs several round trips before the first byte of your request is sent.",
+    },
+    {
+      edges: [{ from: "browser", to: "cdn", label: "GET /page", active: true }],
+      active: ["browser", "cdn"],
+      dimmed: ["dns", "lb", "app"],
+      vars: { step: "4. hit", cost: "~20 ms" },
+      note: "If the CDN has the content, it answers here. Nothing further happens.",
+    },
+    {
+      edges: [
+        { from: "cdn", to: "lb", label: "miss", active: true },
+        { from: "lb", to: "app", active: true },
+      ],
+      active: ["cdn", "lb", "app"],
+      dimmed: ["browser", "dns"],
+      vars: { step: "5. origin", cost: "+40-150 ms" },
+      note: "On a miss the request travels to your infrastructure, which may be a continent away. This is the cost the CDN exists to avoid.",
+    },
+  ]}
+  caption="Three round trips can pass before your server ever hears about the request."
+/>
+
+<Callout type="info" title="Connection setup is why keep-alive matters">
+DNS, TCP and TLS together can cost 200 ms before a single byte of your response is sent — and none of that is your application's fault.
+
+This is why connections are reused rather than reopened. A page making 20 requests over one kept-alive connection pays the setup once; opening 20 connections pays it 20 times.
+
+The same applies between your own services. Connection pooling is not a micro-optimisation; it removes a round trip from every internal call.
+</Callout>
+
+## DNS
+
+DNS turns a name into an address. It is a cache hierarchy, and the caching is what you must design around.
+
+| Record | Purpose |
+|---|---|
+| `A` / `AAAA` | Name → IPv4 / IPv6 address |
+| `CNAME` | Name → another name |
+| `MX` | Mail servers |
+| `TXT` | Arbitrary text, often domain verification |
+
+<Callout type="warn" title="TTL is a promise you cannot take back">
+A DNS record's TTL tells resolvers how long they may cache it. Set it to 24 hours and a failover cannot take effect for up to 24 hours — resolvers worldwide keep sending users to the dead address, and you have no way to reach them.
+
+Lower the TTL to 60 seconds **before** any planned migration, wait for the old TTL to expire, then make the change. Afterwards you can raise it again.
+
+Getting this wrong turns a five-minute switch into a day-long outage.
+</Callout>
+
+DNS is also a routing tool. **Geographic DNS** returns a different address depending on where the query came from, sending European users to a European region. It is the cheapest way to do global routing, but it fails over slowly because of caching.
+
+## TCP and UDP
+
+| | TCP | UDP |
+|---|---|---|
+| Delivery | Guaranteed, in order | Best effort, may be lost or reordered |
+| Setup | Handshake required | None — just send |
+| Speed | Slower | Faster |
+| Congestion control | Yes | No |
+| Suits | Almost everything | Video calls, games, DNS queries |
+
+<Callout type="info" title="When losing data is better than waiting for it">
+On a live video call, a packet that arrives late is worthless — the moment it described has passed. TCP would stall the stream to redeliver it, making things worse.
+
+UDP drops it and moves on. A momentary glitch beats a freeze.
+
+The rule: use UDP when **fresh data matters more than complete data**. Everything else uses TCP.
+</Callout>
+
+## The HTTP Versions
+
+| | HTTP/1.1 | HTTP/2 | HTTP/3 |
+|---|---|---|---|
+| Transport | TCP | TCP | QUIC (over UDP) |
+| Requests per connection | One at a time | Many, multiplexed | Many, multiplexed |
+| Head-of-line blocking | Per connection | At the TCP layer | **None** |
+| Header compression | No | Yes | Yes |
+| Connection setup | TCP + TLS | TCP + TLS | Combined, faster |
+
+<Callout type="info" title="Head-of-line blocking, and why HTTP/3 exists">
+**HTTP/1.1** sends one request at a time per connection. Browsers worked around it by opening six connections per domain — which is why "sprite sheets" and file concatenation used to be performance advice.
+
+**HTTP/2** multiplexes many requests over one connection, so that advice became obsolete. But it still runs on TCP, and TCP guarantees ordering across the *whole* connection. One lost packet stalls every stream sharing it.
+
+**HTTP/3** moves to QUIC over UDP, which tracks each stream separately. A lost packet stalls only its own stream. On unreliable mobile networks this is a large real-world win.
+</Callout>
+
+## TLS
+
+TLS encrypts the connection and proves the server is who it claims. The handshake costs a round trip or two, which is why session resumption exists — a returning client can skip most of it.
+
+| Term | Meaning |
+|---|---|
+| **Certificate** | Signed proof the server owns this domain |
+| **TLS termination** | Decrypting at the load balancer, so app servers get plain HTTP |
+| **End-to-end TLS** | Encrypted all the way to the app server |
+| **mTLS** | Both sides present certificates — common between internal services |
+
+<Callout type="warn" title="Terminating TLS at the load balancer has a consequence">
+It is the common choice: the load balancer handles certificates and the CPU cost of encryption, and app servers stay simple.
+
+But traffic inside your network is then **unencrypted**. That is acceptable in a trusted private network and unacceptable if the traffic crosses zones or providers.
+
+Say which you are doing. "TLS terminates at the edge, and internal service calls use mTLS" is a complete answer.
+</Callout>
+
+## What a CDN Actually Does
+
+A CDN is a network of caches placed physically near users. Two things make it valuable, and the second is often forgotten.
+
+**It removes distance.** A user in Sydney fetching from a London server pays roughly 250 ms per round trip. From a Sydney edge, 5 ms. No amount of server optimisation competes with that.
+
+**It absorbs traffic.** Bytes served by the edge never touch your infrastructure. For the [video streaming](/docs/system-design/video-streaming) design, that is the difference between possible and impossible.
+
+| Content | Cache at the edge? |
+|---|---|
+| Images, video, CSS, JS | Yes — the main use |
+| Public API responses | Often, with a short TTL |
+| Personalised pages | No — one user's page must not be served to another |
+| Anything behind authentication | Only with great care |
+
+<Callout type="warn" title="The most dangerous caching bug">
+Caching a personalised response at a shared edge means the next visitor receives **someone else's data** — their name, their basket, sometimes their session.
+
+Any response that varies per user must send `Cache-Control: private` or `no-store`. If it varies by a header, that header must appear in `Vary`.
+
+This class of bug leaks real user data and is invisible in testing, because a single-user test never sees the crossover.
+</Callout>
+
+### Push or pull
+
+| Model | How | Suits |
+|---|---|---|
+| **Pull** | The edge fetches from origin on first request | Most content — self-managing |
+| **Push** | You upload to the edge in advance | Large launches, where the first miss would be a stampede |
+
+Pull is the default. Push is worth it when you know a spike is coming and the first request must not be slow — a video release, a product launch.
+
+## Practical Consequences
+
+```text
+Design rules that follow from this page:
+
+□ Reuse connections — pooling and keep-alive, internally and externally
+□ Lower DNS TTL before a migration, not during
+□ Serve static assets from a CDN, always
+□ Never cache a personalised response at a shared layer
+□ Prefer one multiplexed connection to many parallel ones
+□ Put users' first byte close to them; distance is not optimisable
+```
+
+## Related Reading
+
+- [Numbers Every Design Needs](/docs/system-design/numbers-to-know) — the latency figures behind this page
+- [Caching](/docs/system-design/caching) — the CDN as the outermost cache layer
+- [Scaling](/docs/system-design/scaling) — load balancers and health checks
+- [Security](/docs/system-design/security) — TLS, certificates and what encryption does not cover

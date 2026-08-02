@@ -295,7 +295,7 @@ function strStrKMP(haystack: string, needle: string): number {
 | Naive sliding window | `O(n × m)` | `O(1)` |
 | **KMP** | **`O(n + m)`** | `O(m)` |
 
-In practice the naive version is fine for interview-sized inputs and is what most interviewers expect first. Knowing that KMP exists — and *why* the failure table removes the redundancy — is the mark of a stronger answer.
+In practice the naive version is fine for moderate inputs, and it is the right first solution. Knowing that KMP exists — and *why* the failure table removes the redundancy — is what lets you reach for it when the input is large enough to need it.
 
 ## Edge Cases
 

@@ -166,13 +166,20 @@ Here is the shape almost every design follows. The point is not that the final p
 
 ## What This Section Covers
 
-### Foundations
+### Foundations — the building blocks
+
+Each explains one component and, more importantly, **what it costs**.
 
 <Cards>
   <Card
     title="Numbers Every Design Needs"
     href="/docs/system-design/numbers-to-know"
-    description="Latency figures, capacity estimation, and how to turn 'a million users' into requests per second"
+    description="Latency figures, capacity estimation, and turning 'a million users' into requests per second"
+  />
+  <Card
+    title="Networking Basics"
+    href="/docs/system-design/networking"
+    description="DNS, TCP vs UDP, the HTTP versions, TLS, and what a CDN actually does"
   />
   <Card
     title="Scaling"
@@ -182,7 +189,7 @@ Here is the shape almost every design follows. The point is not that the final p
   <Card
     title="Caching"
     href="/docs/system-design/caching"
-    description="Where to put a cache, eviction, invalidation, and the failure modes"
+    description="Where to put a cache, eviction, invalidation, and the three failure modes"
   />
   <Card
     title="Databases"
@@ -190,9 +197,24 @@ Here is the shape almost every design follows. The point is not that the final p
     description="SQL vs NoSQL, indexing, replication, and sharding"
   />
   <Card
+    title="Storage Engines"
+    href="/docs/system-design/storage"
+    description="Object vs block vs file, and the B-tree / LSM-tree split"
+  />
+  <Card
+    title="Partitioning and Consistent Hashing"
+    href="/docs/system-design/partitioning"
+    description="Splitting data without reshuffling it, plus geohashing for location"
+  />
+  <Card
     title="Consistency and CAP"
     href="/docs/system-design/consistency"
     description="What you give up when data lives in more than one place"
+  />
+  <Card
+    title="Distributed Primitives"
+    href="/docs/system-design/distributed-primitives"
+    description="Leader election, consensus, distributed locks, and logical clocks"
   />
   <Card
     title="Queues and Async Work"
@@ -205,15 +227,45 @@ Here is the shape almost every design follows. The point is not that the final p
     description="Endpoint design, pagination, idempotency keys, and protecting the system"
   />
   <Card
+    title="Services and Boundaries"
+    href="/docs/system-design/microservices"
+    description="Monolith vs services, where to draw lines, and the machinery it costs"
+  />
+  <Card
+    title="Search Systems"
+    href="/docs/system-design/search"
+    description="The inverted index, tokenisation, ranking, and index freshness"
+  />
+  <Card
+    title="Probabilistic Structures"
+    href="/docs/system-design/probabilistic-structures"
+    description="Bloom filters, HyperLogLog and count-min sketch — accuracy traded for memory"
+  />
+  <Card
+    title="Security"
+    href="/docs/system-design/security"
+    description="Authentication vs authorisation, tokens, encryption, and the attacks to design against"
+  />
+  <Card
     title="Reliability"
     href="/docs/system-design/reliability"
-    description="Failure is normal — timeouts, retries, circuit breakers, and what to monitor"
+    description="Failure is normal — timeouts, retries, circuit breakers, degradation"
+  />
+  <Card
+    title="Observability"
+    href="/docs/system-design/observability"
+    description="Logs, metrics and traces, and defining what 'working' means"
+  />
+  <Card
+    title="Deployment and Migrations"
+    href="/docs/system-design/deployment"
+    description="Canary releases, feature flags, and changing a schema without downtime"
   />
 </Cards>
 
 ### Worked Designs
 
-Each one applies the six steps end to end.
+Each applies the six steps end to end, and ends with what it traded away.
 
 <Cards>
   <Card
@@ -227,6 +279,11 @@ Each one applies the six steps end to end.
     description="Four algorithms compared, and the distributed counting problem"
   />
   <Card
+    title="Distributed Key-Value Store"
+    href="/docs/system-design/key-value-store"
+    description="Consistent hashing, quorums, and resolving conflicting writes"
+  />
+  <Card
     title="News Feed"
     href="/docs/system-design/news-feed"
     description="Fan-out on write vs on read, and why celebrities break both"
@@ -237,9 +294,39 @@ Each one applies the six steps end to end.
     description="Long-lived connections, delivery guarantees, and message ordering"
   />
   <Card
+    title="Notification System"
+    href="/docs/system-design/notification-system"
+    description="Push, email and SMS at scale, and not driving users to opt out"
+  />
+  <Card
     title="Search Autocomplete"
     href="/docs/system-design/autocomplete"
     description="Tries at scale, ranking, and serving suggestions in under 100ms"
+  />
+  <Card
+    title="Web Crawler"
+    href="/docs/system-design/web-crawler"
+    description="Deduplicating billions of URLs, politeness, and avoiding traps"
+  />
+  <Card
+    title="File Storage and Sync"
+    href="/docs/system-design/file-storage"
+    description="Chunking, deduplication, delta sync, and conflict resolution"
+  />
+  <Card
+    title="Ride Sharing"
+    href="/docs/system-design/ride-sharing"
+    description="Geospatial indexing, 250k location writes/sec, and matching races"
+  />
+  <Card
+    title="Ticket Booking"
+    href="/docs/system-design/ticket-booking"
+    description="Never double-booking a seat, and surviving a 100,000:1 traffic spike"
+  />
+  <Card
+    title="Payment System"
+    href="/docs/system-design/payment-system"
+    description="Idempotency, the double-entry ledger, and reconciliation"
   />
   <Card
     title="Video Streaming"

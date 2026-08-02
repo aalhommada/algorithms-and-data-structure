@@ -33,10 +33,45 @@ Greedy:   4 + 1 + 1  = 3 coins
 Optimal:  3 + 3      = 2 coins
 ```
 
+<ArrayViz
+  title="Greedy on coins = [1, 3, 4], target = 6"
+  frames={[
+    {
+      values: [1, 3, 4],
+      states: ["idle", "idle", "active"],
+      pointers: [{ index: 2, label: "take" }],
+      vars: { remaining: 6, taken: "4", coins: 1 },
+      note: "Greedy takes the largest coin that fits: 4. It looks like the best possible move — it removes the most.",
+    },
+    {
+      values: [1, 3, 4],
+      states: ["active", "discard", "discard"],
+      pointers: [{ index: 0, label: "take" }],
+      vars: { remaining: 2, taken: "4 + 1", coins: 2 },
+      note: "2 left. But 3 and 4 are both too big now — only the 1 fits. The earlier choice quietly removed the good options.",
+    },
+    {
+      values: [1, 3, 4],
+      states: ["active", "discard", "discard"],
+      pointers: [{ index: 0, label: "take" }],
+      vars: { remaining: 1, taken: "4 + 1 + 1", coins: 3 },
+      note: "Another 1. Greedy finishes with 3 coins and never suspects anything went wrong.",
+    },
+    {
+      values: [1, 3, 4],
+      states: ["idle", "match", "discard"],
+      pointers: [{ index: 1, label: "×2" }],
+      vars: { remaining: 0, taken: "3 + 3", coins: 2 },
+      note: "The real answer is 3 + 3 — two coins. Reaching it required REFUSING the biggest coin, which greedy can never do.",
+    },
+  ]}
+  caption="The failure is silent. Greedy returned a valid answer that simply is not the best one."
+/>
+
 Taking the largest coin first blocks the better pairing. There is no exchange argument, because the greedy choice genuinely destroys the optimum — so coin change needs [dynamic programming](/docs/dynamic-programming).
 
 <Callout type="warn" title="A greedy solution that passes the examples may still be wrong">
-Greedy failures are often invisible on small inputs. If you cannot articulate *why* the local choice is safe, treat that as a signal to reach for DP instead — or at least to say so out loud in an interview.
+Greedy failures are often invisible on small inputs. If you cannot articulate *why* the local choice is safe, treat that as a signal to reach for DP instead.
 </Callout>
 
 ## The Two Recurring Shapes

@@ -1,0 +1,231 @@
+---
+title: Notification System
+description: Sending push, email and SMS at scale — channel abstraction, delivery guarantees, and not becoming the reason users leave
+---
+
+A notification system is a fan-out problem with unreliable third parties at every edge, and a product constraint most designs forget: sending too much is worse than sending nothing.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| Channels? | Push, email, SMS, in-app |
+| Who triggers? | Other internal services |
+| Ordering? | Not required |
+| Delivery guarantee? | At least once, deduplicated by the client |
+| User control? | Per-category preferences and quiet hours |
+
+## 2. Put Numbers On It
+
+```text
+100 million users
+Average 5 notifications/user/day     =  500M/day
+÷ 100,000 sec                        ≈  5,000/sec average
+× 3 peak                             ≈  15,000/sec
+
+BROADCAST SPIKE
+  "Breaking news" to 50 million users at once
+  Target: delivered within 5 minutes
+  50,000,000 ÷ 300 sec               ≈  170,000/sec        ← the real requirement
+```
+
+<Callout type="warn" title="The broadcast spike is what you must design for">
+Steady state is 15,000 per second. A single broadcast demands ten times that for five minutes.
+
+You cannot run 170,000/sec of capacity permanently, and you cannot let a broadcast starve the ordinary notifications behind it.
+
+That points at two things: a queue that absorbs the burst, and **priority lanes** so a password reset is not stuck behind 50 million news alerts.
+</Callout>
+
+## 3. Define the Interface
+
+```text
+notify(user_id, template_id, data, dedup_key)  →  { notification_id }
+
+  template_id   what to say — the calling service never writes the wording
+  data          values to fill the template with
+  dedup_key     the same key twice sends once
+
+preferences(user_id)                →  categories, channels, quiet hours
+set_preferences(user_id, changes)   →  ack
+```
+
+<Callout type="warn" title="Notice what the caller cannot choose: the channel">
+There is no `channel: "push"` argument. The calling service says *what happened*; this system decides *how it reaches the user*, from that user's preferences.
+
+Let callers choose and every team picks push, because push feels most important to the team sending it. The user's settings become decoration, and they turn everything off — which costs you the one channel that mattered.
+
+One decision, made in one place, from data the user controls. That is the whole reason this is a separate system instead of a library.
+</Callout>
+
+<Callout type="info" title="`template_id` instead of a finished string">
+A finished string cannot be translated, cannot be shortened for SMS, and cannot be re-styled for email without changing every caller.
+
+Passing an id plus data keeps the wording where it can be edited, reviewed and localised — and lets one notification render differently per channel.
+</Callout>
+
+## 4. The Architecture
+
+<ArchViz
+  title="From trigger to device"
+  height={330}
+  nodes={[
+    { id: "svc", label: "Services", sublabel: "triggers", kind: "service", x: 0.0, y: 0.5 },
+    { id: "api", label: "Notification API", kind: "service", x: 0.24, y: 0.5 },
+    { id: "prefs", label: "Preferences", sublabel: "opt-outs, quiet hours", kind: "database", x: 0.24, y: 0.02 },
+    { id: "queue", label: "Priority Queues", sublabel: "high / normal / bulk", kind: "queue", x: 0.52, y: 0.5 },
+    { id: "workers", label: "Channel Workers", kind: "service", x: 0.76, y: 0.5 },
+    { id: "push", label: "APNs / FCM", kind: "external", x: 1.0, y: 0.02 },
+    { id: "email", label: "Email Provider", kind: "external", x: 1.0, y: 0.5 },
+    { id: "sms", label: "SMS Provider", kind: "external", x: 1.0, y: 0.98 },
+  ]}
+  frames={[
+    {
+      edges: [{ from: "svc", to: "api", label: "notify(user, event)", active: true }, { from: "api", to: "prefs", label: "allowed?", active: true }],
+      active: ["svc", "api", "prefs"],
+      dimmed: ["queue", "workers", "push", "email", "sms"],
+      vars: { step: "1. filter" },
+      note: "Check preferences FIRST. Opt-outs, quiet hours and frequency caps are applied before anything is queued — never after.",
+    },
+    {
+      edges: [{ from: "api", to: "queue", label: "enqueue by priority", active: true }],
+      active: ["api", "queue"],
+      dimmed: ["svc", "prefs", "workers", "push", "email", "sms"],
+      vars: { lanes: "high | normal | bulk" },
+      note: "Separate lanes. A password reset goes to high; a marketing broadcast goes to bulk and can never block it.",
+    },
+    {
+      edges: [
+        { from: "queue", to: "workers", active: true },
+        { from: "workers", to: "push", label: "device tokens", active: true },
+        { from: "workers", to: "email" },
+        { from: "workers", to: "sms" },
+      ],
+      active: ["queue", "workers", "push"],
+      dimmed: ["svc", "api", "prefs"],
+      vars: { step: "3. deliver per channel" },
+      note: "Each channel is a separate worker pool with its own rate limits, retries and failure behaviour. A failing SMS provider must not stall push.",
+    },
+    {
+      edges: [{ from: "push", to: "workers", label: "invalid token", dashed: true, active: true }, { from: "workers", to: "prefs", label: "remove device", active: true }],
+      active: ["workers", "prefs"],
+      dimmed: ["svc", "api", "queue", "email", "sms"],
+      vars: { step: "feedback loop" },
+      note: "Providers report dead tokens and bounced addresses. Feeding that back is essential — sending to dead addresses damages your sender reputation.",
+    },
+  ]}
+  caption="One API, several channels, each with its own failure characteristics."
+/>
+
+## 5. Channels Are Not Interchangeable
+
+| | Push | Email | SMS |
+|---|---|---|---|
+| Cost | Free | Very cheap | **Expensive** |
+| Latency | Seconds | Seconds to minutes | Seconds |
+| Length | Short | Unlimited | 160 characters |
+| Reliability | Token may be stale | Spam filters | High |
+| Delivery proof | Weak | Opens, clicks | Carrier receipt |
+
+<Callout type="warn" title="Each channel fails in its own way">
+**Push** silently drops if the device token is stale. The provider often reports success for a device that no longer exists.
+
+**Email** may be accepted and then filtered into spam — accepted is not delivered. Sending to bounced addresses degrades your reputation and eventually gets legitimate mail blocked.
+
+**SMS** costs real money per message and is heavily rate-limited by carriers. A retry loop against SMS is a bill, not just wasted work.
+
+Treating them as one interchangeable "send" hides all of this. The abstraction should be one API with **channel-specific implementations**, not a single pretend-uniform pipe.
+</Callout>
+
+## 6. Not Annoying People
+
+This is where notification systems actually fail — not technically, but by driving users to turn everything off.
+
+| Control | Purpose |
+|---|---|
+| **Per-category preferences** | Security alerts on, marketing off |
+| **Quiet hours** | Nothing at 3 a.m. in the user's timezone |
+| **Frequency caps** | At most `n` per day per category |
+| **Bundling** | "5 new comments" rather than five notifications |
+| **Deduplication** | The same event must not arrive twice |
+
+<Callout type="info" title="Apply preferences before queuing, never after">
+It is tempting to queue everything and filter at the worker.
+
+That wastes capacity on messages that will be discarded, and it makes the bug where a filter is skipped catastrophic — an opted-out user receives a broadcast, which in many jurisdictions is a legal problem.
+
+Filter at the entry point, so an unwanted notification never exists in the system at all.
+</Callout>
+
+<Callout type="warn" title="One notification per event, not per recipient action">
+The classic bug: a popular post gets 500 likes, and its author receives 500 notifications.
+
+Aggregate in a short window — "Sara and 499 others liked your post" — with a single notification. This is a product requirement that must be designed into the pipeline, because retrofitting it means rewriting the fan-out.
+</Callout>
+
+## 7. Reliability
+
+Delivery is [at-least-once](/docs/system-design/queues): a worker can crash after sending and before acknowledging, so a message may be sent twice.
+
+Include a **notification id** so the client can deduplicate, and use retries with exponential backoff and a cap. Permanent failures — invalid token, unsubscribed address — must **not** be retried; they go straight to the dead-letter queue and feed the cleanup loop.
+
+<Callout type="info" title="Distinguish retryable from permanent failures">
+A `503` from the provider is retryable — try again shortly.
+
+An `InvalidToken` is permanent. Retrying it forever wastes capacity and, for SMS, spends money on a number that will never receive anything.
+
+Systems that treat all failures the same accumulate a growing pile of doomed retries that eventually crowds out real traffic.
+</Callout>
+
+## 8. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Priority lanes | Urgent messages never queue behind bulk | More queues to operate |
+| Filter before queueing | No wasted capacity, no compliance risk | Preference lookup on the hot path |
+| At-least-once delivery | Nothing is silently dropped | Clients must deduplicate |
+| Per-channel workers | One failing provider is isolated | More components |
+| Aggregation windows | Users are not overwhelmed | Notifications arrive slightly later |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="How do you send to 50 million users quickly?">
+Do not enumerate 50 million rows in the API request. Write **one** broadcast record, then have workers fan out in parallel over user-id ranges — the same [fan-out on write](/docs/system-design/news-feed) pattern.
+
+Push providers also accept batched sends (many tokens per call), which cuts the number of network round trips by orders of magnitude. That is usually the difference between five minutes and an hour.
+</Accordion>
+
+<Accordion title="How are device tokens managed?">
+Tokens change when an app is reinstalled or updated, and a user has several devices. Store a set per user, and record when each was last confirmed working.
+
+Prune aggressively on provider feedback. Stale tokens waste capacity and, on some platforms, harm your sending reputation.
+</Accordion>
+
+<Accordion title="How do you handle a provider outage?">
+A [circuit breaker](/docs/system-design/reliability) per provider stops hammering a failing one. Messages stay queued rather than being lost.
+
+For important channels, integrate a second provider and fail over — which is a strong reason to keep the channel abstraction clean, so swapping providers is a configuration change rather than a rewrite.
+</Accordion>
+
+<Accordion title="How do you measure whether it is working?">
+Delivery rate is necessary but not sufficient. Also track open rate, and — most importantly — the **opt-out rate per category**.
+
+A rising opt-out rate is the earliest signal that a category is sending too much. It is the metric that catches the real failure mode, which is users disabling notifications entirely.
+</Accordion>
+
+<Accordion title="Should the trigger be synchronous or an event?">
+An event. A service publishing "order shipped" should not know or care that notifications exist, nor wait for them.
+
+That keeps the notification system off the critical path, so its outage never fails a checkout, and new notification types can be added without touching the triggering service.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Queues and Async Work](/docs/system-design/queues) — priority lanes, dead letters and back pressure
+- [News Feed](/docs/system-design/news-feed) — the fan-out pattern for broadcasts
+- [Reliability](/docs/system-design/reliability) — circuit breakers around external providers
+- [Services and Boundaries](/docs/system-design/microservices) — event-driven triggering

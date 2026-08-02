@@ -1,0 +1,240 @@
+---
+title: File Storage and Sync
+description: Keeping files identical across devices — chunking, deduplication, delta sync, and resolving edits made in two places at once
+---
+
+The naive version — upload the file, download the file — works and is enormously wasteful. Everything interesting here comes from **not transferring what the other side already has**.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| Core feature? | Files sync across a user's devices |
+| File size? | Up to 10 GB |
+| Sharing? | Out of scope |
+| Version history? | Yes, 30 days |
+| Offline editing? | Yes — conflicts must be handled |
+
+## 2. Put Numbers On It
+
+```text
+50 million users, 10 GB average
+  50M × 10 GB                   =  500 PB raw
+
+But files are heavily duplicated — the same PDFs, installers, photos
+  Typical deduplication saving   ≈  50-70%
+  After dedup                    ≈  150-250 PB
+
+WRITES
+  50M users × 20 file changes/day  =  1B changes/day
+  ÷ 100,000 sec                    ≈  10,000 changes/sec
+
+BANDWIDTH (naive: whole file each time)
+  average file 2 MB × 10,000/sec   =  20 GB/sec
+BANDWIDTH (delta sync: changed blocks only)
+  ~5% of blocks change             ≈  1 GB/sec
+```
+
+<Callout type="info" title="The 20× bandwidth difference is the whole design">
+Uploading a whole 50 MB presentation because one slide changed is the obvious approach and it is twenty times more expensive than necessary.
+
+Splitting files into blocks and transferring only the changed ones is what makes this affordable — and it is also what makes deduplication possible, since identical blocks from different users can be stored once.
+
+One decision, two large wins.
+</Callout>
+
+## 3. Define the Interface
+
+```text
+list_changes(device_id, since_cursor)  →  files changed since this device
+                                          last synced, + a new cursor
+get_manifest(file_id)                  →  ordered list of chunk hashes
+has_chunks(hashes[])                   →  which ones the server already holds
+put_chunk(hash, bytes)                 →  stored
+commit(file_id, hashes[], parent_ver)  →  { version } or { conflict }
+get_chunk(hash)                        →  bytes
+```
+
+<Callout type="warn" title="There is no `upload_file`, and that is the entire design">
+Read the list again. Not one operation takes a file. They take **chunks**, addressed by the hash of their contents.
+
+Everything this system is known for falls out of that one decision:
+
+| Because the unit is a chunk… | You get |
+|---|---|
+| `has_chunks` can be asked first | Deduplication — never send bytes the server holds |
+| Only changed chunks are sent | Delta sync — a 1 GB file with a small edit costs kilobytes |
+| Each `put_chunk` stands alone | Resumable uploads — a dropped connection loses one chunk |
+| `commit` is separate from upload | A version appears all at once, never half-written |
+
+Had the interface been `upload_file(bytes)`, none of those would be possible without changing it. Sections 4 to 6 only explain machinery this step already committed to.
+</Callout>
+
+<Callout type="info" title="`parent_ver` on commit is how conflicts get noticed">
+The client says which version it edited. If the server has moved on, it returns `conflict` instead of silently overwriting.
+
+A system that supports offline editing must be able to detect this. Detection has to be in the interface, because only the client knows what it started from.
+</Callout>
+
+## 4. Chunking
+
+Split each file into blocks of roughly 4 MB. Hash each block. The file becomes a **list of block hashes** — its manifest.
+
+```text
+report.pdf  →  [ hash_a, hash_b, hash_c, hash_d ]
+
+Edit page 3:
+            →  [ hash_a, hash_b, hash_X, hash_d ]
+                                  ↑ only this block is uploaded
+```
+
+<Callout type="warn" title="Fixed-size chunking breaks on insertion">
+Cut every 4 MB from the start, then insert one byte at the beginning: every subsequent block boundary shifts, every hash changes, and the entire file is re-uploaded.
+
+**Content-defined chunking** fixes this. Boundaries are chosen by a rolling hash of the content — cut where the hash matches a pattern — so an insertion shifts only the block containing it. Neighbouring boundaries realign naturally.
+
+This matters enormously for documents and source files, where insertion in the middle is the normal edit.
+</Callout>
+
+## 5. The Architecture
+
+<ArchViz
+  title="Uploading only what is new"
+  height={320}
+  nodes={[
+    { id: "client", label: "Client", sublabel: "chunks + hashes", kind: "client", x: 0.0, y: 0.5 },
+    { id: "meta", label: "Metadata Service", kind: "service", x: 0.28, y: 0.5 },
+    { id: "db", label: "Metadata DB", sublabel: "manifests, versions", kind: "database", x: 0.55, y: 0.05 },
+    { id: "blocks", label: "Block Store", sublabel: "object storage", kind: "storage", x: 0.62, y: 0.95 },
+    { id: "notify", label: "Notification", sublabel: "long-lived conn", kind: "queue", x: 0.85, y: 0.4 },
+    { id: "other", label: "Other Devices", kind: "client", x: 1.0, y: 0.9 },
+  ]}
+  frames={[
+    {
+      edges: [{ from: "client", to: "meta", label: "here are my hashes", active: true }],
+      active: ["client", "meta"],
+      dimmed: ["db", "blocks", "notify", "other"],
+      vars: { step: "1. ask before sending" },
+      note: "The client hashes locally and sends only the LIST. It has not uploaded a single byte of content yet.",
+    },
+    {
+      edges: [{ from: "meta", to: "db", label: "which are new?", active: true }, { from: "meta", to: "client", label: "send me block C only", active: true }],
+      active: ["meta", "db", "client"],
+      dimmed: ["blocks", "notify", "other"],
+      vars: { needed: "1 of 4 blocks" },
+      note: "The server already holds three of the blocks — possibly uploaded by a completely different user. Only the new one is requested.",
+    },
+    {
+      edges: [{ from: "client", to: "blocks", label: "upload block C", active: true }, { from: "meta", to: "db", label: "save manifest", active: true }],
+      active: ["client", "blocks", "db"],
+      dimmed: ["meta", "notify", "other"],
+      vars: { uploaded: "4 MB instead of 50 MB" },
+      note: "The block goes directly to object storage. The metadata database stores the manifest — the ordered list of hashes.",
+    },
+    {
+      edges: [{ from: "db", to: "notify", label: "version changed", dashed: true, active: true }, { from: "notify", to: "other", label: "push", active: true }],
+      active: ["notify", "other"],
+      dimmed: ["client", "meta", "db", "blocks"],
+      vars: { step: "4. tell other devices" },
+      note: "Other devices are notified over a long-lived connection, then pull only the blocks they lack. Polling would be far too slow and wasteful.",
+    },
+  ]}
+  caption="Metadata and content are separate systems: a small transactional database, and an enormous immutable block store."
+/>
+
+<Callout type="info" title="Separating metadata from blocks is the key structural decision">
+**Metadata** — manifests, versions, ownership — is small, relational and frequently updated. It belongs in a database.
+
+**Blocks** — the actual bytes — are large, immutable and content-addressed. They belong in object storage.
+
+Because a block's name *is* its hash, blocks are immutable and can be cached, replicated and shared freely. Two users with the same file automatically share storage, with no coordination.
+</Callout>
+
+## 6. Deduplication
+
+Content addressing gives deduplication for free: if a block's hash already exists, there is nothing to upload.
+
+| Level | Saving | Note |
+|---|---|---|
+| **Per user** | Moderate | The same file in two folders |
+| **Global** | Large — 50%+ | The same installer across a million accounts |
+
+<Callout type="warn" title="Global deduplication leaks information">
+If uploading a file completes instantly, the uploader learns that **someone else already has that exact file**.
+
+That is a real privacy leak: an attacker can test whether a specific document exists in the system by trying to upload it and timing the response.
+
+Mitigations: deduplicate only within a user's own account, always require the upload and discard it server-side, or add randomised delays. Global dedup saves a lot of storage — say so, and say what it costs.
+</Callout>
+
+## 7. Conflicts
+
+Two devices edit the same file while offline. Both come back online. Both have a valid new version derived from the same parent.
+
+<Callout type="warn" title="Do not silently pick a winner">
+Last-write-wins discards someone's work with no notification. For a photo that may be tolerable; for a document someone spent an hour on it is unacceptable.
+
+The standard behaviour is to **keep both**:
+
+```text
+report.pdf                              ← one version
+report (conflicted copy, Sara's Mac).pdf ← the other
+```
+
+Ugly, and correct. The user decides, because only they know which edit matters. Automatic merging is only safe for structured formats where merge semantics are defined.
+</Callout>
+
+Detecting a conflict needs version history, not timestamps. Each version records its parent, so the server can tell "B is a descendant of A" (fine, fast-forward) from "A and B share a parent" (a genuine conflict) — the same causality question that [vector clocks](/docs/system-design/key-value-store) answer.
+
+## 8. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Content-defined chunking | Insertions do not re-upload the file | More complex than fixed chunks |
+| Global deduplication | 50%+ storage saved | Existence of a file is observable |
+| Metadata / blocks split | Each scales independently | Two systems to keep consistent |
+| Conflicted copies | No work is ever lost | Users must resolve manually |
+| Push notification of changes | Sync within seconds | Long-lived connections per device |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="How is a 10 GB upload handled reliably?">
+Chunking already solves it. Blocks upload independently, so a dropped connection only loses the in-flight block, and the client resumes with the ones still missing.
+
+This is why chunking is worth it even without deduplication — resumable uploads fall out of it for free.
+</Accordion>
+
+<Accordion title="How does a client know what changed while it was offline?">
+Give each user's namespace a monotonically increasing version number. The client stores the last one it saw and asks for everything since.
+
+Far more reliable than "changes since timestamp X", which breaks under clock skew and cannot detect gaps. Same mechanism as the [chat system](/docs/system-design/chat-system) catch-up.
+</Accordion>
+
+<Accordion title="How is a deleted block's storage reclaimed?">
+Reference counting, and it must be careful: a block may be referenced by many files and many users.
+
+Deletion marks the reference removed; a background job later removes blocks with no references. Never delete a block during the user's request — a race with a concurrent upload of the same content would destroy live data.
+</Accordion>
+
+<Accordion title="How does 30-day version history work?">
+Versions are cheap because manifests are just lists of hashes. Keeping ten versions of a 50 MB file costs ten small manifests plus the few blocks that actually differ.
+
+Expiry removes old manifests, and the reference-counting job then reclaims blocks nothing points to any more.
+</Accordion>
+
+<Accordion title="Should the client or the server do the chunking?">
+The client. It hashes locally and asks which blocks are needed, so unchanged content never crosses the network — which is the entire bandwidth saving.
+
+Server-side chunking requires the full upload first, at which point the saving is gone. It also spends client CPU, which is plentiful and free, instead of server CPU, which is not.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Storage Engines](/docs/system-design/storage) — object storage and immutability
+- [Distributed Key-Value Store](/docs/system-design/key-value-store) — causality and conflict resolution
+- [Chat System](/docs/system-design/chat-system) — sequence-number catch-up after being offline
+- [Security](/docs/system-design/security) — what deduplication reveals

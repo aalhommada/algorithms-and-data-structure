@@ -1,0 +1,176 @@
+---
+title: Deployment and Migrations
+description: Shipping changes without downtime — rolling, blue-green and canary releases, feature flags, and the expand-contract pattern for schema changes
+---
+
+A design is not finished until you can change it. How you deploy decides how quickly you can fix a mistake, which matters more than how rarely you make one.
+
+## Release Strategies
+
+| Strategy | How | Rollback speed | Cost |
+|---|---|---|---|
+| **Recreate** | Stop old, start new | Slow — redeploy | Downtime |
+| **Rolling** | Replace instances a few at a time | Medium | None |
+| **Blue-green** | Two full environments, switch traffic | **Instant** | Double infrastructure |
+| **Canary** | Send 1% of traffic to the new version, then grow | Fast | Small |
+
+<ArchViz
+  title="Canary release"
+  height={270}
+  nodes={[
+    { id: "users", label: "Users", kind: "client", x: 0.0, y: 0.5 },
+    { id: "lb", label: "Load Balancer", kind: "edge", x: 0.3, y: 0.5 },
+    { id: "old", label: "v1", sublabel: "stable", kind: "service", x: 0.68, y: 0.05 },
+    { id: "new", label: "v2", sublabel: "canary", kind: "service", x: 0.68, y: 0.95 },
+    { id: "metrics", label: "Metrics", kind: "cache", x: 1.0, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "users", to: "lb", active: true },
+        { from: "lb", to: "old", label: "100%", active: true },
+      ],
+      active: ["old"],
+      dimmed: ["new", "metrics"],
+      vars: { v1: "100%", v2: "0%" },
+      note: "Before the release, all traffic is on v1.",
+    },
+    {
+      edges: [
+        { from: "lb", to: "old", label: "99%", active: true },
+        { from: "lb", to: "new", label: "1%", active: true },
+        { from: "new", to: "metrics", dashed: true, active: true },
+      ],
+      active: ["new", "metrics"],
+      vars: { v1: "99%", v2: "1%", watching: "error rate, p99" },
+      note: "1% goes to v2. If it is broken, 99% of users never notice — and the metrics tell you within minutes.",
+    },
+    {
+      edges: [
+        { from: "lb", to: "old", label: "0%", dashed: true },
+        { from: "lb", to: "new", label: "100%", active: true },
+      ],
+      active: ["new"],
+      dimmed: ["old"],
+      vars: { v1: "0%", v2: "100%", elapsed: "~30 min" },
+      note: "Metrics look healthy, so traffic shifts gradually to 5%, 25%, 100%. v1 stays running a while longer in case a rollback is needed.",
+    },
+    {
+      edges: [
+        { from: "lb", to: "old", label: "100%", active: true },
+        { from: "lb", to: "new", label: "0%", dashed: true },
+      ],
+      active: ["old"],
+      dimmed: ["new"],
+      vars: { event: "error rate spiked", action: "shift back" },
+      note: "If the canary looks bad, traffic shifts back. Because v1 was never stopped, recovery is a routing change — seconds, not a redeploy.",
+    },
+  ]}
+  caption="A canary limits the blast radius of a bad release to a small fraction of users."
+/>
+
+<Callout type="info" title="Canary is usually the best default">
+It limits damage — a broken release affects 1% of users, not everyone. It gives real signal, because production traffic finds problems staging never will. And rollback is a routing change rather than a rebuild.
+
+Blue-green also rolls back instantly, but needs a full duplicate environment and switches everyone at once, so a subtle bug hits 100% of users the moment you flip.
+</Callout>
+
+## Feature Flags
+
+Deploying code and releasing a feature are separate acts. A flag lets you ship dormant code and turn it on later — and off again without a deploy.
+
+| Use | Why |
+|---|---|
+| Gradual rollout | Enable for 1%, then 10%, then everyone |
+| Kill switch | Disable a misbehaving feature in seconds |
+| Trunk-based development | Merge unfinished work safely behind a flag |
+| Per-customer enablement | Enterprise features, betas |
+
+<Callout type="warn" title="Flags are debt with an expiry date">
+Every flag doubles the paths through the code. Ten flags mean up to 1,024 combinations, of which you test perhaps three.
+
+Old flags are worse than useless: nobody remembers what they do, and nobody dares remove them.
+
+Give each flag an owner and a removal date when it is created. Delete it once the feature is fully rolled out. A flag that has been at 100% for six months is dead code holding a live branch.
+</Callout>
+
+## Database Migrations
+
+This is where deployments actually go wrong, because a schema change and a code change cannot happen at the same instant.
+
+<Callout type="warn" title="During any rolling deploy, both versions run at once">
+For a period, old code and new code both talk to the same database.
+
+That means the schema must work with **both**. A migration that drops a column the old code still reads takes down every instance that has not been replaced yet.
+</Callout>
+
+### Expand and contract
+
+The only safe way to change a schema without downtime. Three deploys instead of one.
+
+```text
+Goal: rename `username` to `handle`
+
+1. EXPAND    add `handle`; code writes BOTH, reads `username`
+2. BACKFILL  copy existing values into `handle`
+3. MIGRATE   code reads `handle`, still writes both
+4. CONTRACT  stop writing `username`, then drop the column
+```
+
+At every step, both the currently deployed version and the one being rolled out work correctly.
+
+| Change | Safe in one step? |
+|---|---|
+| Add a nullable column | Yes |
+| Add an index | Usually — create it concurrently |
+| Add a table | Yes |
+| Rename a column | **No** — expand/contract |
+| Drop a column | **No** — stop reading it first, then drop |
+| Add `NOT NULL` | **No** — backfill first, then constrain |
+| Narrow a column type | **No** — risks data loss |
+
+<Callout type="warn" title="Locking migrations on a large table cause outages">
+`ALTER TABLE` on a table with hundreds of millions of rows can hold a lock for minutes, and every query queues behind it. The application appears completely down.
+
+Use the concurrent or online variants your database offers, do backfills in **batches** with pauses, and run them outside peak hours. A backfill that updates ten million rows in one statement is an outage waiting for a bad moment.
+</Callout>
+
+## Rollback
+
+Every deploy needs an answer to "how do we undo this?" before it starts.
+
+| Component | Rollback |
+|---|---|
+| Stateless service | Easy — deploy the previous version |
+| Feature behind a flag | Easiest — flip the flag |
+| Additive schema change | Easy — the old code ignores the new column |
+| Destructive schema change | **Very hard** — the data may be gone |
+| A published message format | Hard — consumers already read it |
+
+<Callout type="info" title="This is the real reason to prefer additive changes">
+Adding a column, a field or an endpoint is reversible: the previous version simply ignores it.
+
+Dropping or renaming is not. Once a column is gone, rolling back the code does not bring the data back.
+
+So: add now, remove much later, after the new version has been stable long enough that you will never roll back past it.
+</Callout>
+
+## A Deployment Checklist
+
+```text
+□ Can this be rolled back? How fast?
+□ Do old and new code both work against this schema?
+□ Is the risky part behind a feature flag?
+□ Does the migration lock a large table?
+□ Are backfills batched?
+□ Which metrics indicate this release is bad?
+□ Who is watching, and for how long?
+□ Are health checks accurate enough for the balancer to spot failure?
+```
+
+## Related Reading
+
+- [Observability](/docs/system-design/observability) — the metrics that tell you a canary is failing
+- [Reliability](/docs/system-design/reliability) — health checks and graceful degradation
+- [Services and Boundaries](/docs/system-design/microservices) — expand-contract across service contracts
+- [Databases](/docs/system-design/databases) — indexes and the cost of adding them

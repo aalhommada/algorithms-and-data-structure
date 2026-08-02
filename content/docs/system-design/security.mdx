@@ -1,0 +1,156 @@
+---
+title: Security
+description: Authentication versus authorisation, sessions and tokens, what encryption does and does not cover, and the attacks worth designing against
+---
+
+Security is not a component you add at the end. It is a set of decisions spread through the design, and most of them are cheap if made early and expensive afterwards.
+
+## Authentication and Authorisation
+
+Two different questions, frequently conflated.
+
+| | Authentication | Authorisation |
+|---|---|---|
+| Question | **Who are you?** | **What may you do?** |
+| Happens | Once per session | On every request |
+| Failure code | `401 Unauthorized` | `403 Forbidden` |
+
+<Callout type="warn" title="Authorisation must be checked on every request, at the server">
+The most common serious flaw in real systems is checking permission when rendering the UI and not when serving the data.
+
+```text
+GET /api/orders/12345
+```
+
+If the server does not verify that order 12345 belongs to the caller, anyone can read anyone's orders by changing the number — regardless of what the interface shows.
+
+Hiding a button is not authorisation. Every endpoint must independently answer "is *this* caller allowed to touch *this* record?"
+</Callout>
+
+## Sessions or Tokens
+
+Once someone has logged in, how does the next request prove it?
+
+| | Server session | Signed token (JWT) |
+|---|---|---|
+| State held | On the server | In the token itself |
+| Scaling | Needs shared storage | **Stateless** |
+| Revocation | **Immediate** — delete it | Hard — valid until expiry |
+| Size | Small id | Larger, sent every request |
+| Suits | Traditional apps | APIs, mobile, service-to-service |
+
+<Callout type="warn" title="You cannot revoke a JWT, and people forget this">
+A signed token is valid until it expires because the server holds no record of it. Logging out, banning an account, or revoking a permission does **not** stop a token already issued.
+
+Standard mitigations:
+
+- **Short expiry** (5–15 minutes) plus a long-lived refresh token that *is* stored server-side and can be revoked.
+- **A denylist** of revoked token ids — which reintroduces the state you were avoiding, but only for the few that are revoked.
+
+Say which you are using. "Stateless JWTs" without a revocation answer is an incomplete design.
+</Callout>
+
+### OAuth in one paragraph
+
+OAuth 2.0 lets a user grant an application limited access to their account elsewhere **without sharing their password**. The app is redirected to the provider, the user approves, and the app receives a token scoped to specific permissions. The password never reaches the app, and access can be withdrawn without a password change.
+
+OpenID Connect is a thin layer on top that adds "who is this user?" to OAuth's "what may this app do?"
+
+## Storing Passwords
+
+```text
+Never:      store the password
+Never:      encrypt it (encryption is reversible)
+Never:      md5 or sha256 alone (far too fast to compute)
+
+Correct:    a slow hash designed for passwords
+            bcrypt, scrypt, or Argon2, with a per-user salt
+```
+
+<Callout type="info" title="Slowness is the feature">
+General-purpose hashes are built to be fast, which is exactly wrong here — a modern GPU tries billions of SHA-256 guesses per second.
+
+bcrypt and Argon2 are deliberately slow and memory-hungry. Tuned so one hash takes about 100 ms, a login stays instant while brute-forcing becomes impractical.
+
+The **salt** — random data per user — ensures two identical passwords hash differently, so one precomputed table cannot crack the whole database.
+</Callout>
+
+## Encryption
+
+| | In transit | At rest |
+|---|---|---|
+| Protects against | Network eavesdropping | Stolen disks and backups |
+| Mechanism | TLS | Disk or field-level encryption |
+| Covers | The connection | The stored bytes |
+
+<Callout type="warn" title="Encryption at rest protects less than people think">
+It protects against someone physically taking the disk or a leaked backup file.
+
+It does **not** protect against a compromised application, SQL injection, or stolen credentials — in all of those the attacker goes through the database, which decrypts transparently for them.
+
+It is worth having and it is not a substitute for access control. Claiming data is safe "because it is encrypted at rest" misstates the threat it addresses.
+</Callout>
+
+For genuinely sensitive fields, encrypt at the **application** level so the database only ever holds ciphertext. Then a database compromise alone is not enough.
+
+## The Attacks Worth Designing Against
+
+| Attack | What happens | Defence |
+|---|---|---|
+| **SQL injection** | Input becomes part of a query | Parameterised queries — never string concatenation |
+| **XSS** | Attacker's script runs in a victim's browser | Escape output; Content-Security-Policy |
+| **CSRF** | A victim's browser makes an authenticated request unknowingly | SameSite cookies, anti-CSRF tokens |
+| **SSRF** | The server is tricked into fetching an internal URL | Allowlist outbound destinations |
+| **Insecure direct object reference** | Changing an id reads someone else's data | Check ownership per request |
+| **Credential stuffing** | Passwords leaked elsewhere are tried here | Rate limiting, MFA, breach-list checks |
+| **DDoS** | Traffic floods the system | CDN absorption, rate limits, load shedding |
+
+<Callout type="info" title="Two rules that prevent most of the list">
+**Never build a query or a document by concatenating user input.** Parameterised queries make injection structurally impossible rather than merely unlikely.
+
+**Treat all input as hostile, including from your own services.** A compromised internal service is exactly how an attacker moves sideways, and "it came from inside the network" has stopped being a trust signal.
+</Callout>
+
+## Defence in Depth
+
+Assume every layer will eventually fail, and make sure no single failure is fatal.
+
+```text
+Edge         →  DDoS protection, rate limiting, WAF
+Gateway      →  authentication, coarse authorisation
+Service      →  fine-grained authorisation on every request
+Database     →  least-privilege accounts, encryption at rest
+Operations   →  audit logs, secret rotation, monitoring
+```
+
+<Callout type="warn" title="Secrets do not belong in the repository">
+API keys, database passwords and signing keys committed to a repository stay in the git history forever, even after being deleted in a later commit.
+
+Use a secrets manager, inject at runtime through the environment, and rotate on a schedule. A leaked key you can rotate in minutes is an incident; one embedded in a hundred deployments is an outage.
+</Callout>
+
+## Privacy Obligations
+
+Regulation aside, these are design constraints and are easier to build in than to retrofit:
+
+| Requirement | Design consequence |
+|---|---|
+| **Deletion on request** | You must be able to find every copy — including caches, backups, analytics, logs |
+| **Data minimisation** | Do not collect what you do not need; every field is a liability |
+| **Purpose limitation** | Data gathered for one purpose should not silently power another |
+| **Audit trail** | Who accessed what, and when |
+
+<Callout type="info" title="'Delete my data' is hard once data is denormalised">
+A user's name copied into a cache, a feed, a search index, an analytics warehouse and last month's backup must be removed from all of them.
+
+Two approaches: keep personal data in **one** place and reference it by id everywhere else, or maintain a documented inventory of every location.
+
+The first is far easier, and it is a good argument against copying personal fields across service boundaries even when duplication is otherwise convenient.
+</Callout>
+
+## Related Reading
+
+- [APIs and Rate Limiting](/docs/system-design/apis) — status codes and protecting endpoints
+- [Networking Basics](/docs/system-design/networking) — TLS, and where it terminates
+- [Services and Boundaries](/docs/system-design/microservices) — mTLS between services
+- [Payment System](/docs/system-design/payment-system) — a design where these constraints dominate

@@ -1,0 +1,141 @@
+---
+title: Probabilistic Structures
+description: Bloom filters, HyperLogLog and count-min sketch — trading a little accuracy for enormous savings in memory
+---
+
+Some questions do not need an exact answer. "Roughly how many unique visitors?" and "have we definitely never seen this before?" can be answered in kilobytes instead of gigabytes, if you accept a small, bounded error.
+
+Knowing these three is what lets you say "that does not need to be exact" and back it up.
+
+## Bloom Filter — "definitely not, or probably yes"
+
+A Bloom filter answers **set membership** using a bit array and several hash functions.
+
+```text
+ADD "cat":
+  hash1("cat") = 3   →  set bit 3
+  hash2("cat") = 7   →  set bit 7
+  hash3("cat") = 11  →  set bit 11
+
+  bits:  0 0 0 1 0 0 0 1 0 0 0 1 0 0
+               ↑       ↑       ↑
+
+CHECK "dog":
+  hash1 = 3  → set
+  hash2 = 5  → NOT set   →  definitely not present, stop
+```
+
+<Callout type="info" title="The asymmetry is the whole point">
+**"No" is always correct.** If any bit is unset, the item was definitely never added.
+
+**"Yes" might be wrong.** All the bits could have been set by *other* items — a false positive.
+
+So a Bloom filter never misses something that is present, but occasionally claims something is present when it is not. Every use of one depends on that being the acceptable direction of error.
+</Callout>
+
+| Property | Value |
+|---|---|
+| Memory | About 10 bits per item for a 1% false-positive rate |
+| Add | `O(k)` — one pass over `k` hash functions |
+| Check | `O(k)` |
+| Delete | **Not supported** |
+| False negatives | Never |
+
+```text
+1 billion items, exact set:      ~32 GB
+1 billion items, Bloom filter:   ~1.2 GB at 1% error
+```
+
+<Callout type="warn" title="You cannot delete from a Bloom filter">
+Clearing a bit would also erase it for every other item that happens to share it, creating false *negatives* — which breaks the one guarantee the structure offers.
+
+If deletion is needed, use a **counting Bloom filter** (counters instead of bits, four times the memory) or a **cuckoo filter**. Or simply rebuild it periodically, which is usually simpler.
+</Callout>
+
+### Where it earns its place
+
+| Use | How |
+|---|---|
+| **Cache penetration defence** | Reject lookups for keys that certainly do not exist, before touching the database |
+| **Database read avoidance** | LSM-tree stores keep one per file to skip files that cannot hold the key |
+| **Web crawler** | "Have we already queued this URL?" over billions of URLs |
+| **Weak password check** | Test against a huge leaked-password list without storing it |
+
+In every case the false positive is harmless: you do one extra piece of work you did not strictly need. The false negative — which cannot happen — would be the damaging one.
+
+## HyperLogLog — counting unique things
+
+To count distinct visitors exactly, you must remember every visitor. HyperLogLog estimates the count in about **12 KB, regardless of scale**, with roughly 2% error.
+
+<Callout type="info" title="The intuition">
+Hash each item and look at how many leading zeros the hash begins with.
+
+Seeing a hash starting with one zero is unremarkable. Seeing one that starts with **twenty** zeros suggests you have looked at an enormous number of items, because that is a one-in-a-million pattern.
+
+So the longest run of leading zeros you have ever seen is evidence of how many distinct items passed through. HyperLogLog averages this estimate across many independent buckets to cut the variance.
+</Callout>
+
+| | Exact set | HyperLogLog |
+|---|---|---|
+| Memory for 1 billion uniques | ~32 GB | ~12 KB |
+| Accuracy | Exact | ±2% |
+| Merge two counts | Union the sets | **Merge the registers** |
+
+<Callout type="info" title="Mergeability is what makes it operationally useful">
+Two HyperLogLog structures can be combined into one covering both inputs, exactly and cheaply.
+
+So each server counts its own traffic locally, and hourly counts merge into daily, daily into monthly — with **no double-counting**, because it is estimating distinct items rather than adding totals.
+
+You cannot do that with two exact counts: adding "1M uniques today" and "1M uniques yesterday" does not give the two-day figure.
+</Callout>
+
+Use it for unique visitors, distinct search terms, unique IPs per endpoint. Do not use it where the number is billed or audited — a 2% error on a revenue figure is not acceptable.
+
+## Count-Min Sketch — frequency of the heavy hitters
+
+Answers *"roughly how many times have I seen X?"* in fixed memory, by keeping a small grid of counters and several hash functions.
+
+```text
+Increment "cat":
+  row 1, hash1("cat") = col 4  →  +1
+  row 2, hash2("cat") = col 9  →  +1
+  row 3, hash3("cat") = col 2  →  +1
+
+Query "cat":
+  read all three counters, take the MINIMUM
+```
+
+Taking the minimum is the trick. Collisions only ever inflate a counter, so the smallest of several readings is the closest to the truth.
+
+| Property | Value |
+|---|---|
+| Error direction | **Overestimates only**, never under |
+| Memory | Fixed, chosen up front |
+| Best for | Frequent items ("heavy hitters") |
+| Worst for | Rare items, whose counts are swamped by collisions |
+
+Use it for trending topics, per-key rate limiting at enormous scale, and finding the top talkers in a traffic stream.
+
+## Choosing Between Them
+
+| Question | Structure | Error |
+|---|---|---|
+| "Have I seen this before?" | Bloom filter | False positives only |
+| "How many distinct things?" | HyperLogLog | ±2% |
+| "How often did I see this?" | Count-min sketch | Overestimates only |
+| "What are the exact members?" | A real set — none of these | — |
+
+<Callout type="warn" title="Each has a one-directional error, and the direction matters">
+These structures are safe precisely because their error runs one way, and you must check that direction is the harmless one for your use.
+
+A Bloom filter guarding a cache is fine: a false positive costs one wasted lookup. A Bloom filter deciding *"this username is taken"* is not: it would occasionally refuse a name that is free, with no explanation.
+
+Same structure, same error rate, one acceptable and one not.
+</Callout>
+
+## Related Reading
+
+- [Caching](/docs/system-design/caching) — cache penetration, which a Bloom filter fixes
+- [Databases](/docs/system-design/databases) — Bloom filters inside storage engines
+- [Web Crawler](/docs/system-design/web-crawler) — deduplicating billions of URLs
+- [Numbers Every Design Needs](/docs/system-design/numbers-to-know) — why 12 KB versus 32 GB decides architectures

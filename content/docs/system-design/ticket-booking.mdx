@@ -1,0 +1,246 @@
+---
+title: Ticket Booking
+description: The double-booking problem — holds, optimistic versus pessimistic locking, and surviving a sale where a million people want the same thing
+---
+
+This design has one hard requirement that everything else bends around: **a seat must never be sold twice**. It also has the nastiest traffic shape in this section — near-zero load, then a million people at exactly 10:00.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| What is booked? | Specific numbered seats, not general admission |
+| Hold before payment? | Yes — 10 minutes to complete checkout |
+| Overselling? | **Never acceptable** |
+| Traffic shape? | Extreme spikes at announced on-sale times |
+
+## 2. Put Numbers On It
+
+```text
+NORMAL LOAD
+  100,000 bookings/day  ÷ 100,000 sec   ≈  1/sec       ← nothing
+
+ON-SALE SPIKE
+  50,000 seats, 1,000,000 people trying
+  Most arrive within the first 60 seconds
+  1,000,000 ÷ 60                        ≈  17,000 req/sec
+  Browsing and refreshing               ≈  100,000 req/sec
+
+  Peak-to-average ratio                 ≈  100,000 : 1
+```
+
+<Callout type="warn" title="The traffic ratio is the design problem">
+A system sized for the average is 100,000 times too small for the moment that matters. A system sized for the peak sits idle almost always.
+
+Worse, **95% of that traffic must fail** — there are 50,000 seats and a million people. The system's real job is to reject most requests quickly and correctly, without falling over and without selling the same seat twice.
+
+Everything below follows from that.
+</Callout>
+
+## 3. Define the Interface
+
+```text
+list_seats(event_id)                →  seat map + availability
+                                       (cached, allowed to be stale)
+hold(event_id, seat_ids[], user)    →  { hold_id, expires_at }
+                                       | { unavailable: [seat_ids] }
+confirm(hold_id, payment_token)     →  { booking_id }
+release(hold_id)                    →  seats freed immediately
+```
+
+<Callout type="warn" title="Booking is two calls, not one — this is the key move">
+The obvious interface is `book(seats, payment)`. It cannot work here.
+
+Taking payment takes seconds: a card network round trip, possibly a bank's confirmation screen. During those seconds the seat must belong to nobody else. A single `book()` leaves two options, both bad:
+
+| Single `book()` does… | Result |
+|---|---|
+| Hold a database lock while the card clears | Rows locked for seconds, during a 17,000/sec surge |
+| Charge first, assign the seat after | Sometimes charges for a seat already gone |
+
+Splitting it fixes both. `hold` is fast and takes the seat off the market. `confirm` runs afterwards with no contention, because the seat is already the caller's. The `expires_at` returned by `hold` is what stops an abandoned checkout from keeping the seat forever.
+
+**Turning one slow operation into a fast claim plus a slow completion is the general move.** It appears again as reservations in [payments](/docs/system-design/payment-system) and as leases in [distributed locks](/docs/system-design/distributed-primitives).
+</Callout>
+
+<Callout type="info" title="`list_seats` is deliberately allowed to be stale">
+It is read tens of thousands of times per second and it never decides anything. Only `hold` decides, and `hold` reads fresh.
+
+So the crowded path can be cached hard while correctness lives in one small operation. Showing a seat that was taken a second ago costs a retry; making that page strongly consistent would cost the system.
+</Callout>
+
+## 4. The Double-Booking Problem
+
+Two users click the same seat at the same instant.
+
+<Callout type="warn" title="Checking then writing is a race">
+```text
+User A: SELECT status FROM seats WHERE id=42   →  available
+User B: SELECT status FROM seats WHERE id=42   →  available
+User A: UPDATE seats SET status='sold'         →  ok
+User B: UPDATE seats SET status='sold'         →  ok
+
+One seat, two tickets, two angry customers at the door.
+```
+
+The gap between reading and writing is where the bug lives. Any solution must close it.
+</Callout>
+
+### Three ways to close it
+
+| Approach | How | Trade-off |
+|---|---|---|
+| **Pessimistic lock** | `SELECT … FOR UPDATE` — lock the row, then write | Correct; locks held across a slow request |
+| **Optimistic lock** | Conditional update; retry if it affects 0 rows | Correct; no locks; retries under contention |
+| **Unique constraint** | A unique index on `(event_id, seat_id)` | The database enforces it absolutely |
+
+<Callout type="info" title="Optimistic locking is the right default here">
+```text
+UPDATE seats
+   SET status = 'held', held_by = ?, held_until = now() + 10 min
+ WHERE id = ? AND status = 'available'
+```
+
+If this affects **zero rows**, someone else took it — tell the user and offer another seat. If it affects one row, it is theirs.
+
+The check and the write are one atomic statement, so there is no window. And because no lock is held while the user thinks, a slow user never blocks anyone.
+
+Contention is high during a sale, but the loser learns instantly and retries elsewhere, which is far better than waiting on a lock.
+</Callout>
+
+Add the unique constraint as well. Application logic can have bugs; a database constraint cannot be bypassed by any code path.
+
+## 5. Holds
+
+A user needs time to pay. During that time the seat must be unavailable to others — but not permanently, or an abandoned checkout removes the seat forever.
+
+<ArchViz
+  title="The seat lifecycle"
+  height={270}
+  nodes={[
+    { id: "user", label: "User", kind: "client", x: 0.0, y: 0.5 },
+    { id: "api", label: "Booking Service", kind: "service", x: 0.28, y: 0.5 },
+    { id: "seats", label: "Seats", sublabel: "state + held_until", kind: "database", x: 0.6, y: 0.5 },
+    { id: "pay", label: "Payment", kind: "external", x: 0.88, y: 0.02 },
+    { id: "sweeper", label: "Expiry Sweeper", kind: "service", x: 0.88, y: 0.95 },
+  ]}
+  frames={[
+    {
+      edges: [{ from: "user", to: "api", label: "select seat", active: true }, { from: "api", to: "seats", label: "conditional update", active: true }],
+      active: ["user", "api", "seats"],
+      dimmed: ["pay", "sweeper"],
+      vars: { state: "available → held", expires: "10 min" },
+      note: "One atomic statement moves the seat to held and stamps an expiry. If it affects no rows, someone else got there first.",
+    },
+    {
+      edges: [{ from: "user", to: "pay", label: "pay", active: true }, { from: "pay", to: "api", label: "succeeded", active: true }, { from: "api", to: "seats", label: "held → sold", active: true }],
+      active: ["pay", "api", "seats"],
+      dimmed: ["user", "sweeper"],
+      vars: { state: "held → sold" },
+      note: "Payment succeeds, and the seat becomes sold. The update is conditional on the hold still being valid and still belonging to this user.",
+    },
+    {
+      edges: [{ from: "sweeper", to: "seats", label: "release expired", active: true }],
+      active: ["sweeper", "seats"],
+      dimmed: ["user", "api", "pay"],
+      vars: { state: "held → available" },
+      note: "Abandoned checkouts expire. A sweeper releases them — and reads also treat an expired hold as available, so a seat is never lost even if the sweeper is behind.",
+    },
+  ]}
+  caption="A hold is a lock with an expiry, enforced in the data rather than in memory."
+/>
+
+<Callout type="warn" title="Do not rely only on a background job to release holds">
+If the sweeper falls behind or dies, seats stay held and the event appears sold out while thousands of seats sit unclaimed.
+
+Make the availability check itself expiry-aware:
+
+```text
+WHERE status = 'available'
+   OR (status = 'held' AND held_until < now())
+```
+
+Now correctness does not depend on the sweeper running. The sweeper becomes a tidy-up job rather than a critical component — which is exactly what background jobs should be.
+</Callout>
+
+## 6. Surviving the Spike
+
+Correctness is solved. Now the system must stay up while a million people arrive at once.
+
+| Technique | Effect |
+|---|---|
+| **Virtual waiting room** | Admit users in controlled batches; everyone else waits on a static page |
+| **Pre-scale** | On-sale times are known in advance — scale up beforehand |
+| **Static everything** | Event pages, images and seat maps come from a CDN |
+| **Queue the browsing, not the buying** | Reads can be stale; only the claim must be exact |
+| **Aggressive rate limiting** | One request per user per second stops bot amplification |
+
+<Callout type="info" title="The waiting room is the single most effective measure">
+Rather than letting a million people hit the booking system, admit a few thousand at a time and hold the rest on a lightweight page served by a CDN.
+
+Three benefits: the booking system only ever sees load it can handle; users get an honest queue position instead of errors; and the system degrades predictably rather than collapsing.
+
+It also makes the experience fairer. Without it, whoever has the fastest connection and the most aggressive refresh script wins.
+</Callout>
+
+## 7. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Optimistic locking | No locks held across slow requests | Many retries during contention |
+| Unique constraint as backstop | Overselling is structurally impossible | A little write overhead |
+| Timed holds | Users can pay without losing the seat | Seats unavailable for up to 10 minutes |
+| Expiry checked on read | Correct even if the sweeper fails | Slightly more complex queries |
+| Waiting room | System never overloads | Users wait, and know they are waiting |
+| Cached availability counts | Browsing stays fast | Counts are slightly stale |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="Can availability counts be cached if seats must be exact?">
+Yes — and the distinction matters.
+
+The **count** shown while browsing ("120 seats left") can be cached and stale. Nobody is harmed if it says 120 when it is 118.
+
+The **claim** must be exact, and it is, because it is a conditional update against the real row. The cache never makes the decision; it only informs browsing.
+
+Separating "display" from "decide" is what lets a strongly-consistent system stay fast.
+</Accordion>
+
+<Accordion title="How would general admission (no numbered seats) change this?">
+It becomes a counter rather than individual rows, which is worse for contention: every buyer contends on one row.
+
+Use an atomic decrement with a floor (`UPDATE ... SET remaining = remaining - 1 WHERE remaining > 0`), or split the pool into buckets — 100 buckets of 500 tickets each, buyers assigned randomly — so contention drops by a factor of 100.
+
+Bucketing is the same hot-key remedy as in [partitioning](/docs/system-design/partitioning).
+</Accordion>
+
+<Accordion title="What if payment succeeds but the seat update fails?">
+The customer has paid and holds no seat — the worst outcome.
+
+Order the operations so the seat is secured first and payment is captured second, and make the whole flow resumable using [idempotency keys](/docs/system-design/payment-system). If the final update fails, retry it; if it cannot succeed, refund automatically and alert.
+
+This is a [saga](/docs/system-design/consistency): the compensating action is the refund, and it must be as reliable as the payment itself.
+</Accordion>
+
+<Accordion title="How do you stop bots buying everything?">
+No single measure works. Layer them: rate limits per account and per payment method, limits on tickets per person, device fingerprinting, a challenge before entering the waiting room, and delayed ticket transfer.
+
+Worth stating plainly: this is an adversarial problem with no clean technical solution, and the honest goal is to raise the cost of abuse rather than eliminate it.
+</Accordion>
+
+<Accordion title="Would you shard the database?">
+Shard by **event**. Each event's seats live together, so every booking query stays within one shard and there are no cross-shard transactions.
+
+It also isolates blast radius: a huge on-sale for one event does not slow bookings for every other event, which is exactly the failure you want to avoid.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Consistency and CAP](/docs/system-design/consistency) — isolation levels and why read-then-write races
+- [Payment System](/docs/system-design/payment-system) — idempotency and sagas
+- [Rate Limiter](/docs/system-design/rate-limiter) — the waiting room and traffic control
+- [Databases](/docs/system-design/databases) — constraints, locking and sharding

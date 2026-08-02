@@ -27,8 +27,6 @@ export const docs = defineDocs({
       tags: z.array(z.string()).default([]),
       leetcode: z.string().url().optional(),
       problemNumber: z.number().int().positive().optional(),
-      /** Concepts a reader should meet first, as doc slugs. */
-      prereq: z.array(z.string()).default([]),
     }),
   },
 });

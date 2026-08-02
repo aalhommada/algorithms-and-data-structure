@@ -1,0 +1,193 @@
+---
+title: Distributed Primitives
+description: Leader election, consensus, distributed locks and logical clocks — the building blocks that make many machines behave like one
+---
+
+Once state lives on more than one machine, a set of problems appears that has no equivalent on a single computer. These are the standard solutions.
+
+## The Eight Fallacies
+
+Distributed systems go wrong when people assume things that are not true. The classic list is worth internalising:
+
+```text
+1. The network is reliable          5. Topology doesn't change
+2. Latency is zero                  6. There is one administrator
+3. Bandwidth is infinite            7. Transport cost is zero
+4. The network is secure            8. The network is homogeneous
+```
+
+<Callout type="warn" title="The hardest one: you cannot tell 'slow' from 'dead'">
+A machine stops answering. Is it crashed, or just busy? Is the network partitioned, or is the reply on its way?
+
+**There is no way to know.** Every timeout is a guess.
+
+This single fact is why distributed systems are hard. Declare a node dead too early and you get two leaders; too late and the system stalls. Everything below is a strategy for living with that uncertainty.
+</Callout>
+
+## Leader Election
+
+Many problems become simple if exactly one node is in charge — one writer means no write conflicts, one scheduler means no duplicated jobs.
+
+The difficulty is agreeing who it is, and noticing when they stop.
+
+<ArchViz
+  title="Electing a leader, and the danger of getting it wrong"
+  height={270}
+  nodes={[
+    { id: "n1", label: "Node 1", sublabel: "leader", kind: "service", x: 0.0, y: 0.5 },
+    { id: "n2", label: "Node 2", kind: "service", x: 0.35, y: 0.05 },
+    { id: "n3", label: "Node 3", kind: "service", x: 0.35, y: 0.95 },
+    { id: "store", label: "Shared State", kind: "database", x: 0.8, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "n1", to: "n2", label: "heartbeat", dashed: true, active: true },
+        { from: "n1", to: "n3", label: "heartbeat", dashed: true, active: true },
+        { from: "n1", to: "store", label: "writes", active: true },
+      ],
+      active: ["n1"],
+      vars: { leader: "node 1", term: 1 },
+      note: "Node 1 is leader and sends heartbeats. Only the leader writes, so there are no conflicts.",
+    },
+    {
+      edges: [
+        { from: "n2", to: "n3", label: "no heartbeat?", dashed: true, active: true },
+      ],
+      dimmed: ["n1"],
+      active: ["n2", "n3"],
+      vars: { leader: "unknown", term: 1 },
+      note: "Heartbeats stop. The others cannot tell whether node 1 crashed or the network broke — so they wait a randomised timeout before acting.",
+    },
+    {
+      edges: [
+        { from: "n2", to: "n3", label: "vote for me", active: true },
+        { from: "n2", to: "store", label: "now writes", active: true },
+      ],
+      dimmed: ["n1"],
+      active: ["n2", "store"],
+      vars: { leader: "node 2", term: 2, votes: "2 of 3 = majority" },
+      note: "Node 2 asks for votes and wins a MAJORITY. The term number increases, which is what makes the old leader's writes rejectable.",
+    },
+    {
+      edges: [
+        { from: "n1", to: "store", label: "stale write", dashed: true, active: true },
+        { from: "n2", to: "store", label: "valid write", active: true },
+      ],
+      active: ["n2", "store"],
+      vars: { problem: "split brain", defence: "term number" },
+      note: "If node 1 was only slow, it still thinks it is leader. Its writes carry term 1 and are REJECTED — the store only accepts the highest term it has seen.",
+    },
+  ]}
+  caption="Majority voting plus an increasing term number is what prevents two leaders from both writing."
+/>
+
+<Callout type="warn" title="Split brain is the failure to design against">
+Two nodes both believing they are leader, both accepting writes, is the worst outcome in a distributed system: no error is raised and the data quietly diverges.
+
+Two defences, used together:
+
+**A majority (quorum) is required to win.** With 3 nodes you need 2; with 5 you need 3. Two halves of a partition cannot both hold a majority, so at most one side can elect a leader.
+
+**Terms are fenced.** Every leadership period has an increasing number, and downstream systems reject anything from an older term. A revived old leader is harmlessly ignored.
+</Callout>
+
+### Why odd numbers of nodes
+
+| Nodes | Majority | Failures tolerated |
+|---|---|---|
+| 3 | 2 | 1 |
+| 4 | 3 | 1 |
+| 5 | 3 | 2 |
+| 6 | 4 | 2 |
+
+Four nodes tolerate no more failures than three, but cost more and make agreement slower. **Always use an odd number.**
+
+## Consensus
+
+Leader election is one use of a more general tool: getting a group to agree on a value despite failures. **Raft** and **Paxos** are the two well-known algorithms; Raft is designed to be understandable and is what most modern systems use.
+
+You rarely implement one. You use something that already has:
+
+| System | Used for |
+|---|---|
+| **etcd**, **ZooKeeper**, **Consul** | Configuration, leader election, service discovery |
+| **Kafka** | Partition leadership |
+| **CockroachDB**, **Spanner** | Distributed transactions |
+
+<Callout type="info" title="Use a coordination service; do not write one">
+Consensus is subtle enough that hand-rolled implementations are almost always wrong in ways that only appear during a partition — which is exactly when you need them to be right.
+
+The strong answer in a design is: *"leadership is held in etcd with a lease; if the leader stops renewing, another node takes it."* That shows you know what the problem is and that solving it from scratch is not the job.
+</Callout>
+
+## Distributed Locks
+
+Sometimes one operation must not run twice concurrently — a nightly job, a payment capture.
+
+```text
+SET lock:job-42  <owner-id>  NX  EX 30
+
+NX  →  only if it does not already exist
+EX  →  expire automatically after 30 seconds
+```
+
+The expiry is essential: without it, a crash while holding the lock blocks the job forever.
+
+<Callout type="warn" title="A lock with a timeout is not mutual exclusion">
+```text
+Node A takes the lock, 30-second expiry
+Node A pauses (GC, slow disk, network) for 35 seconds
+Lock expires; node B takes it and starts working
+Node A wakes up, still believing it holds the lock
+Both are now running.
+```
+
+This is not a bug in the lock — it is unavoidable, because a paused node cannot know time has passed.
+
+The real defence is **fencing**: the lock hands out an increasing token, and the protected resource rejects any token lower than the highest it has seen. Node A's stale token is refused.
+
+Failing that, make the operation [idempotent](/docs/system-design/consistency) so running twice is harmless. That is usually easier and always safer than trying to make the lock perfect.
+</Callout>
+
+## Ordering Without Synchronised Clocks
+
+Wall-clock time cannot order events across machines. Clocks drift, and NTP corrections can move a clock backwards — so an event can appear to happen before its own cause.
+
+| Mechanism | Gives you | Cost |
+|---|---|---|
+| **Lamport timestamps** | A counter per node; if A caused B then A's stamp is lower | Cannot tell concurrent from ordered |
+| **Vector clocks** | A counter per node, tracked per node | Detects true concurrency; grows with node count |
+| **Snowflake ids** | Timestamp + machine id + sequence | Roughly time-ordered, unique, no coordination |
+| **Hybrid logical clocks** | Physical time kept consistent with causality | Close to wall time and correctly ordered |
+
+<Callout type="info" title="Snowflake ids are the common practical answer">
+A 64-bit id built from a timestamp, a machine identifier and a per-millisecond counter is unique, sorts roughly by creation time, and needs **no coordination** to generate.
+
+That combination is why they are everywhere — in the [chat system](/docs/system-design/chat-system) they order messages, and in a [URL shortener](/docs/system-design/url-shortener) they can generate codes.
+
+They are only *roughly* ordered across machines. When exact ordering within a conversation matters, add a per-channel sequence number, which also makes gaps detectable.
+</Callout>
+
+## Detecting Failure
+
+| Mechanism | How | Trade-off |
+|---|---|---|
+| **Heartbeat** | Periodic "I am alive" | Simple; tuning the timeout is guesswork |
+| **Phi accrual** | A suspicion *level* rather than a yes/no | Adapts to varying network conditions |
+| **Gossip** | Nodes share what they know about each other | Scales to very large clusters; slower to converge |
+
+<Callout type="warn" title="Timeout tuning is a real trade-off, not a detail">
+**Too short:** a brief network hiccup triggers a needless failover, and the churn can be worse than the original problem.
+
+**Too long:** the system serves errors for a minute before reacting.
+
+There is no correct value — it depends on how bad a false positive is compared with a slow reaction. Say which way you have tuned it and why.
+</Callout>
+
+## Related Reading
+
+- [Consistency and CAP](/docs/system-design/consistency) — what partitions force you to give up
+- [Reliability](/docs/system-design/reliability) — timeouts, retries and circuit breakers
+- [Partitioning](/docs/system-design/partitioning) — placing data across the nodes being coordinated
+- [Queues and Async Work](/docs/system-design/queues) — idempotency, the practical alternative to perfect locking

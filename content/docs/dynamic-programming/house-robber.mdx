@@ -30,23 +30,27 @@ The tempting rule is "always take the biggest available house". Watch it fail:
 <Callout type="warn" title="Why greedy is wrong here">
 ```text
 nums = [2, 7, 9, 3, 1]
+        0  1  2  3  4
 
-Greedy: take 9 (the largest).
-        Now 7 and 3 are blocked as neighbours.
-        Take 2, then take 1  →  total 12.  Correct by luck.
-
-nums = [2, 1, 1, 2]
-
-Greedy: take a 2, block its neighbour, take the other 2  →  4.
-        Fine here too.
-
-nums = [5, 1, 1, 5, 100]
-
-Greedy: take 100, blocking 5. Then take 5 and 1  →  106.
-Best:   take 5, 5, 100  →  110.
+Greedy: take 9 (the largest), which blocks 7 and 3.
+        Then take 2 and 1  →  total 12.
+Best:   2 + 9 + 1                →  12.   Greedy is right, by luck.
 ```
 
-Taking the biggest first can block something better later. Local best is not global best, so greedy does not apply.
+Now the same rule on a different array:
+
+```text
+nums = [6, 10, 6, 1, 1]
+        0   1  2  3  4
+
+Greedy: take 10 (the largest), which blocks BOTH sixes.
+        Only index 3 or 4 is left  →  total 11.
+Best:   6 + 6 + 1  (indices 0, 2, 4)  →  13.
+```
+
+Taking the single biggest number cost more than it gained, because it blocked two others that were worth more together.
+
+Local best is not global best, so greedy does not apply.
 </Callout>
 
 Since you cannot decide greedily, you must consider both options — and that is the shape of dynamic programming.

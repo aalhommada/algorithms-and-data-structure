@@ -308,7 +308,7 @@ function Legend({ nodes }: { nodes: ArchNode[] }) {
 
 /** Single static diagram — no playback controls. */
 export function ArchDiagram(
-  props: Omit<ArchVizProps, 'frames'> & ArchFrame
+  props: Omit<ArchVizProps, 'frames' | 'intervalMs'> & ArchFrame
 ) {
   const { nodes, title, caption, height, ...frame } = props;
   return (

@@ -189,7 +189,7 @@ Once `nums2` is empty, the untouched prefix of `nums1` is already sorted **and a
 <Complexity time="O(m + n)" space="O(1)" />
 
 - **Time** — each of the `m + n` slots is written at most once.
-- **Space** — three integer pointers. Sorting the concatenation instead (`nums1[m:] = nums2; nums1.sort()`) is a valid one-liner but costs `O((m+n) log(m+n))` time, and interviewers ask this question specifically to see the linear in-place merge.
+- **Space** — three integer pointers. Sorting the concatenation instead (`nums1[m:] = nums2; nums1.sort()`) is a valid one-liner but costs `O((m+n) log(m+n))` time, which throws away the sorted structure both inputs already have. The linear in-place merge is the point of the problem.
 
 ## Edge Cases
 

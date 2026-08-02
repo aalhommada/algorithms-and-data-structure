@@ -5,6 +5,146 @@ description: Pointer rewiring, fast and slow pointers, and the dummy-head trick
 
 A linked list trades random access for cheap insertion. You cannot jump to index `k` — you must follow `k` pointers — but splicing a node in or out is `O(1)` once you are holding the right reference. Every technique below exists because of that trade.
 
+## What a Linked List Actually Looks Like
+
+Start with what you already know. An **array** is one unbroken block of memory. The computer knows where the block starts, so `nums[3]` is arithmetic: *start address + 3 × item size*. One calculation, no searching. That is why `nums[3]` costs the same as `nums[0]`.
+
+A linked list gives that up completely.
+
+<Callout type="info" title="Three words you need first">
+**Node** — a small box holding two things: a value, and directions to the next box.
+
+**Pointer** (also called a *reference*) — the directions. Not the next node itself, but *where to find it*. Think of a house address written on a slip of paper: the paper is not the house.
+
+**`null`** — the address slot is empty. There is no next box. This is how a list says "the end". Python spells it `None`.
+</Callout>
+
+The boxes are scattered anywhere in memory. Nothing keeps them in order except each one knowing where the next one lives.
+
+<LinkedListDiagram
+  title="A linked list of four values"
+  nodes={[
+    { value: 3, pointers: ["head"] },
+    { value: 1 },
+    { value: 4 },
+    { value: 1 },
+  ]}
+  caption="Each box holds a value and an arrow. The last arrow points at null, which means 'stop here'."
+/>
+
+You are only ever given **`head`** — the first box. Everything else is reached by following arrows. Lose `head` and the whole list is unreachable, even though every node still exists in memory.
+
+### Why you cannot jump to index 3
+
+There is no block, so there is no arithmetic to do. To reach the fourth value you must walk.
+
+<LinkedListViz
+  title="Getting to index 3 — the only way there is"
+  frames={[
+    {
+      nodes: [
+        { value: 3, state: "active", pointers: ["current"] },
+        { value: 1 },
+        { value: 4 },
+        { value: 1 },
+      ],
+      vars: { steps: 0 },
+      note: "Start at head. This is index 0. We want index 3, so we are not there yet.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "done" },
+        { value: 1, state: "active", pointers: ["current"] },
+        { value: 4 },
+        { value: 1 },
+      ],
+      vars: { steps: 1 },
+      note: "Follow the arrow. Index 1. The only information we had was 'where is next' — so following it is the only move available.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "done" },
+        { value: 1, state: "done" },
+        { value: 4, state: "active", pointers: ["current"] },
+        { value: 1 },
+      ],
+      vars: { steps: 2 },
+      note: "Index 2. Still walking.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "done" },
+        { value: 1, state: "done" },
+        { value: 4, state: "done" },
+        { value: 1, state: "match", pointers: ["current"] },
+      ],
+      vars: { steps: 3 },
+      note: "Index 3, after 3 steps. Reaching index k always costs k steps — that is O(n), where an array would have cost O(1).",
+    },
+  ]}
+  caption="An array computes the address. A linked list has to travel to it."
+/>
+
+### What you get in return
+
+Now the payoff. Suppose you want to insert `9` after the first node.
+
+In an array, every item after the insertion point has to shift one place to make room — `O(n)` work, and it gets worse the earlier you insert.
+
+In a linked list, nothing moves. You change two arrows.
+
+<LinkedListViz
+  title="Inserting 9 after the first node"
+  frames={[
+    {
+      nodes: [
+        { value: 3, state: "active", pointers: ["prev"] },
+        { value: 1 },
+        { value: 4 },
+      ],
+      note: "We are holding the node to insert after. Nothing else about the list matters.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "active", pointers: ["prev"] },
+        { value: 9, state: "compare", pointers: ["new"] },
+        { value: 1 },
+        { value: 4 },
+      ],
+      note: "Step 1: point the NEW node at whatever prev currently points to. Do this first — it is the only copy of that address.",
+    },
+    {
+      nodes: [
+        { value: 3, state: "done" },
+        { value: 9, state: "match", pointers: ["new"] },
+        { value: 1 },
+        { value: 4 },
+      ],
+      note: "Step 2: now point prev at the new node. Two arrow changes, no shifting. O(1) — and the list length made no difference.",
+    },
+  ]}
+  caption="The order of the two steps matters enormously. Reverse them and you overwrite your only route to the rest of the list."
+/>
+
+<Callout type="warn" title="This is the bug you will actually write">
+If you set `prev.next = new_node` **first**, the address of the old `prev.next` is gone. Nothing else in the program was holding it. The rest of the list — however long — is now unreachable and lost.
+
+That single rule, *save the address before you overwrite it*, is behind almost every linked-list technique on this page.
+</Callout>
+
+### Array versus linked list, side by side
+
+| | Array | Linked list |
+|---|---|---|
+| Memory layout | One continuous block | Scattered boxes joined by arrows |
+| Get index `k` | `O(1)` — arithmetic | `O(n)` — walk there |
+| Insert / delete at a held position | `O(n)` — shift everything after | `O(1)` — rewire two arrows |
+| Insert / delete at the front | `O(n)` | `O(1)` |
+| Extra memory | None | One pointer per node |
+| Can you go backwards? | Yes, `k - 1` | **No** — arrows point one way only |
+
+That last row causes more trouble than it looks. Once you have walked past a node, it is gone unless you kept a reference. Several techniques below exist purely to work around it.
+
 ## The Three Techniques
 
 ### 1. Careful pointer rewiring

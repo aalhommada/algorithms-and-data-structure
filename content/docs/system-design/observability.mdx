@@ -1,0 +1,170 @@
+---
+title: Observability
+description: Logs, metrics and traces — knowing what a system is doing, and defining what "working" means before it stops
+---
+
+A system you cannot see inside is a system you cannot operate. Observability is not monitoring dashboards — it is the ability to answer questions you did not anticipate.
+
+## The Three Signals
+
+| Signal | Answers | Cost | Cardinality |
+|---|---|---|---|
+| **Metrics** | "Is something wrong?" | Cheap | Low — must stay low |
+| **Logs** | "What exactly happened?" | Expensive at volume | Unlimited |
+| **Traces** | "Where did the time go?" | Moderate, usually sampled | High |
+
+<Callout type="info" title="Use them in that order">
+**Metrics** tell you a problem exists — error rate is up, latency is up. They are cheap enough to keep for every request.
+
+**Traces** tell you *where* — which of eleven services in the request path is slow.
+
+**Logs** tell you *why* — the exact error, the exact input.
+
+Reaching for logs first means searching millions of lines without knowing what you are looking for. Metrics narrow it to a time and a symptom, traces narrow it to a service, logs give the detail.
+</Callout>
+
+## Metrics
+
+Four numbers cover most of what matters.
+
+| Signal | Question |
+|---|---|
+| **Latency** | How slow, at p50, p95, p99 |
+| **Traffic** | How much is arriving |
+| **Errors** | What fraction is failing |
+| **Saturation** | How full — CPU, memory, connections, queue depth |
+
+<Callout type="warn" title="Averages actively hide problems">
+An average response time of 200 ms is consistent with 95% of requests at 50 ms and 5% at 3 seconds.
+
+That 5% is every twentieth request. A page making twenty calls will almost certainly hit it, so **most page loads are slow** while the average looks healthy.
+
+Always alert on percentiles. p99 is the number that describes what your unhappiest users experience.
+</Callout>
+
+<Callout type="warn" title="High-cardinality labels will destroy your metrics system">
+A metric labelled with `user_id` creates one time series per user. A million users is a million series, and metrics databases fall over long before that.
+
+```text
+Safe:      http_requests{endpoint="/orders", status="500"}
+Dangerous: http_requests{user_id="8417", order_id="99213"}
+```
+
+Per-user detail belongs in logs and traces, which are built for it. Metrics are for aggregates with a small, bounded set of label values.
+
+This is one of the most common ways a monitoring bill explodes overnight.
+</Callout>
+
+## Logs
+
+Logs are complete and expensive. At scale they cost more than the service producing them, so discipline matters.
+
+**Structured, not prose.** `{"level":"error","order_id":123,"user_id":45,"msg":"payment declined"}` can be searched and aggregated. `"Payment failed for order 123"` cannot, without fragile parsing.
+
+**Include the request id in every line.** Without it you cannot reassemble a single request's story from interleaved logs.
+
+**Never log secrets.** Passwords, tokens, card numbers and personal data end up in a log aggregator that is usually more widely readable than the database — and retained for months.
+
+| Level | Use for |
+|---|---|
+| `ERROR` | Something failed and needs attention |
+| `WARN` | Unexpected but handled |
+| `INFO` | Significant events — started, stopped, deployed |
+| `DEBUG` | Detail, normally disabled in production |
+
+<Callout type="info" title="Sample high-volume logs">
+Logging every one of 60,000 requests per second is rarely affordable or useful.
+
+Log **all errors**, and a small percentage of successes. Errors are what you investigate; successes are what metrics already summarise.
+</Callout>
+
+## Distributed Tracing
+
+When a request crosses eleven services, no single log tells you where the time went. Tracing follows one request across all of them.
+
+<ArchViz
+  title="One trace id, carried through every hop"
+  height={250}
+  nodes={[
+    { id: "client", label: "Client", kind: "client", x: 0.0, y: 0.5 },
+    { id: "gw", label: "Gateway", sublabel: "12 ms", kind: "edge", x: 0.25, y: 0.5 },
+    { id: "orders", label: "Orders", sublabel: "8 ms", kind: "service", x: 0.5, y: 0.5 },
+    { id: "pay", label: "Payments", sublabel: "340 ms", kind: "service", x: 0.75, y: 0.05 },
+    { id: "inv", label: "Inventory", sublabel: "6 ms", kind: "service", x: 0.75, y: 0.95 },
+    { id: "bank", label: "Bank API", sublabel: "320 ms", kind: "external", x: 1.0, y: 0.05 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "client", to: "gw", label: "trace abc123", active: true },
+        { from: "gw", to: "orders", label: "abc123", active: true },
+        { from: "orders", to: "pay", label: "abc123" },
+        { from: "orders", to: "inv", label: "abc123" },
+      ],
+      active: ["client", "gw", "orders"],
+      dimmed: ["pay", "inv", "bank"],
+      vars: { "trace id": "abc123", total: "366 ms" },
+      note: "One id is generated at the edge and passed to every downstream call. Each hop records a span against it.",
+    },
+    {
+      edges: [
+        { from: "orders", to: "pay", label: "340 ms", active: true },
+        { from: "orders", to: "inv", label: "6 ms" },
+        { from: "pay", to: "bank", label: "320 ms", active: true },
+      ],
+      active: ["pay", "bank"],
+      dimmed: ["client", "gw", "inv"],
+      vars: { finding: "320 of 366 ms is the bank" },
+      note: "The trace shows immediately that the external bank call dominates. No amount of optimising our own code would have helped.",
+    },
+  ]}
+  caption="Metrics said 'checkout is slow'. The trace said which of six services, in one look."
+/>
+
+<Callout type="info" title="Propagating the trace id is the whole job">
+Tracing works only if every service passes the incoming trace id to everything it calls. One service that drops it breaks the chain, and everything beyond becomes invisible.
+
+This is why tracing is usually added through a shared library or a service mesh rather than by hand — a single forgetful service silences a whole branch.
+
+Sampling is normal: tracing 1% of requests is enough to find systemic slowness, and cheap. Always trace 100% of errors.
+</Callout>
+
+## Defining "Working"
+
+You cannot alert usefully until you have decided what healthy means.
+
+| Term | Meaning | Example |
+|---|---|---|
+| **SLI** | A measurement | "Fraction of requests under 300 ms" |
+| **SLO** | Your target for it | "99% under 300 ms over 30 days" |
+| **SLA** | A contractual promise, with penalties | "99.9% or you get credits" |
+
+<Callout type="info" title="Error budgets turn reliability into a decision">
+A 99.9% SLO means you may be down about 43 minutes a month. That is your **error budget**.
+
+Budget remaining → ship features, take risks.
+Budget spent → stop feature work and fix reliability.
+
+This replaces the endless argument between "move faster" and "be more stable" with a number both sides already agreed to. It also makes clear that 100% is not the goal — an unused error budget means you are shipping too slowly.
+</Callout>
+
+## Alerting
+
+<Callout type="warn" title="Alert on symptoms, not causes">
+**Bad:** "CPU is above 80%." That may be completely fine. Nobody can act on it, and after the tenth false alarm it gets ignored.
+
+**Good:** "Error rate above 1% for 5 minutes." "p99 latency above 1 second." "Queue depth rising for 15 minutes."
+
+The test for every alert: *if this fires at 3 a.m., is there something a human should do right now?* If not, it is a dashboard, not an alert.
+
+Alert fatigue is a genuine failure mode. A team that has learned to ignore alerts will ignore the real one.
+</Callout>
+
+Good alerts share three properties: they are **actionable**, they point at **user impact**, and they include enough context to start work — which dashboard, which runbook.
+
+## Related Reading
+
+- [Reliability](/docs/system-design/reliability) — the four signals and failure handling
+- [Services and Boundaries](/docs/system-design/microservices) — why tracing becomes essential once you split
+- [Queues and Async Work](/docs/system-design/queues) — how logs and metrics get off the request path
+- [Numbers Every Design Needs](/docs/system-design/numbers-to-know) — latency targets worth measuring against

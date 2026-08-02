@@ -1,0 +1,188 @@
+---
+title: Services and Boundaries
+description: Monolith versus microservices, where to draw the lines, and the machinery services need that a monolith does not
+---
+
+Splitting an application into services is an organisational decision with technical consequences. It is also the most commonly over-applied idea in system design.
+
+## Start With the Monolith
+
+<Callout type="info" title="A monolith is the correct default">
+One deployable application with a clear internal module structure is simpler in every dimension: one deploy, one log stream, real transactions, function calls instead of network calls, and no distributed debugging.
+
+Most systems never need more. Splitting early means paying all the costs of distribution while the boundaries are still wrong — and wrong boundaries are far more expensive to fix once they are network calls.
+
+Split when a **specific pressure** demands it, not because services sound more serious.
+</Callout>
+
+| Real reasons to split | Not reasons to split |
+|---|---|
+| Teams block each other on deploys | "Microservices are modern" |
+| One component needs very different scaling | The codebase feels large |
+| One component needs different hardware (GPU) | Wanting to try a new language |
+| A component needs stricter isolation | It looks better on a diagram |
+
+## What Changes When You Split
+
+<ArchViz
+  title="The same feature, before and after"
+  height={300}
+  nodes={[
+    { id: "client", label: "Client", kind: "client", x: 0.0, y: 0.5 },
+    { id: "mono", label: "Monolith", sublabel: "one deploy", kind: "service", x: 0.28, y: 0.5 },
+    { id: "db", label: "Database", kind: "database", x: 0.55, y: 0.5 },
+    { id: "gw", label: "API Gateway", kind: "edge", x: 0.28, y: 0.05 },
+    { id: "orders", label: "Orders", kind: "service", x: 0.62, y: 0.02 },
+    { id: "pay", label: "Payments", kind: "service", x: 0.62, y: 0.45 },
+    { id: "ship", label: "Shipping", kind: "service", x: 0.62, y: 0.95 },
+    { id: "dbs", label: "Own DBs", sublabel: "one each", kind: "database", x: 1.0, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "client", to: "mono", active: true },
+        { from: "mono", to: "db", label: "ONE transaction", active: true },
+      ],
+      active: ["client", "mono", "db"],
+      dimmed: ["gw", "orders", "pay", "ship", "dbs"],
+      vars: { model: "monolith", failure: "all or nothing" },
+      note: "Place order, take payment, book shipping — all in one database transaction. Either everything happens or nothing does.",
+    },
+    {
+      edges: [
+        { from: "client", to: "gw", active: true },
+        { from: "gw", to: "orders", active: true },
+        { from: "orders", to: "pay", label: "network call", active: true },
+        { from: "orders", to: "ship", label: "network call", active: true },
+      ],
+      active: ["gw", "orders", "pay", "ship"],
+      dimmed: ["mono", "db"],
+      vars: { model: "services", failure: "partial is possible" },
+      note: "The same feature is now three network calls. Each can time out, fail, or succeed slowly — and payment may succeed while shipping fails.",
+    },
+    {
+      edges: [
+        { from: "orders", to: "dbs", active: true },
+        { from: "pay", to: "dbs", active: true },
+        { from: "ship", to: "dbs", active: true },
+      ],
+      active: ["orders", "pay", "ship", "dbs"],
+      dimmed: ["client", "gw", "mono", "db"],
+      vars: { rule: "no shared database" },
+      note: "Each service owns its data. No service reads another's tables — otherwise you have a monolith with extra network hops and none of the benefits.",
+    },
+  ]}
+  caption="One transaction becomes three calls that can each fail independently. That is the real cost."
+/>
+
+<Callout type="warn" title="You lose transactions, and that is the biggest loss">
+In a monolith, "take payment and reserve stock" is one transaction — atomic, guaranteed.
+
+Across services it cannot be. You need a [saga](/docs/system-design/consistency): a sequence of local transactions each with a compensating undo, and a window where the system is genuinely inconsistent.
+
+Before splitting, ask which operations currently rely on a single transaction. Those are the boundaries that will hurt most, and they are the ones to keep together.
+</Callout>
+
+## Where to Draw the Lines
+
+The classic mistake is splitting by **technical layer**. The right split is by **business capability**.
+
+| Wrong — by layer | Right — by capability |
+|---|---|
+| `api-service` | `orders` |
+| `business-logic-service` | `payments` |
+| `database-service` | `inventory` |
+
+Layer-based splits mean almost every feature touches every service, so nothing can be deployed or scaled independently. You have added network calls and gained nothing.
+
+<Callout type="info" title="Two tests for a good boundary">
+**Can it be deployed alone?** If shipping a change to orders always requires deploying payments too, they are one service pretending to be two.
+
+**Does it own its data?** If two services read the same tables, they are coupled through the database and cannot evolve separately — the worst kind of coupling, because it is invisible in the code.
+</Callout>
+
+## The Machinery Services Need
+
+Splitting creates problems a monolith never had, each requiring a component.
+
+| Problem | Component |
+|---|---|
+| Clients would need to know every service | **API gateway** — one entry point, routes inward |
+| Services move and scale, so addresses change | **Service discovery** — a registry to look up |
+| Every call needs retries, timeouts, mTLS | **Service mesh**, or a shared client library |
+| A failure spans several services' logs | **Distributed tracing** — one id follows the request |
+| Config differs per service and environment | **Central configuration** |
+
+### API gateway
+
+The single door into the system. It handles the concerns every service would otherwise reimplement:
+
+```text
+Client  →  Gateway  →  authentication
+                       rate limiting
+                       request routing
+                       response aggregation
+                    →  services
+```
+
+<Callout type="warn" title="Keep business logic out of the gateway">
+It is tempting to let the gateway do "just a little" orchestration. Over time it accumulates rules from every team, becomes the thing nobody dares deploy, and turns into a distributed monolith with a single point of failure.
+
+The gateway routes, authenticates and limits. It should not know what an order is.
+</Callout>
+
+## Talking Between Services
+
+| Style | Shape | Suits |
+|---|---|---|
+| **Synchronous** (REST, gRPC) | Call and wait | The caller needs the answer now |
+| **Asynchronous** (queue, event log) | Publish and move on | Work that can happen later |
+
+<Callout type="info" title="Prefer asynchronous where the answer is not needed immediately">
+Every synchronous call couples the caller's availability to the callee's. Chain four services at 99.9% each and you are at 99.6% — see [reliability](/docs/system-design/reliability).
+
+Publishing an event instead means the caller succeeds even if the consumer is down; the work happens when it recovers.
+
+"Order placed" as an event, consumed independently by shipping, analytics and email, is more robust *and* easier to extend than the orders service calling three others in turn.
+</Callout>
+
+### The chatty-call trap
+
+```text
+GET /orders            →  1 call
+for each of 50 orders:
+    GET /users/{id}    →  50 calls
+```
+
+Fifty network round trips where a monolith did one join. Fix it by batching (`GET /users?ids=1,2,3`), by having the caller cache, or by accepting some duplicated data inside the service that needs it.
+
+Duplicating a user's display name into the orders service feels wrong after years of normalisation. Across a service boundary it is often correct — it removes a synchronous dependency and the data rarely changes.
+
+## Versioning and Compatibility
+
+Services deploy independently, which means two versions run at once during every rollout.
+
+| Change | Safe? |
+|---|---|
+| Add an optional field | Yes |
+| Add a new endpoint | Yes |
+| Remove a field | **No** — version it |
+| Rename a field | **No** — add the new one, migrate, then remove |
+| Make an optional field required | **No** |
+
+<Callout type="info" title="Expand then contract">
+To change something safely across independently deployed services:
+
+1. **Expand** — add the new field alongside the old; write both.
+2. **Migrate** — move every consumer to the new field.
+3. **Contract** — once nothing reads the old field, remove it.
+
+Three deploys instead of one. It is the only way to change a shared contract without a coordinated outage, and it is the same discipline needed for database migrations.
+</Callout>
+
+## Related Reading
+
+- [Consistency and CAP](/docs/system-design/consistency) — sagas, and the transactions you gave up
+- [Reliability](/docs/system-design/reliability) — why chained dependencies reduce availability
+- [Queues and Async Work](/docs/system-design/queues) — event-driven communication
+- [APIs and Rate Limiting](/docs/system-design/apis) — gateway responsibilities

@@ -1,0 +1,177 @@
+---
+title: Storage Engines
+description: Object versus block versus file storage, and the B-tree / LSM-tree split that decides whether a database is fast at reads or at writes
+---
+
+"Where do the bytes live?" has more than one answer, and picking the wrong kind of storage is an expensive mistake to undo.
+
+## Three Kinds of Storage
+
+| | Object | Block | File |
+|---|---|---|---|
+| Unit | Whole object, by key | Fixed-size blocks | Files in directories |
+| Update in place | **No** — rewrite the whole object | Yes | Yes |
+| Scale | Effectively unlimited | Limited by the volume | Limited by the server |
+| Latency | Tens of ms | Sub-millisecond | Low, over a network |
+| Cost per TB | Lowest | Highest | Middle |
+| Use for | Images, video, backups, logs | Database volumes, boot disks | Shared documents, legacy apps |
+
+<Callout type="info" title="The default is object storage, and it is not close">
+For anything large, immutable and read often — images, video, uploads, backups — object storage is cheaper, scales without planning, and is served directly to clients through a CDN.
+
+The one rule that follows: **the database stores the URL, not the bytes**. A row stays a few hundred bytes whether the video is one minute or three hours, and your database never becomes a file server.
+
+Putting binary data in a database column bloats backups, breaks replication performance, and gives you nothing in return.
+</Callout>
+
+## Why Update-In-Place Matters
+
+Object storage cannot modify part of an object. Changing one byte of a 5 GB file means uploading 5 GB again.
+
+That sounds like a limitation, and it is what makes object storage cheap and scalable — objects are immutable, so they can be replicated freely with no coordination.
+
+It also shapes designs. In [video streaming](/docs/system-design/video-streaming), video is cut into small immutable segments partly for adaptive bitrate and partly because small immutable objects are exactly what this storage is good at.
+
+## Inside a Database: B-Tree or LSM-Tree
+
+Every database engine makes one core choice, and it decides whether the database is better at reads or writes.
+
+### B-tree — update in place
+
+The structure behind most relational databases. A balanced tree of fixed-size pages; a write finds the right page and modifies it.
+
+```text
+Write: locate the page  →  modify it  →  write it back
+                                        (a random write to disk)
+```
+
+### LSM-tree — append only
+
+Used by Cassandra, RocksDB, and most write-heavy stores. Writes go to memory, then get flushed to disk as sorted immutable files. Old files are merged in the background.
+
+```text
+Write: append to an in-memory table         (fast)
+       when full, flush to a sorted file    (a sequential write)
+       compact files together in background
+```
+
+<ArchViz
+  title="Where a write goes in each engine"
+  height={250}
+  nodes={[
+    { id: "w", label: "Write", kind: "client", x: 0.0, y: 0.5 },
+    { id: "btree", label: "B-tree", sublabel: "find + modify page", kind: "database", x: 0.32, y: 0.05 },
+    { id: "disk1", label: "Disk", sublabel: "random write", kind: "storage", x: 0.68, y: 0.05 },
+    { id: "mem", label: "Memtable", sublabel: "in memory", kind: "cache", x: 0.32, y: 0.9 },
+    { id: "sst", label: "Sorted Files", sublabel: "immutable", kind: "storage", x: 0.68, y: 0.9 },
+    { id: "compact", label: "Compaction", sublabel: "background", kind: "service", x: 1.0, y: 0.5 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "w", to: "btree", active: true },
+        { from: "btree", to: "disk1", label: "seek + write", active: true },
+      ],
+      active: ["w", "btree", "disk1"],
+      dimmed: ["mem", "sst", "compact"],
+      vars: { engine: "B-tree", write: "random I/O", read: "fast — one place to look" },
+      note: "A B-tree writes where the data belongs, which means a random disk write. Reads are fast because each key lives in exactly one page.",
+    },
+    {
+      edges: [
+        { from: "w", to: "mem", label: "append", active: true },
+        { from: "mem", to: "sst", label: "flush when full", dashed: true, active: true },
+      ],
+      active: ["w", "mem", "sst"],
+      dimmed: ["btree", "disk1", "compact"],
+      vars: { engine: "LSM-tree", write: "sequential I/O", read: "may check several files" },
+      note: "An LSM-tree appends to memory and flushes sequentially. Writes are much faster; reads may have to check several files for the newest version of a key.",
+    },
+    {
+      edges: [
+        { from: "sst", to: "compact", label: "merge", dashed: true, active: true },
+        { from: "compact", to: "sst", label: "fewer, bigger files", dashed: true, active: true },
+      ],
+      active: ["sst", "compact"],
+      dimmed: ["w", "btree", "disk1", "mem"],
+      vars: { cost: "background I/O spikes" },
+      note: "Compaction merges files and discards superseded values. It keeps reads fast, but consumes disk and I/O at unpredictable times.",
+    },
+  ]}
+  caption="Sequential writes are far faster than random ones. That single fact is why LSM-trees exist."
+/>
+
+| | B-tree | LSM-tree |
+|---|---|---|
+| Write speed | Slower — random I/O | **Faster** — sequential appends |
+| Read speed | **Faster** — one location | Slower — may check several files |
+| Space | Some page fragmentation | Better compression |
+| Predictability | Steady | Compaction causes latency spikes |
+| Examples | PostgreSQL, MySQL (InnoDB) | Cassandra, RocksDB, LevelDB |
+
+<Callout type="info" title="Bloom filters make LSM reads bearable">
+An LSM read might need to check many files. Each file carries a [Bloom filter](/docs/system-design/probabilistic-structures), so the engine can skip any file that certainly does not hold the key.
+
+This is the single most common production use of a Bloom filter, and it is why LSM reads are far better in practice than the theory suggests.
+</Callout>
+
+<Callout type="warn" title="Compaction is the operational surprise">
+Background compaction consumes disk I/O and CPU at times you did not choose. On a busy system this shows up as unexplained p99 latency spikes.
+
+It also needs **free disk space** to work — an LSM store running near full cannot compact, and a store that cannot compact gets slower and then stops. Running out of disk on an LSM database is worse than on a B-tree one.
+</Callout>
+
+## Row or Column Layout
+
+A separate axis from the engine, and it decides which queries are cheap.
+
+```text
+ROW-oriented — all of one record together
+  [id=1, name=Sara, age=30][id=2, name=Ali, age=25]
+  Good: "fetch everything about user 1"
+
+COLUMN-oriented — all of one field together
+  ids: [1, 2]   names: [Sara, Ali]   ages: [30, 25]
+  Good: "average age of 50 million users"
+```
+
+| | Row store | Column store |
+|---|---|---|
+| Reads one whole record | **Fast** | Slow — reassembles from many places |
+| Aggregates one field | Slow — reads every record | **Fast** — reads only that column |
+| Compression | Moderate | **Excellent** — similar values sit together |
+| Writes | Fast | Slower — usually batched |
+| Use for | Transactional applications | Analytics and reporting |
+
+<Callout type="info" title="This is why analytics gets a separate database">
+The application database is row-oriented, because a request usually wants one user's full record.
+
+Analytics wants "average order value by month across three years" — reading two columns out of forty. On a row store that reads everything.
+
+Hence the standard pattern: the transactional database serves the app, and data flows into a column-oriented warehouse for analysis. Running heavy analytical queries against the production database is a classic way to make the product slow.
+</Callout>
+
+## Durability
+
+A write is not durable until it survives a crash.
+
+| Mechanism | Guarantee |
+|---|---|
+| **Write-ahead log (WAL)** | Append the intent before changing data; replay on restart |
+| **fsync** | Force the OS to actually put it on the physical disk |
+| **Replication** | Another machine also has it |
+
+<Callout type="warn" title="Writes can be lost even after the database says OK">
+The operating system buffers writes. A database that has "written" data may only have handed it to the OS cache — which a power failure erases.
+
+`fsync` forces it to physical storage, and it is slow, which is why databases batch commits together.
+
+Every store makes a durability choice, and defaults vary. It is worth knowing whether yours acknowledges on memory, on OS cache, on disk, or on replica confirmation — the failure modes are very different.
+</Callout>
+
+## Related Reading
+
+- [Databases](/docs/system-design/databases) — indexing, replication and sharding above the engine
+- [Probabilistic Structures](/docs/system-design/probabilistic-structures) — Bloom filters inside LSM-trees
+- [Video Streaming](/docs/system-design/video-streaming) — object storage at scale
+- [File Storage](/docs/system-design/file-storage) — chunking and deduplication on top of object storage

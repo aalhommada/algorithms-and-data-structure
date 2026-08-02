@@ -35,7 +35,30 @@ All the state fits in memory on one machine, several times over. That rules out 
 It also means the expensive algorithm — the sliding log — is *affordable* here, which is worth knowing before dismissing it.
 </Callout>
 
-## 3. The Four Algorithms
+## 3. Define the Interface
+
+```text
+allow(key, endpoint)  →  { allowed, remaining, reset_at, retry_after }
+
+Called in-process at the edge, before routing.
+NOT an HTTP service — a network hop per request would cost more
+than the work it is protecting.
+
+On the way out, every response carries what the caller used:
+  X-RateLimit-Limit:      1000
+  X-RateLimit-Remaining:  887
+  X-RateLimit-Reset:      1735689600
+```
+
+<Callout type="info" title="Why it returns four things and not just true/false">
+A bare `true`/`false` tells a client it was rejected but not *when to come back*. So it retries immediately, and keeps retrying — turning a rate limit into a tight loop that costs you more than the original traffic.
+
+`retry_after` converts a rejection into an instruction. `remaining` lets a well-behaved client slow down *before* it is rejected at all.
+
+The interface is doing real work here: it decides whether being limited teaches the client anything.
+</Callout>
+
+## 4. The Four Algorithms
 
 ### Fixed window
 
@@ -117,7 +140,7 @@ Two numbers per key — token count and last refill time — and tokens are comp
 | Accuracy | Poor | Exact | Good | Good |
 | Complexity | Lowest | High | Medium | Low |
 
-## 4. The Distributed Problem
+## 5. The Distributed Problem
 
 One limiter node is easy. Several is where it gets interesting.
 
@@ -205,7 +228,7 @@ Rate limits exist to stop abuse, not to be arithmetically perfect. Allowing 105 
 Say it explicitly: *"we allow a small overshoot in exchange for not making a network call per request — a hard limit would cost 1 ms on every request to prevent a 5% overage."* That is a trade-off, stated.
 </Callout>
 
-## 5. The Response
+## 6. The Response
 
 ```text
 HTTP 429 Too Many Requests
@@ -227,7 +250,7 @@ If Redis is unavailable, what should the limiter do?
 Almost always fail open. The limiter protects against abuse; it should not itself be able to take the system down. Pair it with a local fallback limit so you are not entirely unguarded.
 </Callout>
 
-## 6. What Was Traded Away
+## 7. What Was Traded Away
 
 | Decision | Gained | Cost |
 |---|---|---|

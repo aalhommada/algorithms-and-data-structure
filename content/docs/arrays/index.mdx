@@ -3,7 +3,100 @@ title: Arrays
 description: Two pointers, sliding windows, prefix sums and hash maps — the patterns behind most array problems
 ---
 
-Arrays are where almost every algorithm interview starts, and for good reason: they force you to think about **access patterns**. An array gives you `O(1)` random access but `O(n)` insertion and deletion, and nearly every technique below is a way of exploiting the first to avoid paying the second.
+Arrays are where almost everything starts, and for good reason: they force you to think about **access patterns**. An array gives you `O(1)` random access but `O(n)` insertion and deletion, and nearly every technique below is a way of exploiting the first to avoid paying the second.
+
+## What an Array Actually Looks Like
+
+An array is **one continuous block of memory**, divided into equal-sized slots.
+
+<ArrayDiagram
+  title="nums = [2, 7, 11, 15, 3]"
+  values={[2, 7, 11, 15, 3]}
+  states={["idle", "idle", "active", "idle", "idle"]}
+  pointers={[{ index: 2, label: "nums[2]" }]}
+  caption="The number under each slot is its index. Indices start at 0, so the third item is nums[2]."
+/>
+
+Two things follow from "one continuous block", and between them they explain every array technique.
+
+### Why reading any index is instant
+
+The computer knows where the block begins and how wide each slot is. So it does not search — it calculates:
+
+```text
+address of nums[i]  =  start address  +  i × slot size
+```
+
+One multiplication and one addition, whatever `i` is. `nums[999999]` costs precisely what `nums[0]` costs. That is `O(1)` **random access** — "random" meaning *any position, in any order, at the same price*.
+
+<Callout type="info" title="This is why indices start at 0">
+The index is not a counter, it is a **distance from the start**. The first item is 0 slots away from the beginning, the second is 1 slot away.
+
+Once you read `nums[i]` as *"i slots along"* rather than *"the i-th thing"*, off-by-one errors get noticeably rarer.
+</Callout>
+
+### Why inserting is expensive
+
+The slots must stay adjacent with no gaps — that is what makes the address arithmetic work. So making room in the middle means physically moving everything after it.
+
+<ArrayViz
+  title="Inserting 9 at index 1"
+  frames={[
+    {
+      values: [2, 7, 11, 15, 3],
+      states: ["idle", "active", "idle", "idle", "idle"],
+      pointers: [{ index: 1, label: "insert here" }],
+      note: "We want 9 at index 1. But index 1 is occupied, and so is every slot after it.",
+    },
+    {
+      values: [2, 7, 11, 15, 3, 3],
+      states: ["idle", "idle", "idle", "idle", "compare", "compare"],
+      note: "Start from the BACK. Copy 3 one slot right. Starting from the front would overwrite values before copying them.",
+    },
+    {
+      values: [2, 7, 11, 15, 15, 3],
+      states: ["idle", "idle", "idle", "compare", "compare", "done"],
+      note: "Copy 15 right.",
+    },
+    {
+      values: [2, 7, 11, 11, 15, 3],
+      states: ["idle", "idle", "compare", "compare", "done", "done"],
+      note: "Copy 11 right.",
+    },
+    {
+      values: [2, 7, 7, 11, 15, 3],
+      states: ["idle", "compare", "compare", "done", "done", "done"],
+      note: "Copy 7 right. The slot at index 1 is finally free.",
+    },
+    {
+      values: [2, 9, 7, 11, 15, 3],
+      states: ["idle", "match", "done", "done", "done", "done"],
+      note: "Write 9. Four values moved to insert one — and inserting at index 0 would have moved all five. That is O(n).",
+    },
+  ]}
+  caption="Deleting is the same in reverse: everything after the gap shifts left."
+/>
+
+<Callout type="warn" title="The consequence you will actually meet">
+Removing items from the front of a list inside a loop turns an `O(n)` algorithm into `O(n²)` — every removal quietly shifts the entire rest of the array.
+
+Python's `list.pop(0)` and JavaScript's `Array.shift()` are exactly this trap. Use `collections.deque` or an index that moves instead. See [stacks and queues](/docs/stacks-queues).
+</Callout>
+
+### The trade, in one table
+
+| Operation | Cost | Why |
+|---|---|---|
+| Read or write `nums[i]` | `O(1)` | Address arithmetic |
+| Append at the end | `O(1)`* | Nothing to move |
+| Insert or delete in the middle | `O(n)` | Everything after shifts |
+| Insert or delete at the front | `O(n)` | Everything shifts |
+| Search an unsorted array | `O(n)` | Must check each slot |
+| Search a **sorted** array | `O(log n)` | [Binary search](/docs/searching) |
+
+\* *Amortised.* The block occasionally fills up, and then the whole thing is copied to a bigger one. That copy is `O(n)`, but it happens rarely enough that the average stays `O(1)`.
+
+Read that table as a set of instructions: **you have a fast operation and a slow one, so build solutions out of the fast one.** Every pattern below does exactly that — two pointers, sliding windows and prefix sums all read freely and never shift anything.
 
 ## The Four Patterns
 

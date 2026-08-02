@@ -1,0 +1,250 @@
+---
+title: Web Crawler
+description: Fetching billions of pages politely — URL deduplication at scale, per-host rate limiting, and avoiding traps
+---
+
+A crawler is a breadth-first search over a graph with a billion nodes, where every edge traversal is a network request to a machine you do not control.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| Scale? | 1 billion pages per month |
+| What is stored? | Raw HTML, for later processing |
+| Recrawl? | Yes — important pages more often |
+| Politeness? | Must respect `robots.txt` and not overload any host |
+| Content types? | HTML only |
+
+## 2. Put Numbers On It
+
+```text
+1 billion pages/month
+÷ 30 days ÷ 100,000 sec        ≈  400 pages/sec average
+× 3 peak                        ≈  1,200 pages/sec
+
+STORAGE
+  average page ≈ 500 KB raw, ~100 KB compressed
+  1B × 100 KB                   =  100 TB/month
+  × 12                          ≈  1.2 PB/year
+
+URL FRONTIER
+  ~10 billion known URLs
+  100 bytes each                =  1 TB   ← too big for memory
+
+BANDWIDTH
+  1,200 pages/sec × 500 KB      ≈  600 MB/sec inbound
+```
+
+<Callout type="info" title="Two findings shape the design">
+**The URL set does not fit in memory.** At 10 billion URLs you cannot keep a hash set of what you have seen — that is the central engineering problem.
+
+**400 pages/sec is not fast per machine, but politeness makes it hard.** You cannot hit one site 400 times a second. The work must be spread across many hosts, which turns scheduling into the difficult part.
+</Callout>
+
+## 3. Define the Interface
+
+No user is waiting for a reply here — this is a pipeline, not a request/response service. The step does not disappear; it becomes **name what crosses each boundary**.
+
+```text
+IN — from operators, rarely
+  submit_seeds(urls[], priority)   →  ack
+  set_policy(domain, rules)        →  crawl rate, exclusions
+
+OUT — per page fetched, the contract with everything downstream
+  {
+    url, final_url,          after redirects
+    fetched_at, status,
+    content_hash,            for detecting unchanged pages
+    html,                    to object storage; the record holds a pointer
+    links[]                  extracted, already normalised
+  }
+```
+
+<Callout type="warn" title="Skipping this step on a pipeline is how you build a data swamp">
+It is tempting to say "a crawler just downloads pages" and start drawing the fetch loop. Then months of HTML land in storage with no `fetched_at`, no `final_url`, and no `content_hash` — and the indexer that has to consume it cannot tell fresh from stale, or a redirect from a real page.
+
+The output record *is* the interface. It is agreed with the consumer before the fetching is designed, because re-crawling a billion pages to add one field is not an option.
+</Callout>
+
+<Callout type="info" title="`links[]` comes out normalised, not raw">
+`HTTP://Example.COM/a/../b?utm_source=x#top` and `https://example.com/b` are the same page. Deciding where that cleanup happens is an interface question: do it once here, or force every consumer to redo it inconsistently.
+
+Doing it at the boundary is also what makes the deduplication in section 5 possible at all — you cannot deduplicate URLs that are still spelled five different ways.
+</Callout>
+
+## 4. The Architecture
+
+<ArchViz
+  title="The crawl loop"
+  height={320}
+  nodes={[
+    { id: "frontier", label: "URL Frontier", sublabel: "queues per host", kind: "queue", x: 0.0, y: 0.5 },
+    { id: "fetcher", label: "Fetchers", sublabel: "many workers", kind: "service", x: 0.26, y: 0.5 },
+    { id: "robots", label: "robots.txt", sublabel: "cached", kind: "cache", x: 0.26, y: 0.02 },
+    { id: "store", label: "Content Store", kind: "storage", x: 0.55, y: 0.05 },
+    { id: "parser", label: "Parser", sublabel: "extract links", kind: "service", x: 0.55, y: 0.9 },
+    { id: "dedup", label: "URL Dedup", sublabel: "Bloom filter", kind: "cache", x: 0.85, y: 0.5 },
+    { id: "seen", label: "Content Dedup", sublabel: "hash of body", kind: "cache", x: 0.85, y: 0.02 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "frontier", to: "fetcher", label: "next URL", active: true },
+        { from: "fetcher", to: "robots", label: "may I?", dashed: true, active: true },
+      ],
+      active: ["frontier", "fetcher", "robots"],
+      dimmed: ["store", "parser", "dedup", "seen"],
+      vars: { step: "1. politeness check" },
+      note: "Before fetching, check the host's robots.txt — cached, because refetching it every time would itself be abuse.",
+    },
+    {
+      edges: [
+        { from: "fetcher", to: "store", label: "raw HTML", active: true },
+        { from: "fetcher", to: "seen", label: "content hash", dashed: true, active: true },
+      ],
+      active: ["fetcher", "store", "seen"],
+      dimmed: ["frontier", "robots", "parser", "dedup"],
+      vars: { step: "2. fetch and store" },
+      note: "Store the page. Hash the body to detect pages already seen at a different URL — mirrors and session-id variants are everywhere.",
+    },
+    {
+      edges: [
+        { from: "store", to: "parser", label: "parse", active: true },
+        { from: "parser", to: "dedup", label: "10-100 new URLs", active: true },
+      ],
+      active: ["parser", "dedup"],
+      dimmed: ["frontier", "fetcher", "robots", "store", "seen"],
+      vars: { step: "3. extract links", fanout: "~50 per page" },
+      note: "Each page yields tens of links. This is where the URL explosion happens — one page becomes fifty candidates.",
+    },
+    {
+      edges: [
+        { from: "dedup", to: "frontier", label: "unseen only", active: true },
+      ],
+      active: ["dedup", "frontier"],
+      dimmed: ["fetcher", "robots", "store", "parser", "seen"],
+      vars: { step: "4. enqueue", filtered: "most are already known" },
+      note: "A Bloom filter rejects URLs already seen. Only genuinely new ones enter the frontier, which is what stops the crawl looping forever.",
+    },
+  ]}
+  caption="A BFS where every step must be deduplicated and rate-limited per host."
+/>
+
+## 5. URL Deduplication
+
+With 10 billion URLs, an exact set needs about a terabyte. A [Bloom filter](/docs/system-design/probabilistic-structures) holds the same information in around 12 GB at a 1% false-positive rate.
+
+<Callout type="info" title="Why a false positive is acceptable here">
+A false positive means the filter claims a URL was already seen when it was not, so that page is never crawled.
+
+Missing 1% of pages is fine for a web crawler — the web is effectively infinite, and most pages are low value. A false *negative* would be worse, because it means recrawling and possibly looping, and Bloom filters never produce those.
+
+This is the textbook case where the error direction is exactly the harmless one.
+</Callout>
+
+URLs must also be **normalised** before checking, or the same page is crawled many times:
+
+```text
+http://Example.com/Page/     →  https://example.com/page
+https://example.com/page#top →  https://example.com/page
+https://example.com/page?b=2&a=1 →  https://example.com/page?a=1&b=2
+```
+
+## 6. Politeness and Scheduling
+
+<Callout type="warn" title="An impolite crawler is a denial-of-service attack">
+Hitting one host with hundreds of concurrent requests will take it down. You will be blocked, and rightly so.
+
+Three rules:
+
+**Respect `robots.txt`**, including its `Crawl-delay`.
+
+**One connection per host at a time**, with a delay between requests — typically one to several seconds.
+
+**Identify yourself** in the user agent, with a contact URL, so an affected operator can reach you instead of just blocking.
+</Callout>
+
+The frontier is therefore not one queue but **many queues, one per host**, with a scheduler that only releases a URL when that host's politeness delay has elapsed.
+
+```text
+Frontier
+  ├─ queue: example.com   next allowed at 10:00:03
+  ├─ queue: news.site     next allowed at 10:00:01
+  └─ queue: blog.org      next allowed at 10:00:07
+
+A worker takes from whichever host is ready now.
+```
+
+<Callout type="info" title="Priority sits on top of politeness">
+Not all pages deserve equal attention. A news homepage changes hourly; an archived page from 2009 does not.
+
+Assign a priority from update frequency, inbound links and page importance, and keep several priority levels within each host's queue. High-priority URLs are crawled first and recrawled sooner.
+
+Politeness constrains *when* you may fetch from a host; priority decides *which* of its URLs you fetch.
+</Callout>
+
+## 7. Traps
+
+The web is full of structures that will consume a naive crawler forever.
+
+| Trap | Example | Defence |
+|---|---|---|
+| **Infinite calendars** | `/calendar?month=1`, `2`, `3`, … forever | Cap URL depth and path length |
+| **Session ids in URLs** | Same page, endlessly new URLs | Normalise; strip known session parameters |
+| **Spider traps** | Deliberately generated infinite link trees | Limit pages per domain |
+| **Very large files** | A 10 GB file behind an HTML link | Cap response size, check `Content-Type` |
+| **Slow servers** | Responses that never finish | Aggressive timeouts |
+| **Redirect loops** | A → B → A | Cap redirects at around 5 |
+
+<Callout type="warn" title="Cap pages per domain">
+Without a per-domain cap, one site with generated URLs can absorb your entire crawl capacity indefinitely.
+
+A cap of, say, 100,000 pages per domain means a trap wastes a bounded amount of work rather than an unbounded one. It also improves coverage, because the crawl keeps moving across the web instead of drilling into one site.
+</Callout>
+
+## 8. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Bloom filter for URLs | 12 GB instead of 1 TB | ~1% of pages never crawled |
+| Per-host queues | Politeness, never blocked | Complex scheduling; lower throughput |
+| Content hashing | Duplicates detected across URLs | Near-duplicates still slip through |
+| Depth and domain caps | Traps are bounded | Some legitimate deep pages are missed |
+| Async parsing | Fetchers never wait | Links enter the frontier slightly late |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="How do you handle JavaScript-rendered pages?">
+Plain fetching returns the HTML shell without the content. Rendering requires running a headless browser, which is roughly 10 to 100 times more expensive per page.
+
+The practical approach is a two-tier crawl: fetch normally, detect when a page appears to be a shell, and queue only those for rendering. Rendering everything is unaffordable at a billion pages.
+</Accordion>
+
+<Accordion title="How do you decide when to recrawl?">
+Estimate each page's change frequency from its history — if the last five crawls found no change, wait longer; if it changes every time, come back sooner.
+
+Use `If-Modified-Since` and `ETag` headers so unchanged pages return `304` with no body. That makes a recrawl nearly free in bandwidth, which is what makes frequent checking viable at all.
+</Accordion>
+
+<Accordion title="How is the crawl distributed across machines?">
+Partition by **host**, using [consistent hashing](/docs/system-design/partitioning) on the domain. All URLs for one host go to the same crawler, which makes politeness enforceable locally with no coordination.
+
+Partitioning by URL instead would put the same host on many machines, and enforcing one-request-per-second across them would need constant coordination.
+</Accordion>
+
+<Accordion title="What if a crawler machine dies mid-crawl?">
+URLs it had claimed but not completed are lost unless the frontier tracks them. Use a visible-timeout queue: a claimed URL becomes invisible for a period and reappears if not acknowledged.
+
+Crawling a page twice is harmless — fetching is idempotent — so at-least-once delivery is exactly right here.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Probabilistic Structures](/docs/system-design/probabilistic-structures) — the Bloom filter doing the heavy lifting
+- [Queues and Async Work](/docs/system-design/queues) — the frontier as a priority queue
+- [Partitioning](/docs/system-design/partitioning) — distributing hosts across crawlers
+- [Number of Islands](/docs/graphs/number-of-islands) — BFS with a visited set, which this is at scale

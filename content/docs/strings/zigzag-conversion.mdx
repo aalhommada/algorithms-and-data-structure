@@ -198,7 +198,7 @@ Also note the order of the two branches: with `numRows = 2`, row `0` and row `nu
 </Callout>
 
 <Callout type="info" title="The closed-form alternative">
-There is a formula-based solution that computes each row's characters directly using a cycle length of `2 × numRows - 2`. It avoids the buckets, but the index arithmetic — especially for the diagonal characters in the middle rows — is fiddly and easy to get wrong. The simulation is the same `O(n)` and far easier to defend in an interview.
+There is a formula-based solution that computes each row's characters directly using a cycle length of `2 × numRows - 2`. It avoids the buckets, but the index arithmetic — especially for the diagonal characters in the middle rows — is fiddly and easy to get wrong. The simulation is the same `O(n)` and far easier to reason about, which makes it the better choice unless the arithmetic version is genuinely needed.
 </Callout>
 
 ## Complexity Analysis

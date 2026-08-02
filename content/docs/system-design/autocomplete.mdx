@@ -44,7 +44,32 @@ DATA
 Conclusion: **precompute everything, serve from memory.**
 </Callout>
 
-## 3. The Trie
+## 3. Define the Interface
+
+```text
+PUBLIC — one operation, and that is the whole surface
+  GET /suggest?q=algo   →  ["algorithms", "algorithm design", "algo trading",
+                            "algorithmic", "algorithms book"]        (top 5)
+
+INTERNAL — never called by a browser
+  ingest(query_string)  →  fed from the search log, in batches
+```
+
+<Callout type="info" title="The read path and the write path are different systems">
+Nothing a user types goes straight into the suggestions. Typing is *logged*; the log is processed later; the serving structure is rebuilt and swapped in.
+
+That separation is what makes 60 ms possible. The structure being read is never being written to, so it needs no locks, and it can be laid out purely for read speed.
+
+The cost is stated in the scope table: a new trend takes about an hour to appear. Section 6 is about that choice.
+</Callout>
+
+<Callout type="warn" title="Why the reply is a bare list and not objects">
+Every keystroke fires a request. At 60,000 requests per second, wrapping five strings in `{ "text": ..., "score": ..., "type": ... }` multiplies the bytes on the wire for data the UI does not draw.
+
+When an endpoint is called this often, the shape of the response is a capacity decision, not a style preference.
+</Callout>
+
+## 4. The Trie
 
 A trie stores strings by shared prefix. Each node is one character; walking down from the root spells a prefix.
 
@@ -98,7 +123,7 @@ In exchange, a read becomes about 20 pointer hops and one array read. Well insid
 Spending memory to buy latency is the same trade as [caching](/docs/system-design/caching), applied inside a data structure.
 </Callout>
 
-## 4. The Architecture
+## 5. The Architecture
 
 <ArchViz
   title="Serving reads from memory, updating in the background"
@@ -167,7 +192,7 @@ Updating a live trie means changing the top-5 list at a node, then possibly at i
 Building a fresh immutable trie and swapping a pointer avoids all of it. Reads are lock-free; the swap is one atomic assignment. The cost is that updates arrive on a schedule rather than instantly.
 </Callout>
 
-## 5. Scaling and Freshness
+## 6. Scaling and Freshness
 
 ### Sharding the trie
 
@@ -187,7 +212,7 @@ Merge the two at read time — check the hot layer first, fill from the main tri
 This is a general pattern: split by *rate of change*, not by size.
 </Callout>
 
-## 6. What Was Traded Away
+## 7. What Was Traded Away
 
 | Decision | Gained | Cost |
 |---|---|---|

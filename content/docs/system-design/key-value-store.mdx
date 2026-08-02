@@ -1,0 +1,289 @@
+---
+title: Distributed Key-Value Store
+description: Designing the database itself — consistent hashing, quorum reads and writes, and resolving conflicts when two nodes disagree
+---
+
+This design is worth working through because it assembles almost every distributed idea into one system: partitioning, replication, quorums, failure detection and conflict resolution.
+
+## 1. Clarify and Scope
+
+| Question | Assumption taken here |
+|---|---|
+| Interface? | `get(key)` and `put(key, value)` only |
+| Value size? | Up to 1 MB |
+| Consistency? | Tunable — the caller chooses |
+| Scale? | Petabytes, hundreds of nodes |
+| Availability? | Must accept writes during a partition |
+
+That last row is the decision that shapes everything: this is an **AP** system by choice, so it stays writable when the network splits and resolves disagreements afterwards.
+
+## 2. Put Numbers On It
+
+```text
+1 petabyte of unique data
+Replication factor N = 3
+  1 PB × 3                        =  3 PB stored
+
+NODES
+  commodity node ≈ 12 TB usable
+  3 PB ÷ 12 TB                    ≈  250 nodes         ← "hundreds", confirmed
+
+KEYS
+  average value ≈ 1 KB
+  1 PB ÷ 1 KB                     =  1 trillion keys
+
+TRAFFIC
+  1,000,000 ops/sec at peak
+  × 3 replicas touched per op     =  3M internal messages/sec
+  ÷ 250 nodes                     ≈  12,000 messages/sec/node
+```
+
+<Callout type="warn" title="Two numbers decide the whole design">
+**250 nodes.** If one machine fails twice a year, 250 of them fail more than once a day. Node failure is not an incident here — it is the normal state. A design that needs every replica present would never be up.
+
+**1 trillion keys.** No table can map key → node at that size; the lookup table would itself need sharding. Placement must be **computed** from the key, by every node, with no shared state.
+
+Those two facts force everything that follows: placement must be computed (section 4), and operations must complete while machines are missing (section 5).
+</Callout>
+
+## 3. Define the Interface
+
+```text
+get(key, R)                     →  { value, version } | not_found
+put(key, value, version, W)     →  ack
+delete(key, version, W)         →  ack   (writes a tombstone, not a removal)
+
+  R, W      how many replicas must answer — set per call, not per cluster
+  version   what the caller last saw, handed back on the next write
+```
+
+<Callout type="info" title="Three operations. Notice what is absent.">
+No `scan`. No `join`. No `begin_transaction`. No secondary index.
+
+That is not an oversight — every one of them would require coordination between nodes, and coordination is what this design gave up in order to stay writable during a partition. The interface is the promise; sections 4 to 8 are how it is kept.
+
+A small interface is what buys the scale. When someone asks for range queries later, the honest answer is "that is a different system", and this step is why you can say so.
+</Callout>
+
+<Callout type="warn" title="`R` and `W` are arguments, not configuration">
+Most stores fix consistency once, for everything they hold. Here the caller chooses per call.
+
+A session token can be read with `R=1` — fast, occasionally stale, and nobody is harmed. An account balance in the same cluster can be read with `R=2` — slower, but it cannot miss a completed write.
+
+Forcing one setting on all data means picking the strictest need and making everything else pay for it.
+</Callout>
+
+<Callout type="warn" title="`version` travels in both directions">
+The store hands a version out on `get` and expects it back on `put`.
+
+Without it, an arriving write is just bytes — the store cannot tell "an update to what I gave you" from "an update to something older that took a slow path". It would have to guess, and guessing loses data silently.
+
+Carrying the version is what makes disagreement *detectable*, which is the entire subject of section 6.
+</Callout>
+
+## 4. Data Placement
+
+With hundreds of nodes and constant membership changes, `hash(key) % N` is unusable — it moves most keys every time a node joins. The answer is [consistent hashing](/docs/system-design/partitioning) with virtual nodes.
+
+```text
+key → hash → position on the ring → first node clockwise
+                                     + the next N-1 nodes for replicas
+```
+
+<Callout type="info" title="Replicas are simply the next nodes on the ring">
+Once a key's position is known, its replicas are the next few distinct physical nodes clockwise. No separate placement table is needed, and every node can compute the location of any key independently.
+
+That is what removes the need for a central coordinator on the data path — any node can receive any request and route it correctly.
+</Callout>
+
+## 5. Quorums
+
+Data lives on `N` replicas. Two numbers control every read and write:
+
+| Symbol | Meaning |
+|---|---|
+| `N` | How many replicas hold each key |
+| `W` | How many must confirm a **write** |
+| `R` | How many must answer a **read** |
+
+<Callout type="info" title="The one rule that matters">
+```text
+W + R > N   →   reads and writes overlap on at least one node
+                → a read always sees the latest write
+```
+
+With `N=3`, `W=2`, `R=2`: any two writers and any two readers must share at least one node, so a read cannot miss a completed write.
+
+Set `W + R ≤ N` and reads may return stale data — sometimes a deliberate choice for speed.
+</Callout>
+
+<ArchViz
+  title="A quorum write, then a node failure"
+  height={280}
+  nodes={[
+    { id: "client", label: "Client", kind: "client", x: 0.0, y: 0.5 },
+    { id: "coord", label: "Coordinator", sublabel: "any node", kind: "service", x: 0.3, y: 0.5 },
+    { id: "n1", label: "Replica 1", kind: "database", x: 0.72, y: 0.02 },
+    { id: "n2", label: "Replica 2", kind: "database", x: 0.72, y: 0.5 },
+    { id: "n3", label: "Replica 3", kind: "database", x: 0.72, y: 0.98 },
+  ]}
+  frames={[
+    {
+      edges: [
+        { from: "client", to: "coord", label: "put(k,v)", active: true },
+        { from: "coord", to: "n1", active: true },
+        { from: "coord", to: "n2", active: true },
+        { from: "coord", to: "n3", active: true },
+      ],
+      active: ["coord", "n1", "n2", "n3"],
+      vars: { N: 3, W: 2, R: 2 },
+      note: "The write is sent to all 3 replicas, but the coordinator only waits for 2 acknowledgements.",
+    },
+    {
+      edges: [
+        { from: "n1", to: "coord", label: "ack", active: true },
+        { from: "n2", to: "coord", label: "ack", active: true },
+        { from: "coord", to: "client", label: "success", active: true },
+      ],
+      active: ["n1", "n2", "coord"],
+      dimmed: ["n3"],
+      vars: { acks: "2 of 3 = W", latency: "the 2nd fastest" },
+      note: "Two acks reach W, so the client is told success — without waiting for the slowest replica. This is how tail latency is contained.",
+    },
+    {
+      edges: [
+        { from: "coord", to: "n3", label: "still failing", dashed: true, active: true },
+        { from: "coord", to: "n1", label: "hint stored", active: true },
+      ],
+      active: ["coord", "n1"],
+      dimmed: ["n2", "n3"],
+      vars: { technique: "hinted handoff" },
+      note: "If replica 3 is down, another node holds the write as a HINT and delivers it when 3 returns. The write is not lost.",
+    },
+    {
+      edges: [
+        { from: "client", to: "coord", label: "get(k)", active: true },
+        { from: "coord", to: "n1", active: true },
+        { from: "coord", to: "n2", active: true },
+      ],
+      active: ["coord", "n1", "n2"],
+      dimmed: ["n3"],
+      vars: { R: 2, check: "W + R = 4 > N = 3" },
+      note: "A read asks 2 replicas. Since 2 + 2 > 3, at least one of them took part in the last successful write.",
+    },
+  ]}
+  caption="Waiting for a quorum rather than everyone is what makes the system both fast and survivable."
+/>
+
+### Choosing the numbers
+
+| Setting | Behaviour |
+|---|---|
+| `W=1, R=1` | Fastest, weakest — stale reads likely |
+| `W=N, R=1` | Fast reads, slow writes, unavailable if any replica is down |
+| `W=1, R=N` | Fast writes, slow reads |
+| `W=2, R=2, N=3` | **The usual balance** — survives one node down, strong enough |
+
+<Callout type="warn" title="W = N means no availability">
+Requiring every replica to confirm sounds safest. It means a single slow or dead replica blocks all writes.
+
+With three replicas and 99.9% availability each, `W=3` gives you 99.7% — worse than any individual node. Quorums exist precisely so that a minority can fail without stopping the system.
+</Callout>
+
+## 6. When Replicas Disagree
+
+In an AP system, two clients can write the same key on opposite sides of a partition. Both writes succeed. Now what?
+
+| Strategy | How | Cost |
+|---|---|---|
+| **Last write wins** | Highest timestamp survives | Simple; **silently loses data** |
+| **Vector clocks** | Track causality; detect true conflicts | Correct; the client must resolve |
+| **CRDTs** | Types that merge automatically | Elegant; only for certain data shapes |
+
+<Callout type="warn" title="Last write wins loses data, quietly">
+It relies on wall-clock timestamps across machines, which drift. Two concurrent writes mean one is discarded with no record and no error.
+
+For a cache that is fine. For a shopping basket it means items vanish, and nobody can explain why.
+
+**Vector clocks** instead record which node saw which version, so the system can tell "B came after A" from "A and B happened concurrently". Genuine conflicts are handed to the client, which knows the semantics — a basket, for example, can merge by taking the union of items.
+</Callout>
+
+## 7. Keeping Replicas In Step
+
+Three mechanisms, at different timescales:
+
+| Mechanism | When | Purpose |
+|---|---|---|
+| **Read repair** | During a read | A stale replica is corrected as a side effect |
+| **Hinted handoff** | During a write | A neighbour holds writes for a node that is down |
+| **Anti-entropy** | Background | Merkle trees find and fix divergence |
+
+<Callout type="info" title="Merkle trees make comparison cheap">
+Comparing two replicas holding a billion keys sounds impossible. A Merkle tree hashes the data in a tree, so comparing roots is one comparison.
+
+If the roots match, the replicas are identical — done. If not, descend only into the branches that differ. Finding a handful of differing keys among a billion costs a few dozen comparisons instead of a billion.
+
+This is why anti-entropy repair is affordable enough to run continuously.
+</Callout>
+
+## 8. Membership and Failure
+
+There is no coordinator, so nodes track each other by **gossip** — each periodically exchanges what it knows about the cluster with a few random peers. Information spreads exponentially and needs no central authority.
+
+Failure detection is a **suspicion level** rather than a yes/no, because [you cannot distinguish slow from dead](/docs/system-design/distributed-primitives). A node that misses heartbeats becomes increasingly suspect, and is only treated as down once several nodes agree.
+
+## 9. What Was Traded Away
+
+| Decision | Gained | Cost |
+|---|---|---|
+| Consistent hashing | Adding a node moves ~1/N of keys | Range queries are impossible |
+| AP over CP | Writable during a partition | Reads can be stale; conflicts occur |
+| Quorum `W=2, R=2` | Survives one node down | Two round trips per operation |
+| Vector clocks | No silent data loss | Clients must resolve conflicts |
+| Gossip membership | No coordinator to fail | Membership converges slowly |
+| Key-value only | Simple, scalable | No joins, no transactions, no secondary indexes |
+
+## Follow-on Questions
+
+<Accordions>
+
+<Accordion title="Why can't this do range queries?">
+Consistent hashing deliberately scatters adjacent keys — that is what gives even distribution. `user:1` and `user:2` land on unrelated nodes, so "all keys between X and Y" would have to ask every node.
+
+Stores that support ranges (like HBase) partition by **key order** instead, which allows ranges but reintroduces hot spots, because sequential keys concentrate on one node.
+
+You choose one. Even distribution and ordered scans are in direct opposition.
+</Accordion>
+
+<Accordion title="What happens when a node is permanently removed?">
+Its ring positions are removed and its key ranges pass to the next nodes clockwise. Those nodes then pull the missing data from other replicas, using anti-entropy.
+
+The cluster is under-replicated until that finishes, so replication factor is temporarily reduced — which is why you do not remove several nodes at once.
+</Accordion>
+
+<Accordion title="How is a 1 MB value handled differently from a 100-byte one?">
+Large values make quorum writes expensive, since every replica receives the full payload.
+
+The usual approach is to store large values in object storage and keep only a pointer in the key-value store — the same "database holds the URL, not the bytes" rule from [storage engines](/docs/system-design/storage).
+</Accordion>
+
+<Accordion title="Can this support transactions?">
+Not across keys, and that is deliberate. Multi-key atomicity requires coordination, which is exactly what this design removed to achieve availability and scale.
+
+Single-key operations can be atomic — compare-and-set on one key is achievable. Anything spanning keys needs a different system or an application-level [saga](/docs/system-design/consistency).
+</Accordion>
+
+<Accordion title="How would you make it CP instead?">
+Replace quorums-with-conflict-resolution by consensus: a Raft group per partition, with one leader accepting writes in a defined order.
+
+You gain linearisable reads and no conflicts. You lose write availability whenever a partition's leader is unreachable and no majority can elect a new one. That is the trade CockroachDB and Spanner make, and it is the correct one for financial data.
+</Accordion>
+
+</Accordions>
+
+## Related Reading
+
+- [Partitioning and Consistent Hashing](/docs/system-design/partitioning) — the ring and virtual nodes
+- [Consistency and CAP](/docs/system-design/consistency) — the AP choice made here
+- [Distributed Primitives](/docs/system-design/distributed-primitives) — gossip, failure detection and consensus
+- [Storage Engines](/docs/system-design/storage) — LSM-trees, which stores like this use underneath
