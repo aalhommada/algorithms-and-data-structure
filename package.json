@@ -20,6 +20,7 @@
     "url": "https://github.com/aalhommada/algorithms-and-data-structure/issues"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "clsx": "^2.1.1",
     "fumadocs-core": "^16.13.0",
     "fumadocs-mdx": "^15.2.0",
